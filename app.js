@@ -512,22 +512,26 @@ for (const [id, key, label, limit] of [
   wrapper.append(edit);
   edit.onclick = () => {
     closeTextEditor?.();
+    const dialog = document.createElement('dialog');
+    dialog.className = 'stage-text-dialog';
+    dialog.setAttribute('aria-label', `${label}を編集`);
     const form = make('form', 'stage-text-editor', '');
     const caption = make('label', '', `${label}（${limit}文字まで）`);
     const input = document.createElement('input'); input.value = studio[key]; input.maxLength = limit; input.setAttribute('aria-label', label);
     caption.append(input);
     const submit = make('button', 'button primary', '保存'); submit.type = 'submit';
     const cancel = make('button', 'button', 'キャンセル'); cancel.type = 'button';
-    form.append(caption, submit, cancel); wrapper.append(form); edit.hidden = true;
-    const close = () => { form.remove(); edit.hidden = false; edit.focus({ preventScroll: true }); closeTextEditor = null; };
+    form.append(caption, submit, cancel); dialog.append(form); wrapper.append(dialog); edit.hidden = true;
+    const close = () => { dialog.close(); dialog.remove(); edit.hidden = false; edit.focus({ preventScroll: true }); closeTextEditor = null; };
     closeTextEditor = close;
     cancel.onclick = close;
+    dialog.oncancel = event => { event.preventDefault(); close(); };
     form.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } };
     form.onsubmit = event => {
       event.preventDefault(); studio = normalizeStudio({ ...studio, [key]: input.value });
       save('pokome-studio', studio); renderStudio(); close();
     };
-    input.focus(); input.select();
+    dialog.showModal(); input.focus(); input.select();
   };
 }
 async function uploadStudioImage(input, target) {

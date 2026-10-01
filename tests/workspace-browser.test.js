@@ -28,7 +28,13 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.locator('#stage-font-minus').click();
     for (const [id, label, key] of [['stage-title', '配信タイトル', 'title'], ['stage-subtitle', 'ひとこと', 'subtitle'], ['stage-footer-text', '画面下の文章', 'footer'], ['stage-speech-title', '読み上げ枠の見出し', 'speechTitle']]) {
       await page.locator(`#${id}`).hover();
+      const alignment = await page.locator(`#${id}`).evaluate(element => {
+        const text = element.getBoundingClientRect(), pencil = element.parentElement.querySelector('.stage-edit-pencil').getBoundingClientRect();
+        return Math.abs((text.top + text.bottom) / 2 - (pencil.top + pencil.bottom) / 2);
+      });
+      assert.ok(alignment < 2, `${label}: pencil center differs by ${alignment}px`);
       await page.getByRole('button', { name: `${label}を編集`, exact: true }).click();
+      assert.equal(await page.locator('.stage-text-dialog').evaluate(dialog => dialog.matches(':modal')), true);
       await page.getByRole('textbox', { name: label, exact: true }).fill(`<新しい${label}>`);
       await page.locator('.stage-text-editor').getByRole('button', { name: '保存', exact: true }).click();
       assert.equal(await page.locator(`#${id}`).textContent(), `<新しい${label}>`);
