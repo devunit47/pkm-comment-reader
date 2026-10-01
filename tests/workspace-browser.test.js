@@ -20,6 +20,12 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
+    const initialCount = await page.locator('.stage-comment').count();
+    const initialSize = await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize);
+    await page.locator('#stage-font-plus').click();
+    assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize), `${parseFloat(initialSize) + 2}px`);
+    assert.equal(await page.locator('.stage-comment').count(), initialCount);
+    await page.locator('#stage-font-minus').click();
     for (const [id, label, key] of [['stage-title', '配信タイトル', 'title'], ['stage-subtitle', 'ひとこと', 'subtitle'], ['stage-footer-text', '画面下の文章', 'footer'], ['stage-speech-title', '読み上げ枠の見出し', 'speechTitle']]) {
       await page.locator(`#${id}`).hover();
       await page.getByRole('button', { name: `${label}を編集`, exact: true }).click();
@@ -37,6 +43,13 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.keyboard.press('Escape');
     await page.reload();
     assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
+    await page.locator('[data-page="studio"]').click();
+    await page.locator('#studio-list-count').fill('3');
+    await page.locator('#studio-list-count').dispatchEvent('change');
+    await page.locator('#preview-talk').click();
+    assert.equal(await page.locator('.stage-comment').count(), 3);
+    await page.keyboard.press('Escape');
+    await page.locator('[data-page="home"]').click();
     const editor = page.locator('#workspace-editor');
     const session = page.locator('#layout-session');
     assert.equal(await editor.isVisible(), false);

@@ -1,6 +1,6 @@
 export const DEFAULT_STUDIO = Object.freeze({
   theme: 'mint', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
-  fontSize: 20, chatCount: 30, layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
+  fontSize: 20, listCount: 300, layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
   speechStyle: 'image', speechBackground: '#f3f1dc', speechImage: '', speechTextColor: '#25382f',
   footer: 'ひとつのコメントから、おしゃべりが広がる。',
@@ -20,7 +20,7 @@ export function normalizeStudio(value = {}) {
   }
   if (Number.isInteger(value.fontSize) && value.fontSize >= 16 && value.fontSize <= 28) options.fontSize = value.fontSize;
   if (Number.isInteger(value.speechFontSize) && value.speechFontSize >= 16 && value.speechFontSize <= 32) options.speechFontSize = value.speechFontSize;
-  if (Number.isInteger(value.chatCount) && value.chatCount >= 1 && value.chatCount <= 100) options.chatCount = value.chatCount;
+  if (Number.isInteger(value.listCount) && value.listCount >= 1 && value.listCount <= 300) options.listCount = value.listCount;
   if (Number.isInteger(value.actorWidth) && value.actorWidth >= 30 && value.actorWidth <= 60) options.actorWidth = value.actorWidth;
   if (typeof value.decoration === 'boolean') options.decoration = value.decoration;
   // Raster images only: uploaded SVG/HTML must never become executable content.

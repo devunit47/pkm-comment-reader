@@ -43,14 +43,14 @@ test('speech bubble appearance restores and rejects invalid styles and colors', 
   assert.equal(normalizeStudio({ title: '旧設定' }).speechStyle, 'image');
 });
 
-test('chat count accepts 1–100, preserves older settings and rejects invalid counts', () => {
-  for (const chatCount of [1, 3, 100]) {
-    assert.equal(readStudio({ getItem: () => JSON.stringify({ chatCount }) }).chatCount, chatCount);
+test('retained count accepts 1–300 and ignores old visible-count settings', () => {
+  for (const listCount of [1, 3, 300]) {
+    assert.equal(readStudio({ getItem: () => JSON.stringify({ listCount }) }).listCount, listCount);
   }
-  for (const chatCount of [0, -1, 101, 2.5, '3', null]) {
-    assert.equal(normalizeStudio({ chatCount }).chatCount, 30);
+  for (const listCount of [0, -1, 301, 2.5, '3', null]) {
+    assert.equal(normalizeStudio({ listCount }).listCount, 300);
   }
-  assert.equal(normalizeStudio({ theme: 'rose' }).chatCount, 30);
+  assert.equal(normalizeStudio({ chatCount: 30 }).listCount, 300);
 });
 
 test('speech images accept only bounded raster data and preserve independent actor images', () => {

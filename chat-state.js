@@ -21,7 +21,8 @@ export function addMessage(state, user, text, id, createdAt = Date.now(), login 
   state.seen.add(user);
   state.received++;
   state.messages.push(message);
-  if (state.messages.length > 300) state.messages.shift();
+  const limit = Number.isInteger(state.historyLimit) && state.historyLimit >= 1 && state.historyLimit <= 300 ? state.historyLimit : 300;
+  if (state.messages.length > limit) state.messages.splice(0, state.messages.length - limit);
   return message;
 }
 

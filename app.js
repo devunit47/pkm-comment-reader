@@ -26,6 +26,7 @@ for (const platform of Object.keys(states)) states[platform].autoSpeech = savedA
 const savedVoices = readSavedVoices(storage);
 for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
 let studio = readStudio(storage);
+for (const state of Object.values(states)) state.historyLimit = studio.listCount;
 let currentSpeech = null;
 let speechDisplayTimer;
 let imageGeneration = 0;
@@ -358,9 +359,9 @@ $('clear').onclick = () => { clearMessages(states[active]); stop(); renderSelect
 
 function renderStageChat() {
   const state = states[active];
-  const messages = state.messages.filter(message => !userRule(state, message.user).hidden).slice(-studio.chatCount);
+  const messages = state.messages.filter(message => !userRule(state, message.user).hidden);
   const list = $('stage-chat-list');
-  list.style.setProperty('--visible-chat-count', studio.chatCount);
+  const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
   list.replaceChildren();
   for (const message of messages) {
     const card = make('div', 'stage-comment pokome-comment', '');
@@ -369,6 +370,7 @@ function renderStageChat() {
     list.append(card);
   }
   if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
+  if (bottom) list.scrollTop = list.scrollHeight;
   $('stage-count').textContent = `${state.received} COMMENTS`;
 }
 
@@ -420,8 +422,11 @@ function renderStudio() {
     ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
   $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
   for (const key of ['theme', 'accent', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
-  $('studio-font-size').value = studio.fontSize;
-  $('studio-chat-count').value = studio.chatCount;
+  $('stage-font-value').textContent = `${studio.fontSize}px`;
+  $('stage-font-minus').disabled = studio.fontSize <= 16;
+  $('stage-font-plus').disabled = studio.fontSize >= 28;
+  $('studio-list-count').value = studio.listCount;
+  $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · 選択してユーザーを管理`;
   $('studio-actor-width').value = studio.actorWidth;
   $('studio-width-value').textContent = `${studio.actorWidth}%`;
   $('studio-decoration').checked = studio.decoration;
@@ -433,6 +438,7 @@ function enterTalk() {
   $('talk-stage').hidden = false;
   document.body.classList.add('talk-mode');
   renderStageChat();
+  $('stage-chat-list').scrollTop = $('stage-chat-list').scrollHeight;
   renderStageSpeech();
   // Move focus to the canvas so controls disappear for screen capture.
   $('talk-stage').setAttribute('tabindex', '-1');
@@ -461,15 +467,19 @@ function updateStudio() {
     speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     speechTextColor: $('studio-speech-text-color').value,
-    fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
-    chatCount: Number($('studio-chat-count').value),
+    layout: $('studio-layout').value,
+    listCount: Number($('studio-list-count').value),
     actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
   });
   save('pokome-studio', studio);
+  for (const state of Object.values(states)) {
+    state.historyLimit = studio.listCount;
+    if (state.messages.length > studio.listCount) state.messages.splice(0, state.messages.length - studio.listCount);
+  }
   renderStudio();
-  renderStageChat();
+  render();
 }
-for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {
@@ -477,6 +487,15 @@ $('studio-theme').onchange = () => {
   updateStudio();
 };
 $('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
+for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
+  $(id).onclick = () => {
+    const list = $('stage-chat-list');
+    const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
+    studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(28, studio.fontSize + step)) });
+    save('pokome-studio', studio); renderStudio();
+    if (bottom) list.scrollTop = list.scrollHeight;
+  };
+}
 let closeTextEditor = null;
 for (const [id, key, label, limit] of [
   ['stage-title', 'title', '配信タイトル', 60],

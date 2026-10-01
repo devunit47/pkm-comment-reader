@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createChatState, addMessage, visibleMessages, clearMessages, userRule } from '../chat-state.js';
 
+test('retention removes oldest messages without changing received counts', () => {
+  const state = createChatState(); state.historyLimit = 2;
+  for (let i = 0; i < 5; i++) addMessage(state, 'viewer', `message ${i}`, i);
+  assert.deepEqual(state.messages.map(message => message.id), [3, 4]);
+  assert.equal(state.received, 5);
+});
+
 test('comments, counts, first appearance and user rules never cross services', () => {
   const twitch = createChatState();
   const kick = createChatState();
