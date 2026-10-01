@@ -24,7 +24,7 @@
   <label>配信タイトル<input id="studio-title" maxlength="60" value="お茶でも飲みながら、"></label>
   <label>ひとこと<input id="studio-subtitle" maxlength="100" value="みんなと、のんびり雑談。"></label>
   <label>コメントの文字サイズ<select id="studio-font-size"><option value="16">小さめ / 16px</option><option value="20" selected>標準 / 20px</option><option value="24">大きめ / 24px</option><option value="28">特大 / 28px</option></select></label>
-  <label>表示するコメント数<input id="studio-chat-count" type="number" min="1" max="100" step="1" value="30" aria-describedby="studio-chat-count-help"></label><p class="muted" id="studio-chat-count-help">雑談モードに直近1〜100件を表示します。枠に収まらない分はスクロールできます。</p>
+  <label>同時に表示するコメント数<input id="studio-chat-count" type="number" min="1" max="100" step="1" value="30" aria-describedby="studio-chat-count-help"></label><p class="muted" id="studio-chat-count-help">指定した件数がコメント枠に収まるように文字サイズを調整します。件数を増やすと文字が小さくなります。長いコメントは省略表示します。</p>
   <label>立ち絵・映像の配置<select id="studio-layout"><option value="right">右に配置</option><option value="left">左に配置</option></select></label>
   <label>立ち絵・映像の幅 <output id="studio-width-value">42%</output><input id="studio-actor-width" type="range" min="30" max="60" value="42"></label>
   <label class="studio-checkbox"><input id="studio-decoration" type="checkbox" checked>星やハートの装飾を表示</label>

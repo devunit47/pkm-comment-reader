@@ -349,16 +349,16 @@ function renderStageChat() {
   const state = states[active];
   const messages = state.messages.filter(message => !userRule(state, message.user).hidden).slice(-studio.chatCount);
   const list = $('stage-chat-list');
-  const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+  list.style.setProperty('--visible-chat-count', studio.chatCount);
   list.replaceChildren();
   for (const message of messages) {
     const card = make('div', 'stage-comment', '');
+    card.title = `${message.user}: ${message.text}`;
     card.append(make('strong', '', message.user), make('p', '', message.text));
     list.append(card);
   }
   if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
   $('stage-count').textContent = `${state.received} COMMENTS`;
-  if (bottom) list.scrollTop = list.scrollHeight;
 }
 
 function renderStageSpeech() {
@@ -404,7 +404,6 @@ function enterTalk() {
   document.body.classList.add('talk-mode');
   renderStageChat();
   renderStageSpeech();
-  $('stage-chat-list').scrollTop = $('stage-chat-list').scrollHeight;
   // Move focus to the canvas so controls disappear for screen capture.
   $('talk-stage').setAttribute('tabindex', '-1');
   $('talk-stage').focus({ preventScroll: true });
