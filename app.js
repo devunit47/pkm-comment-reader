@@ -412,6 +412,7 @@ function renderStudio() {
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
   $('stage-comment-style').value = studio.commentStyle;
+  $('stage-speech-user').hidden = studio.commentStyle === 'anonymous';
   stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
   stage.style.setProperty('--speech-background', studio.speechBackground);
   const luminance = studio.speechBackground.slice(1).match(/../g).map(hex => {

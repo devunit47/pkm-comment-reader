@@ -41,8 +41,10 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('#stage-comment-style').isVisible(), false);
     await page.getByRole('button', { name: 'コメントの表示設定', exact: true }).click();
     await page.locator('#stage-comment-style').selectOption('anonymous');
+    assert.equal(await page.locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
     assert.equal(await page.locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
     await page.locator('#stage-comment-style').selectOption('inline');
+    assert.notEqual(await page.locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
     assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
     await page.locator('#stage-comment-style').selectOption('compact');
     assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
