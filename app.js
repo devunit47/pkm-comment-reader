@@ -17,6 +17,7 @@ const savedVoices = readSavedVoices(storage);
 for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
 let studio = readStudio(storage);
 let currentSpeech = null;
+let speechDisplayTimer;
 let imageGeneration = 0;
 try {
   const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
@@ -165,15 +166,21 @@ function speak(message, automatic = false) {
     $('speech-status').textContent = '読み上げ中';
     $('preview-user').textContent = message.user;
     $('preview-text').textContent = text;
-    currentSpeech = { user: message.user, text, utterance };
+    clearTimeout(speechDisplayTimer);
+    currentSpeech = { user: message.user, text, utterance, speaking: true };
     renderStageSpeech();
   };
   const done = () => {
     if (generation !== speechGeneration) return;
     pendingSpeech = Math.max(0, pendingSpeech - 1);
     if (currentSpeech?.utterance === utterance) {
-      currentSpeech = null;
+      currentSpeech.speaking = false;
       renderStageSpeech();
+      speechDisplayTimer = setTimeout(() => {
+        if (currentSpeech?.utterance !== utterance) return;
+        currentSpeech = null;
+        renderStageSpeech();
+      }, 5000);
     }
     if (!pendingSpeech) $('speech-status').textContent = '待機中';
   };
@@ -185,6 +192,7 @@ function speak(message, automatic = false) {
 
 function stop() {
   speechGeneration++;
+  clearTimeout(speechDisplayTimer);
   if (supported) window.speechSynthesis.cancel();
   pendingSpeech = 0;
   currentSpeech = null;
@@ -354,10 +362,10 @@ function renderStageChat() {
 }
 
 function renderStageSpeech() {
-  $('stage-speech-status').textContent = currentSpeech ? '読み上げ中' : '待機中';
+  $('stage-speech-status').textContent = currentSpeech?.speaking ? '読み上げ中' : currentSpeech ? '読み上げ完了' : '待機中';
   $('stage-speech-user').textContent = currentSpeech?.user || '';
   $('stage-speech-text').textContent = currentSpeech?.text || '次のコメントを待っています。';
-  $('stage-speech-text').parentElement.dataset.speaking = String(!!currentSpeech);
+  $('stage-speech-text').parentElement.dataset.speaking = String(!!currentSpeech?.speaking);
 }
 
 function renderStudio() {
