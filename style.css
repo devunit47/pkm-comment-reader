@@ -54,3 +54,4 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speech[data-style=image] .stage-speech-content{background-image:var(--speech-image);background-size:100% 100%;background-repeat:no-repeat;padding:16px 22% 24px 22px;color:var(--speech-image-ink)}
 .stage-speech[data-style=image] #stage-speech-user{padding:0;color:inherit}
 .stage-speech[data-style=image] #stage-speech-text{margin:8px 0 0;color:inherit}
+#stage-footer-text{min-width:0;overflow-wrap:anywhere}

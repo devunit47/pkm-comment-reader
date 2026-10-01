@@ -3,6 +3,7 @@ export const DEFAULT_STUDIO = Object.freeze({
   fontSize: 20, chatCount: 30, layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
   speechStyle: 'image', speechBackground: '#f3f1dc', speechImage: '', speechTextColor: '#25382f',
+  footer: 'ひとつのコメントから、おしゃべりが広がる。',
 });
 
 export function normalizeStudio(value = {}) {
@@ -14,7 +15,7 @@ export function normalizeStudio(value = {}) {
   if (typeof value.accent === 'string' && /^#[\da-f]{6}$/i.test(value.accent)) options.accent = value.accent;
   if (typeof value.speechBackground === 'string' && /^#[\da-f]{6}$/i.test(value.speechBackground)) options.speechBackground = value.speechBackground;
   if (typeof value.speechTextColor === 'string' && /^#[\da-f]{6}$/i.test(value.speechTextColor)) options.speechTextColor = value.speechTextColor;
-  for (const [key, limit] of [['title', 60], ['subtitle', 100], ['speechTitle', 40]]) {
+  for (const [key, limit] of [['title', 60], ['subtitle', 100], ['speechTitle', 40], ['footer', 100]]) {
     if (typeof value[key] === 'string') options[key] = value[key].slice(0, limit);
   }
   if (Number.isInteger(value.fontSize) && value.fontSize >= 16 && value.fontSize <= 28) options.fontSize = value.fontSize;

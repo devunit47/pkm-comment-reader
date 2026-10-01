@@ -64,3 +64,10 @@ test('speech images accept only bounded raster data and preserve independent act
   }
   assert.equal(normalizeStudio({ speechTextColor: 'url(x)' }).speechTextColor, DEFAULT_STUDIO.speechTextColor);
 });
+
+test('footer text persists including empty text and validates legacy settings', () => {
+  assert.equal(readStudio({ getItem: () => JSON.stringify({ footer: 'のんびりしていってね' }) }).footer, 'のんびりしていってね');
+  assert.equal(normalizeStudio({ footer: '' }).footer, '');
+  assert.equal(normalizeStudio({ footer: 'a'.repeat(150) }).footer.length, 100);
+  assert.equal(normalizeStudio({ footer: null }).footer, DEFAULT_STUDIO.footer);
+});

@@ -398,6 +398,8 @@ function renderStudio() {
   stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
   $('stage-title').textContent = studio.title;
   $('stage-subtitle').textContent = studio.subtitle;
+  $('stage-footer-text').textContent = studio.footer;
+  $('studio-footer').value = studio.footer;
   $('stage-speech-title').textContent = studio.speechTitle;
   $('studio-speech-title').value = studio.speechTitle;
   $('studio-speech-font-size').value = studio.speechFontSize;
@@ -456,6 +458,7 @@ function updateStudio() {
   studio = normalizeStudio({ ...studio,
     theme: $('studio-theme').value, accent: $('studio-accent').value,
     title: $('studio-title').value, subtitle: $('studio-subtitle').value,
+    footer: $('studio-footer').value,
     speechTitle: $('studio-speech-title').value, speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     speechTextColor: $('studio-speech-text-color').value,
@@ -467,7 +470,7 @@ function updateStudio() {
   renderStudio();
   renderStageChat();
 }
-for (const id of ['theme', 'accent', 'title', 'subtitle', 'speech-title', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'title', 'subtitle', 'footer', 'speech-title', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {
