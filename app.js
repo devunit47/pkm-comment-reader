@@ -581,7 +581,7 @@ renderSpeechSettings();
 renderSpeechOptions();
 render();
 const themeEditor = initializeTheme(storage);
-themeEditor.connectWorkspace(initializeWorkspace(storage, { resetTheme: themeEditor.resetTheme }));
+themeEditor.connectWorkspace(initializeWorkspace(storage));
 window.addEventListener('beforeunload', () => {
   stop();
   for (const connection of Object.values(connections)) connection.disconnect(false);

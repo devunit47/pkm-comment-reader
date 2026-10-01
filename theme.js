@@ -49,12 +49,20 @@ export function initializeTheme(storage) {
   document.head.append(style);
   const section = document.createElement('section');
   section.className = 'panel studio-form';
-  section.innerHTML = `<div class="studio-fields"><h2>CSSテーマ / Theme API 1</h2>
-    <p>ホームと雑談画面の外観を変更できます。配置は別に保存します。</p>
-    <label>テーマCSS<textarea id="theme-css" rows="12" spellcheck="false"></textarea></label>
-    <div><button id="theme-apply" class="button">CSSを適用</button> <button id="theme-reset" class="button">CSSを解除</button></div>
-    <label>CSSまたはデザインJSONを読み込む<input id="theme-import" type="file" accept=".css,.json,text/css,application/json"></label>
-    <div><button id="theme-export" class="button">CSSを書き出す</button> <button id="design-export" class="button">CSSと配置を書き出す</button></div>
+  section.innerHTML = `<div class="studio-fields"><h2>見た目の保存・読み込み</h2>
+    <p>読み込んだ見た目やCSSで追加した見た目、ホーム・雑談画面の配置を保存して、後で戻したり、ほかの人と共有したりできます。</p>
+    <label>保存した見た目を読み込む<input id="theme-import" type="file" accept=".css,.json,text/css,application/json" aria-describedby="theme-import-help"></label>
+    <p id="theme-import-help">.cssのファイルは色や文字、枠などの見た目を変更します。.jsonのファイルは見た目とパネルの配置を変更します。読み込むと現在の設定が置き換わるため、残したい場合は先に保存してください。</p>
+    <div><button id="design-export" class="button" aria-describedby="design-export-help">見た目と配置をファイルに保存</button></div>
+    <p id="design-export-help">読み込んだ見た目やCSSで追加した見た目と、パネルの位置やサイズをまとめて保存します。上の配信デザイン設定、接続情報、コメントは含まれません。</p>
+    <details><summary>詳しく見た目を編集する（CSS）</summary>
+    <p>CSSは色や文字、枠などの見た目を指定するための記述です。使わなくても、上の配信デザイン設定で見た目を調整できます。自分でCSSを書きたい方だけご利用ください。</p>
+    <label>見た目を指定するCSS<textarea id="theme-css" rows="12" spellcheck="false" aria-describedby="theme-css-help"></textarea></label>
+    <p id="theme-css-help">入力後に「編集した見た目を反映」を押すと画面に反映され、自動で保存されます。「追加した見た目を解除」で、この欄のCSSによる変更を取り消せます。</p>
+    <div><button id="theme-apply" class="button">編集した見た目を反映</button> <button id="theme-reset" class="button">追加した見た目を解除</button></div>
+    <div><button id="theme-export" class="button">見た目だけを保存（CSS）</button></div>
+    <p>この欄のCSSをファイルに保存します。パネルの配置や、上の配信デザイン設定は含まれません。</p>
+    </details>
     <p id="theme-status" role="status"></p></div>`;
   document.getElementById('studio-page').append(section);
   const input = section.querySelector('textarea');
@@ -70,7 +78,7 @@ export function initializeTheme(storage) {
     style.textContent = compiled;
     current = css;
     input.value = css || DEFAULT_THEME_CSS;
-    status.textContent = persist(css) ? 'CSSを適用・保存しました。' : 'CSSを適用しました。保存できないため再読み込みで失われます。';
+    status.textContent = persist(css) ? '見た目を反映・保存しました。' : '見た目を反映しました。保存できないため、再読み込みすると元に戻ります。';
   };
   const resetTheme = () => apply('');
   const run = action => { try { action(); } catch (error) { status.textContent = error.message; } };

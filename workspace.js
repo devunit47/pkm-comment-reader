@@ -1,10 +1,11 @@
 import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
 export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
 
-export function initializeWorkspace(storage, { resetTheme = () => {} } = {}) {
+export function initializeWorkspace(storage) {
   const roots = { home: document.querySelector('.workspace'), talk: document.querySelector('#talk-stage') };
   const selectors = { home: ['.comments', '.now', '.reading', '.moderation'], talk: ['.stage-header', '.stage-chat', '.stage-speech', '.stage-actor', '.stage-footer'] };
-  let layouts = { version: 1, home: null, talk: null }, editing = false, snap = true, selected = 'comments', lastMode = '';
+  let layouts = { version: 1, home: null, talk: null }, editing = false, snap = true, selected = 'comments', lastMode = '', target = 'home';
+  const names = { comments: 'コメント一覧', now: '読み上げプレビュー', reading: '読み上げ設定', moderation: 'ユーザー管理', header: 'タイトル・接続状態', chat: '配信用コメント一覧', speech: '読み上げ中のコメント', actor: '立ち絵・映像のスペース', footer: '画面下のひとこと' };
   try { const saved = storage.getItem(WORKSPACE_KEY); if (saved) layouts = normalizeWorkspace(JSON.parse(saved)); } catch { /* Keep the original layout when saved data is unusable. */ }
   const panels = {}, originals = new Map();
   for (const mode of Object.keys(roots)) {
@@ -17,19 +18,22 @@ export function initializeWorkspace(storage, { resetTheme = () => {} } = {}) {
     });
   }
   const host = document.createElement('div'); host.id = 'workspace-editor';
-  host.style.cssText = 'position:fixed!important;right:12px!important;bottom:12px!important;z-index:2147483647!important;display:block!important;visibility:visible!important;opacity:1!important;';
-  document.body.append(host);
+  document.getElementById('studio-page').prepend(host);
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>:host{font:13px system-ui;color:#172b25}*{box-sizing:border-box}section{background:#fff;border:2px solid #3b7965;border-radius:10px;padding:8px;max-width:min(460px,95vw);box-shadow:0 4px 20px #0004}button,select,input{font:inherit;margin:3px;padding:5px;border:1px solid #6e8a80;border-radius:4px;background:#fff;color:#172b25}button{cursor:pointer}label{display:inline-flex;align-items:center}input[type=number]{width:65px}.fields[hidden]{display:none}p{margin:4px;font-size:12px}input[type=file]{max-width:220px}</style><section aria-label="レイアウト編集"><button id="edit" aria-pressed="false">配置を編集</button><button id="reset">配置を戻す</button><button id="css">CSSを解除</button><button id="export">配置を書き出す</button><label>配置を読み込む<input id="import" type="file" accept="application/json,.json"></label><div class="fields" hidden><p>パネルを選び、移動・サイズ変更できます。矢印キーでも移動、Shift＋矢印でサイズ変更。</p><select id="panel" aria-label="編集するパネル"></select><label><input id="snap" type="checkbox" checked>2%に吸着</label><label><input id="hidden" type="checkbox">非表示</label><div id="numbers"></div></div><p id="status" role="status" aria-live="polite"></p></section>`;
+  shadow.innerHTML = `<style>:host{display:block;margin-bottom:24px;font:14px system-ui;color:#e4eeea}*{box-sizing:border-box}section{background:#1a2325;border:1px solid #2c3739;border-radius:12px;padding:24px}h2{margin:0 0 12px;font-size:18px}button,select,input{font:inherit;padding:9px;border:1px solid #647a72;border-radius:6px;background:#101718;color:#e4eeea}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #ace5cd;outline-offset:3px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}label{display:grid;gap:6px;margin:12px 0}input[type=number]{width:100%}p,small{line-height:1.7;color:#b2c2b8}p{margin:8px 0}small{font-size:12px}#numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 16px}.check{display:flex;align-items:center;gap:8px}details{margin-top:20px}summary{cursor:pointer}input[type=file]{max-width:100%}</style><section aria-label="画面の配置"><h2>画面の配置</h2><p>コメントや立ち絵などの枠を、好きな場所に動かせます。変更はこのブラウザに自動で保存されます。</p><label>配置を変える画面<select id="mode"><option value="home">ホーム（コメントを操作する画面）</option><option value="talk">雑談画面（配信に映す画面）</option></select></label><p>「画面を見ながら配置を変える」を押し、枠の「移動」をつかんで動かしてください。「大きさ」で枠を広げたり縮めたりできます。終わったら「完了して設定に戻る」を押します。</p><div class="actions"><button id="edit">画面を見ながら配置を変える</button><button id="reset">選んだ画面の配置を元に戻す</button></div><p>元に戻すと、選んだ画面の枠の位置・大きさ・表示が初期状態になります。色や文字は変わりません。</p><details class="fields"><summary>枠ごとに表示や位置を調整する</summary><p id="layout-help">最初に画面を見ながら配置を変えると、ここでも調整できます。</p><label>調整する枠<select id="panel" aria-label="調整する枠"></select></label><label class="check"><input id="hidden" type="checkbox">この枠を表示しない</label><p>配置を変えている間は、表示しない枠も薄く表示されます。チェックを外すと再表示できます。</p><label class="check"><input id="snap" type="checkbox" checked>動かすときに位置をそろえる</label><p>細かいずれを減らすため、画面の2%ずつの間隔にそろえます。自由に微調整する場合はチェックを外してください。</p><div id="numbers"></div><p>矢印キーでも枠を動かせます。Shiftキーを押しながら矢印キーを押すと、大きさを変えられます。</p></details><details><summary>配置をファイルに保存・読み込みする</summary><p>配置だけを保存して、別のブラウザで使ったり、人に渡したりできます。ホームと雑談画面の両方の配置が入ります。</p><div class="actions"><button id="export">配置をファイルに保存</button></div><label>保存した配置ファイルを選ぶ<input id="import" type="file" accept="application/json,.json"></label><p>読み込むと両方の画面の配置を置き換えます。色や文字も一緒に渡す場合は「見た目の保存・読み込み」を使ってください。</p></details><p id="status" role="status" aria-live="polite"></p></section>`;
   const $ = id => shadow.getElementById(id);
-  const leave = document.createElement('button'); leave.textContent = '雑談モードを終了'; leave.hidden = roots.talk.hidden; leave.onclick = () => document.getElementById('leave-talk').click();
-  shadow.querySelector('section').prepend(leave);
+  const sessionHost = document.createElement('div'); sessionHost.id = 'layout-session';
+  sessionHost.style.cssText = 'position:fixed!important;top:12px!important;left:50%!important;transform:translateX(-50%)!important;z-index:2147483647!important;';
+  document.body.append(sessionHost);
+  const sessionShadow = sessionHost.attachShadow({ mode: 'open' });
+  sessionShadow.innerHTML = '<style>:host{font:14px system-ui}div{background:#172b25;color:white;padding:10px 16px;border:1px solid #ace5cd;border-radius:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:90vw}button{font:inherit;background:#ace5cd;color:#172b25;border:0;border-radius:5px;padding:9px;cursor:pointer}p{margin:0;font-size:12px;line-height:1.6}</style><div><p>「移動」で場所を、「大きさ」でサイズを変えられます。</p><button id="finish">完了して設定に戻る</button></div>';
+  const descriptions = { x: ['横位置（%）', '左端が0です。数値を増やすと右へ動きます。'], y: ['縦位置（%）', '上端が0です。数値を増やすと下へ動きます。'], w: ['幅（%）', '画面いっぱいの幅が100です。'], h: ['高さ（%）', '画面いっぱいの高さが100です。'], z: ['重なり順', '枠が重なるとき、大きい数値の枠が手前に出ます。'] };
   for (const field of ['x', 'y', 'w', 'h', 'z']) {
-    const label = document.createElement('label'); label.textContent = field === 'z' ? '重なり' : `${field} %`;
-    const input = document.createElement('input'); input.type = 'number'; input.min = field === 'w' || field === 'h' ? 5 : 0; input.max = field === 'z' ? 99 : 100; input.step = 1; input.id = field; label.append(input); $('numbers').append(label);
+    const label = document.createElement('label'); label.textContent = descriptions[field][0];
+    const input = document.createElement('input'); input.type = 'number'; input.min = field === 'w' || field === 'h' ? 5 : 0; input.max = field === 'z' ? 99 : 100; input.step = 1; input.id = field; const help = document.createElement('small'); help.id = `${field}-help`; help.textContent = descriptions[field][1]; input.setAttribute('aria-describedby', help.id); label.append(input, help); $('numbers').append(label);
     input.addEventListener('change', () => { const mode = currentMode(); ensure(mode); layouts[mode].panels[selected][field] = Number(input.value); layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); save(); fields(); });
   }
-  function currentMode() { return roots.talk.hidden ? 'home' : 'talk'; }
+  function currentMode() { return target; }
   function available() { return !roots.talk.hidden || !document.getElementById('home-page').hidden; }
   function save() { try { storage.setItem(WORKSPACE_KEY, JSON.stringify(layouts)); $('status').textContent = '配置を保存しました。'; } catch { $('status').textContent = '保存できません。配置を書き出して保管してください。'; } }
   function ensure(mode) {
@@ -47,15 +51,17 @@ export function initializeWorkspace(storage, { resetTheme = () => {} } = {}) {
     for (const element of panels[mode]) element.querySelector('[data-layout-handle]').hidden = !editing || mode !== currentMode();
   }
   function fields() {
-    leave.hidden = roots.talk.hidden;
-    for (const id of ['edit', 'reset', 'panel', 'hidden', 'x', 'y', 'w', 'h', 'z']) $(id).disabled = !available();
-    const mode = currentMode(); if (lastMode !== mode) { selected = PANEL_IDS[mode][0]; $('panel').replaceChildren(...PANEL_IDS[mode].map(id => { const option = document.createElement('option'); option.value = id; option.textContent = id; return option; })); lastMode = mode; }
-    $('panel').value = selected; $('edit').setAttribute('aria-pressed', String(editing)); $('edit').textContent = editing ? '編集を終了' : '配置を編集'; shadow.querySelector('.fields').hidden = !editing || !available();
+    sessionHost.style.setProperty('display', editing ? 'block' : 'none', 'important');
+    for (const id of ['panel', 'hidden', 'x', 'y', 'w', 'h', 'z']) $(id).disabled = !layouts[target];
+    $('layout-help').textContent = layouts[target] ? '枠を選んで調整してください。変更はすぐに保存されます。' : '最初に画面を見ながら配置を変えると、ここでも調整できます。';
+    const mode = currentMode(); if (lastMode !== mode) { selected = PANEL_IDS[mode][0]; $('panel').replaceChildren(...PANEL_IDS[mode].map(id => { const option = document.createElement('option'); option.value = id; option.textContent = names[id]; return option; })); lastMode = mode; }
+    $('panel').value = selected;
     const panel = layouts[mode]?.panels[selected]; if (panel) { for (const field of ['x', 'y', 'w', 'h', 'z']) $(field).value = Math.round(panel[field] * 100) / 100; $('hidden').checked = panel.hidden; }
   }
   for (const mode of Object.keys(roots)) for (const element of panels[mode]) {
     const handleHost = document.createElement('div'); handleHost.dataset.layoutHandle = ''; handleHost.style.cssText = 'position:absolute;top:0;left:0;z-index:1000;';
-    const handleShadow = handleHost.attachShadow({ mode: 'open' }); handleShadow.innerHTML = `<style>button{font:12px system-ui;background:#fff;color:#172b25;border:2px solid #3b7965;padding:5px;cursor:move;touch-action:none}button:last-child{cursor:nwse-resize}</style><button aria-label="${element.dataset.panelType} を移動">↔ ${element.dataset.panelType}</button><button aria-label="${element.dataset.panelType} のサイズ変更">↘</button>`; element.append(handleHost);
+    const panelName = names[element.dataset.panelType];
+    const handleShadow = handleHost.attachShadow({ mode: 'open' }); handleShadow.innerHTML = `<style>button{font:12px system-ui;background:#fff;color:#172b25;border:2px solid #3b7965;padding:5px;cursor:move;touch-action:none}button:last-child{cursor:nwse-resize}</style><button aria-label="${panelName} を移動">↔ 移動：${panelName}</button><button aria-label="${panelName} のサイズ変更">↘ 大きさ</button>`; element.append(handleHost);
     for (const [index, button] of [...handleShadow.querySelectorAll('button')].entries()) {
       button.addEventListener('pointerdown', event => {
         if (event.button !== 0 || !editing || !available()) return; ensure(mode); selected = element.dataset.panelType; fields(); const start = { ...layouts[mode].panels[selected] }, rect = roots[mode].getBoundingClientRect(); button.setPointerCapture(event.pointerId);
@@ -66,16 +72,33 @@ export function initializeWorkspace(storage, { resetTheme = () => {} } = {}) {
       button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const p = layouts[mode].panels[selected], resize = index || event.shiftKey; p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
     }
   }
-  $('edit').onclick = () => { if (!available()) return; editing = !editing; if (editing) ensure(currentMode()); for (const mode of Object.keys(roots)) apply(mode); fields(); save(); };
+  function finish() {
+    editing = false;
+    if (!roots.talk.hidden) document.getElementById('leave-talk').click();
+    for (const mode of Object.keys(roots)) apply(mode);
+    document.querySelector('[data-page="studio"]').click(); fields(); save(); $('edit').focus();
+  }
+  sessionShadow.getElementById('finish').onclick = finish;
+  $('mode').onchange = () => { target = $('mode').value; fields(); };
+  $('edit').onclick = () => {
+    document.querySelector('[data-page="home"]').click();
+    if (target === 'talk') document.getElementById('enter-talk').click();
+    editing = true; ensure(target); for (const mode of Object.keys(roots)) apply(mode); fields(); save();
+    sessionShadow.getElementById('finish').focus();
+  };
   $('reset').onclick = () => { layouts[currentMode()] = null; editing = false; apply(currentMode()); fields(); save(); };
-  $('css').onclick = resetTheme;
   $('snap').onchange = () => { snap = $('snap').checked; };
   $('panel').onchange = () => { selected = $('panel').value; fields(); };
   $('hidden').onchange = () => { layouts[currentMode()].panels[selected].hidden = $('hidden').checked; apply(currentMode()); save(); };
   $('export').onclick = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(layouts, null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'layout.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   function applyLayouts(value) { layouts = normalizeWorkspace(value); for (const mode of Object.keys(roots)) apply(mode); fields(); save(); }
   $('import').onchange = async () => { try { const file = $('import').files[0]; if (!file) return; if (file.size > 100000) throw new Error('配置ファイルは100KBまでです。'); applyLayouts(JSON.parse(await file.text())); } catch (error) { $('status').textContent = error.message; } finally { $('import').value = ''; } };
-  const observer = new MutationObserver(() => { if (lastMode !== currentMode()) { if (editing && available()) ensure(currentMode()); for (const mode of Object.keys(roots)) apply(mode); } fields(); });
+  const observer = new MutationObserver(() => {
+    if (editing && (target === 'talk' ? roots.talk.hidden : document.getElementById('home-page').hidden)) {
+      editing = false; for (const mode of Object.keys(roots)) apply(mode);
+    }
+    fields();
+  });
   observer.observe(roots.talk, { attributes: true, attributeFilter: ['hidden'] });
   observer.observe(document.getElementById('home-page'), { attributes: true, attributeFilter: ['hidden'] });
   for (const mode of Object.keys(roots)) apply(mode); fields();
