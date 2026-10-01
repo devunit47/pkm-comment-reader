@@ -119,7 +119,7 @@ function renderSelection() {
   $('selected-user').textContent = message?.user || 'コメントを選択してください';
   $('hide-user').disabled = !message;
   $('mute-user').disabled = !message;
-  $('hide-user').textContent = message && userRule(state, message.user).hidden ? '↺ 非表示解除' : '⊘ 非表示';
+  $('hide-user').textContent = message && userRule(state, message.user).hidden ? '↺ 非表示解除' : '⊘ ユーザーを非表示';
   $('mute-user').textContent = message && userRule(state, message.user).muted ? '↺ 除外解除' : '◖ 読み上げ除外';
 }
 
@@ -136,14 +136,14 @@ function render() {
     name.setAttribute('aria-haspopup', 'dialog');
     name.setAttribute('aria-controls', 'user-actions');
     name.setAttribute('aria-label', message.user + ' の操作');
-    name.onclick = () => {
+    const openActions = event => {
       state.selected = message;
       renderSelection();
       for (const item of list.querySelectorAll('.comment')) {
         item.classList.toggle('selected', item === row);
         item.querySelector('.message').setAttribute('aria-pressed', String(item === row));
       }
-      const rect = name.getBoundingClientRect();
+      const rect = event.currentTarget.getBoundingClientRect();
       const menu = $('user-actions');
       menu.showPopover();
       menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8)) + 'px';
@@ -152,7 +152,11 @@ function render() {
     };
     const body = make('button', 'message pokome-comment__body', message.text);
     body.setAttribute('aria-pressed', String(state.selected?.id === message.id));
-    body.onclick = () => { state.selected = message; renderSelection(); render(); };
+    for (const trigger of [name, body]) {
+      trigger.setAttribute('aria-haspopup', 'dialog');
+      trigger.setAttribute('aria-controls', 'user-actions');
+      trigger.onclick = openActions;
+    }
     row.append(name, body, make('span', 'time', message.time));
     list.append(row);
   }
@@ -322,6 +326,19 @@ for (const [id, key] of [['hide-user', 'hidden'], ['mute-user', 'muted']]) {
     $('search').focus();
   };
 }
+$('hide-comment').onclick = () => {
+  $('user-actions').hidePopover();
+  const state = states[active];
+  if (state.selected) {
+    state.selected.hidden = true;
+    state.selected = null;
+    stop();
+    renderSelection();
+    render();
+    notify('このコメントを非表示にしました。');
+  }
+  $('search').focus();
+};
 $('read-selected').onclick = () => states[active].selected ? speak(states[active].selected) : notify('コメントを選択してください。');
 $('stop-speech').onclick = stop;
 $('auto-speech').onchange = () => {
@@ -489,7 +506,7 @@ $('clear').onclick = () => { clearMessages(states[active]); stop(); renderSelect
 
 function renderStageChat() {
   const state = states[active];
-  const messages = state.messages.filter(message => !userRule(state, message.user).hidden);
+  const messages = state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden);
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
   list.replaceChildren();
@@ -588,7 +605,7 @@ function renderStudio() {
   $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
   $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
   $('studio-list-count').value = studio.listCount;
-  $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · ユーザー名から操作`;
+  $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · ユーザー名・コメントから操作`;
   $('studio-actor-width').value = studio.actorWidth;
   $('studio-width-value').textContent = `${studio.actorWidth}%`;
   $('studio-decoration').checked = studio.decoration;

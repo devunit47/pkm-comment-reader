@@ -33,7 +33,7 @@ export function userRule(state, user) {
 export function visibleMessages(state) {
   const query = state.search.toLowerCase();
   return state.messages.filter(message =>
-    !userRule(state, message.user).hidden &&
+    !message.hidden && !userRule(state, message.user).hidden &&
     (state.filter !== 'first' || message.first) &&
     `${message.user} ${message.text}`.toLowerCase().includes(query));
 }

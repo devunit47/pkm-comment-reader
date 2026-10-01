@@ -340,6 +340,11 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
     });
     await page.goto('http://127.0.0.1:' + server.address().port);
     assert.equal(await page.locator('.moderation').count(), 0);
+    const total = await page.locator('#comment-list .comment').count();
+    await page.locator('#comment-list .message').first().click();
+    assert.equal(await page.locator('#user-actions').isVisible(), true);
+    await page.locator('#hide-comment').click();
+    assert.equal(await page.locator('#comment-list .comment').count(), total - 1);
     const author = page.locator('#comment-list .username').first();
     const username = await author.textContent();
     await author.focus(); await page.keyboard.press('Enter');

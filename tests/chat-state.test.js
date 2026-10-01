@@ -40,3 +40,12 @@ test('history limits and filters apply independently', () => {
   addMessage(kick, 'viewer', 'Second comment', 401);
   assert.deepEqual(visibleMessages(kick).map(message => message.text), ['Kick hello']);
 });
+
+test('hiding one comment leaves other messages from the same user visible', () => {
+  const state = createChatState();
+  const first = addMessage(state, 'viewer', 'first', 1);
+  addMessage(state, 'viewer', 'second', 2);
+  first.hidden = true;
+  assert.deepEqual(visibleMessages(state).map(message => message.id), [2]);
+  assert.deepEqual(userRule(state, 'viewer'), {});
+});
