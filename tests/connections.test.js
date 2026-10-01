@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ChatConnection, parseKickMessage, parseTwitchMessage, readSavedConnections, validChannel, connectionPresentation } from '../connections.js';
+import { ChatConnection, parseTwitchMessage, readSavedConnections, validChannel, connectionPresentation } from '../connections.js';
+import { parseKickMessage } from '../kick.js';
 
 test('connection labels distinguish actual subscriptions from demos, pending connections and failures', () => {
   for (const status of ['デモモード', '未接続', '接続準備中', '接続失敗', '接続エラー — 通信環境を確認してください', '切断されました — 再接続してください', '再接続が必要です']) {
@@ -90,9 +91,12 @@ test('late events from old sockets and cancelled Kick lookups are ignored', asyn
   assert.equal(twitch.connected.length, 0);
   assert.equal(twitch.messages.length, 0);
   let resolve;
-  const kick = client('kick', { fetchImpl: () => new Promise(done => { resolve = done; }) });
+  let lookupStarted;
+  const started = new Promise(done => { lookupStarted = done; });
+  const kick = client('kick', { fetchImpl: () => new Promise(done => { resolve = done; lookupStarted(); }) });
   t.after(() => kick.connection.disconnect());
   const pending = kick.connection.connect('old-channel');
+  await started;
   kick.connection.disconnect();
   resolve({ ok: true, json: async () => ({ chatroomId: 123 }) });
   await pending;

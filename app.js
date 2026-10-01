@@ -2,11 +2,19 @@ import { createChatState, addMessage, userRule, visibleMessages, clearMessages }
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 import { readStudio, normalizeStudio, readSavedVoices } from './studio.js';
+import { enabledPlatforms, publication } from './app-config.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };
 const states = { twitch: createChatState(), kick: createChatState() };
 let active = 'twitch';
+document.querySelectorAll('[data-service]').forEach(element => {
+  element.hidden = !enabledPlatforms.includes(element.dataset.service);
+});
+if (publication === 'pages') {
+  $('platform-help').textContent = 'Twitch専用の公開版';
+  $('edition-label').textContent = 'ぽこめ Reader / Twitch版';
+}
 let session = 0;
 let storage;
 try { storage = window.localStorage; } catch { /* Storage may be disabled by the browser. */ }
@@ -235,7 +243,7 @@ function page(name) {
 }
 
 function switchPlatform(platform) {
-  if (active === platform) return;
+  if (!enabledPlatforms.includes(platform) || active === platform) return;
   stop();
   active = platform;
   const state = states[active];
@@ -493,7 +501,7 @@ $('demo').onclick = () => {
 };
 
 const connections = {};
-for (const platform of Object.keys(states)) {
+for (const platform of enabledPlatforms) {
   $(`${platform}-channel`).value = savedConnections[platform];
   connections[platform] = new ChatConnection(platform, {
     onStatus(status, channel) {

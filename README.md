@@ -6,6 +6,22 @@ Twitch・Kickのコメント表示・音声読み上げ・ローカルのユー�
 
 Node.js 20以上で `npm start` を実行して http://localhost:5173 を開きます。外部パッケージのインストールは不要です。
 
+## 開発版とGitHub Pages版
+
+同じリポジトリで開発を続けられます。画面・読み上げ・デザインのコードは共用し、公開用ビルドだけで利用可能なサービスを切り替えます。
+
+| 用途 | コマンド | 利用できるサービス |
+| --- | --- | --- |
+| ローカル開発 | `npm start` | Twitch・Kick（別々のチャット） |
+| 公開ファイル生成 | `npm run build:pages` | `dist/`にTwitch専用版を生成 |
+| 公開版の動作確認 | ビルド後に`npm run preview:pages` | http://localhost:5174/preview/ |
+
+公開版にはKickのボタン・接続設定を表示せず、Kickの接続を作成しません。Kick用モジュール`kick.js`（公開Pusherキーを含む）、ローカルサーバー、テスト、開発用ファイルは公開用ファイルに含めません。共通の接続管理コードは共用します。相対パスを使うため、`https://ユーザー名.github.io/リポジトリ名/`形式でも動作します。`dist/`は生成物なのでGitには登録しません。出力先に想定外のファイルがある場合は、誤公開を防ぐためビルドを停止します。
+
+リポジトリをGitHubへ登録したあと、Settings → Pages → Build and deployment → Sourceを「GitHub Actions」に設定します。Actionsの「Publish Twitch version to GitHub Pages」を選び、「Run workflow」で公開するブランチを指定して実行します。検証に成功した場合だけ`dist/`を公開します。ワークフローは手動実行のみで、開発中のpushだけでは公開版を更新しません。[GitHub公式の公開設定手順](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
+
+Twitchはブラウザから直接WebSocketへ接続するため、この公開版にNode.jsサーバーや認証秘密鍵は不要です。ブラウザの音声・保存機能は公開版でも使います。localhostと公開URLの保存データは別で、設定や立ち絵は自動移行しません。同じGitHub Pagesのオリジン上の別アプリとはlocalStorageのキーが共有されるため、このアプリの複数公開版では設定が共有されることがあります。音声はブラウザ・OSと操作による再生制限に依存します。
+
 ## 使い方
 
 - 「雑談モード」で配信に映す画面へ切り替えます。設定・ユーザー管理・検索などを隠し、チャット、実際に読み上げ中のコメント、装飾、配信者用スペースを表示します。Twitch・Kickのコメントは混在せず、表示中のサービスのみ読み上げます。右上に常時表示する「雑談モードを終了」で操作画面に戻れます。Escapeキーでも戻れます。

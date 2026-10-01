@@ -1,5 +1,3 @@
-export const KICK_SOCKET_URL = 'wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0&flash=false';
-
 export function connectionPresentation(status) {
   if (status === '接続中') return { kind: 'connected', label: '接続済み', detail: 'コメント受信待機中' };
   if (status === '接続準備中') return { kind: 'connecting', label: '接続準備中', detail: '接続完了を待っています' };
@@ -34,16 +32,6 @@ export function parseTwitchMessage(line, channel) {
   const displayName = (tags['display-name'] || match[2]).replace(/\\([s:rn\\])/g,
     (_, value) => ({ s: ' ', ':': ';', r: '\r', n: '\n', '\\': '\\' })[value]);
   return { user: displayName, login: match[2], text: match[4] };
-}
-
-export function parseKickMessage(event, room) {
-  if (event.event !== 'App\\Events\\ChatMessageEvent' || event.channel !== room) return null;
-  try {
-    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-    if (typeof data?.sender?.username !== 'string' || typeof data.content !== 'string') return null;
-    const login = typeof data.sender.slug === 'string' && data.sender.slug ? data.sender.slug : data.sender.username;
-    return { user: data.sender.username, login, text: data.content, id: data.id, createdAt: data.created_at };
-  } catch { return null; }
 }
 
 // Each instance owns one service's socket, lookup, timers and callbacks.
@@ -87,11 +75,14 @@ export class ChatConnection {
     };
     this.onStatus('接続準備中', channel);
     let room;
+    let kick;
     if (this.platform === 'kick') {
       const controller = new AbortController();
       this.lookup = controller;
       this.timer = setTimeout(() => fail('チャンネル情報の取得タイムアウト'), this.timeoutMs);
       try {
+        kick = await import('./kick.js');
+        if (!current()) return;
         const response = await this.fetchImpl(`/api/kick/channel/${encodeURIComponent(channel)}`, {
           signal: controller.signal,
         });
@@ -111,7 +102,7 @@ export class ChatConnection {
     if (!current()) return;
     let ws;
     try {
-      ws = new this.WebSocketClass(this.platform === 'kick' ? KICK_SOCKET_URL : 'wss://irc-ws.chat.twitch.tv:443');
+      ws = new this.WebSocketClass(this.platform === 'kick' ? kick.KICK_SOCKET_URL : 'wss://irc-ws.chat.twitch.tv:443');
     } catch { fail('接続失敗'); return; }
     this.socket = ws;
     this.timer = setTimeout(() => fail('接続タイムアウト — 再接続してください'), this.timeoutMs);
@@ -177,7 +168,7 @@ export class ChatConnection {
         joined = true;
         connected();
       } else if (joined) {
-        const message = parseKickMessage(packet, room);
+        const message = kick.parseKickMessage(packet, room);
         if (!message || (message.id && messageIds.has(message.id))) return;
         if (message.id) {
           messageIds.add(message.id);
