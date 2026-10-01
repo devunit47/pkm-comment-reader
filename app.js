@@ -253,6 +253,7 @@ function renderUsers() {
 }
 
 function page(name) {
+  document.querySelector('main').dataset.view = name;
   for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
   document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
   $('page-title').textContent = { home: 'みんなの声が、ここに。', users: 'ひとりひとりを、大切に。', settings: '配信と、つながろう。', studio: 'あなたらしい、雑談の時間。', updates: '更新情報' }[name];

@@ -131,3 +131,5 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .speech-engine-actions{display:flex;gap:12px;padding:0 18px 8px}.speech-help a{color:var(--mint)}.speech-engine-actions button{min-height:32px}
 
 .updates{max-width:780px}.update-entry{margin:24px;padding-bottom:8px}.update-entry h3{font-size:14px;color:var(--mint);margin:0 0 16px}.update-entry ul{margin:0;padding-left:1.5em;line-height:1.9}.update-entry li+li{margin-top:10px}@media(max-width:800px){.sidebar nav{flex-wrap:wrap;justify-content:flex-end}.update-entry{margin:20px}}
+
+main[data-view=updates]>.platform-tabs,main[data-view=updates]>header .eyebrow,main[data-view=updates]>header p,main[data-view=updates]>header .header-right{display:none}
