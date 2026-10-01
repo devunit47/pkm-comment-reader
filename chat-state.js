@@ -4,7 +4,7 @@ export function createChatState() {
   return {
     messages: [], seen: new Set(), received: 0, selected: null,
     rules: Object.create(null), status: 'デモモード', channel: '',
-    autoSpeech: false, readName: false, voice: '', volume: 0.8, rate: 1.1,
+    autoSpeech: true, readName: false, voice: '', volume: 0.8, rate: 1.1,
     search: '', filter: 'all', sampleIndex: 0,
     speechOptions: normalizeSpeechOptions(), speechHistory: createSpeechHistory(),
   };

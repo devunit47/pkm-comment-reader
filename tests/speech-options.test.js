@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions, prepareSpeechText, createSpeechHistory, shouldAutoRead, rememberAutoRead, isSpeechUserExcluded } from '../speech-options.js';
+import { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions, prepareSpeechText, createSpeechHistory, shouldAutoRead, rememberAutoRead, isSpeechUserExcluded, readSavedAutoSpeech } from '../speech-options.js';
 import { createChatState, addMessage } from '../chat-state.js';
+
+test('auto speech defaults on and restores explicit off separately for each service', () => {
+  assert.equal(createChatState().autoSpeech, true);
+  assert.deepEqual(readSavedAutoSpeech(undefined), { twitch: true, kick: true });
+  assert.deepEqual(readSavedAutoSpeech({ getItem: () => '{broken' }), { twitch: true, kick: true });
+  assert.deepEqual(readSavedAutoSpeech({ getItem: () => JSON.stringify({ twitch: false, kick: true }) }), { twitch: false, kick: true });
+  assert.deepEqual(readSavedAutoSpeech({ getItem: () => JSON.stringify({ kick: false }) }), { twitch: true, kick: false });
+  assert.deepEqual(readSavedAutoSpeech({ getItem: () => JSON.stringify({ twitch: 'false', kick: null }) }), { twitch: true, kick: true });
+});
 
 test('URL omission retains surrounding Japanese and removes URL-only messages', () => {
   const options = normalizeSpeechOptions();

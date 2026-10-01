@@ -20,6 +20,17 @@ export function isSpeechUserExcluded(message, channel, options) {
     (options.skipBroadcaster && !!channel && login === channel.toLowerCase());
 }
 
+export function readSavedAutoSpeech(storage) {
+  const result = { twitch: true, kick: true };
+  try {
+    const saved = JSON.parse(storage?.getItem('pokome-auto-speech') || '{}');
+    for (const platform of Object.keys(result)) {
+      if (typeof saved?.[platform] === 'boolean') result[platform] = saved[platform];
+    }
+  } catch { /* Missing or invalid settings retain the enabled default. */ }
+  return result;
+}
+
 const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
 export function prepareSpeechText(text, options) {
   if (typeof text !== 'string') return '';

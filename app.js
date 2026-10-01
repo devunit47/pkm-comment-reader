@@ -1,6 +1,6 @@
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
-import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded } from './speech-options.js';
+import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };
@@ -10,6 +10,8 @@ let session = 0;
 let storage;
 try { storage = window.localStorage; } catch { /* Storage may be disabled by the browser. */ }
 const savedConnections = readSavedConnections(storage);
+const savedAutoSpeech = readSavedAutoSpeech(storage);
+for (const platform of Object.keys(states)) states[platform].autoSpeech = savedAutoSpeech[platform];
 try {
   const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
   for (const platform of Object.keys(states)) states[platform].speechOptions = normalizeSpeechOptions(saved?.[platform]);
@@ -118,13 +120,13 @@ function render() {
   renderUsers();
 }
 
-function add(platform, user, text, createdAt, login = user) {
+function add(platform, user, text, createdAt, login = user, readAutomatically = true) {
   const state = states[platform];
   const message = addMessage(state, user, text, ++session, createdAt, login);
   if (!message) return;
   if (platform === active) {
     render();
-    if (state.autoSpeech && !userRule(state, user).hidden && !userRule(state, user).muted) speak(message, true);
+    if (readAutomatically && state.autoSpeech && !userRule(state, user).hidden && !userRule(state, user).muted) speak(message, true);
   }
 }
 
@@ -248,6 +250,7 @@ $('read-selected').onclick = () => states[active].selected ? speak(states[active
 $('stop-speech').onclick = stop;
 $('auto-speech').onchange = () => {
   states[active].autoSpeech = $('auto-speech').checked;
+  save('pokome-auto-speech', { twitch: states.twitch.autoSpeech, kick: states.kick.autoSpeech });
   renderSpeechSettings();
   if (!states[active].autoSpeech) stop();
 };
@@ -304,6 +307,7 @@ if (supported) {
   loadVoices();
   window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
 } else {
+  for (const state of Object.values(states)) state.autoSpeech = false;
   $('auto-speech').disabled = true;
   $('speech-status').textContent = 'ブラウザ非対応';
 }
@@ -353,10 +357,12 @@ function clock() {
 clock();
 setInterval(clock, 30000);
 for (const platform of Object.keys(states)) {
-  for (const sample of samples[platform]) add(platform, ...sample);
+  for (const [user, text] of samples[platform]) add(platform, user, text, undefined, user, false);
   states[platform].selected = states[platform].messages[0];
 }
 renderSelection();
+$('auto-speech').checked = states[active].autoSpeech;
+renderSpeechSettings();
 renderSpeechOptions();
 render();
 window.addEventListener('beforeunload', () => {
