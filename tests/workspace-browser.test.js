@@ -20,6 +20,10 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
+    const wavePosition = await page.locator('.stage-wave').boundingBox();
+    await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '読み上げ中'; });
+    assert.deepEqual(await page.locator('.stage-wave').boundingBox(), wavePosition);
+    await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '待機中'; });
     const initialCount = await page.locator('.stage-comment').count();
     assert.equal(await page.locator('#stage-comment-style').isVisible(), false);
     await page.getByRole('button', { name: 'コメントの表示設定', exact: true }).click();
