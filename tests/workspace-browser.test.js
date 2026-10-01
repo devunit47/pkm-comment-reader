@@ -323,3 +323,35 @@ test('local engines select voices, play synchronized previews, stop and persist 
     assert.deepEqual(errors, []);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });
+
+
+test('fixed home side panels keep all controls reachable by scrolling', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+  const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { chromium } = require(runtime); const browser = await chromium.launch({ headless: true, executablePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.addInitScript(() => {
+      localStorage.setItem('pokome-workspace-v1', JSON.stringify({ version: 1, talk: null, home: { panels: {
+        comments: { x: 0, y: 0, w: 65, h: 100, z: 1 },
+        now: { x: 67, y: 0, w: 33, h: 20, z: 1 },
+        reading: { x: 67, y: 22, w: 33, h: 60, z: 1 },
+        moderation: { x: 67, y: 84, w: 33, h: 14, z: 1 },
+      } } }));
+    });
+    await page.goto('http://127.0.0.1:' + server.address().port);
+    for (const selector of ['.now', '.reading', '.moderation']) {
+      const measurements = await page.locator(selector).evaluate(panel => ({ overflow: getComputedStyle(panel).overflowY, height: panel.clientHeight, content: panel.scrollHeight }));
+      assert.equal(measurements.overflow, 'auto'); assert.ok(measurements.content > measurements.height);
+    }
+    await page.locator('#stop-speech').scrollIntoViewIfNeeded();
+    const button = await page.locator('#stop-speech').boundingBox(); const panel = await page.locator('.reading').boundingBox();
+    assert.ok(button.y >= panel.y && button.y + button.height <= panel.y + panel.height);
+    await page.locator('#stop-speech').click();
+    await page.locator('[data-page="updates"]').click();
+    assert.equal(await page.locator('.platform-tabs').isVisible(), false);
+    assert.equal(await page.locator('#enter-talk').isVisible(), false);
+    assert.equal(await page.locator('#page-title').textContent(), '更新情報');
+    await page.locator('[data-page="home"]').click();
+    assert.equal(await page.locator('.platform-tabs').isVisible(), true);
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+});
