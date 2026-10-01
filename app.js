@@ -461,6 +461,16 @@ function renderStudio() {
   document.querySelector('.stage-speech').dataset.style = studio.speechStyle;
   stage.style.setProperty('--speech-image', `url("${studio.speechImage || './speech-background.svg'}")`);
   stage.style.setProperty('--speech-image-ink', studio.speechTextColor);
+  const preview = document.querySelector('.speech-bubble');
+  preview.dataset.style = studio.speechStyle;
+  for (const property of ['--speech-background', '--speech-ink', '--speech-image', '--speech-image-ink']) {
+    preview.style.setProperty(property, stage.style.getPropertyValue(property));
+  }
+  const stageColors = getComputedStyle(stage);
+  preview.style.setProperty('--stage-surface', stageColors.getPropertyValue('--stage-surface'));
+  preview.style.setProperty('--stage-text', stageColors.getPropertyValue('--stage-text'));
+  preview.style.setProperty('--stage-border', stageColors.getPropertyValue('--stage-border'));
+  preview.style.setProperty('--stage-accent', stageColors.getPropertyValue('--stage-accent'));
   stage.style.setProperty('--actor-width', `${studio.actorWidth}fr`);
   stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
   $('stage-title').textContent = studio.title;

@@ -18,6 +18,15 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
+    for (const style of ['panel', 'bubble', 'image']) {
+      await page.locator('#studio-speech-style').evaluate((select, value) => { select.value = value; select.dispatchEvent(new Event('change')); }, style);
+      const appearance = await page.evaluate(style => {
+        const preview = getComputedStyle(document.querySelector('.speech-bubble'));
+        const stage = getComputedStyle(document.querySelector(style === 'image' ? '.stage-speech-content' : '.stage-speech'));
+        return [style === 'image' ? preview.backgroundImage : preview.backgroundColor, style === 'image' ? stage.backgroundImage : stage.backgroundColor];
+      }, style);
+      assert.equal(appearance[0], appearance[1]);
+    }
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
     await page.locator('#stage-connection').click();
