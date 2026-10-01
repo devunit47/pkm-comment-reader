@@ -36,6 +36,8 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.locator('[data-page="home"]').click();
     await page.locator('#enter-talk').click();
     const titleBox = await page.locator('#stage-title').boundingBox();
+    const subtitleBox = await page.locator('#stage-subtitle').boundingBox();
+    assert.ok(subtitleBox.y >= titleBox.y + titleBox.height, 'subtitle stays below the title');
     const exitBox = await page.locator('#leave-talk').boundingBox();
     assert.ok(Math.abs(titleBox.y - exitBox.y) < 2, 'title and exit button have aligned top edges');
     const hintBox = await page.locator('.stage-exit-hint').boundingBox();

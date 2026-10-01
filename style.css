@@ -79,6 +79,7 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .pokome-workspace .pokome-comment__author{color:var(--pk-accent-color,var(--mint))}
 .studio-fields textarea{width:100%;font:13px monospace;min-height:200px;resize:vertical;background:var(--bg);color:var(--text);padding:12px;border:1px solid var(--line)}
 .stage-editable{position:relative;display:inline-flex;align-items:center;gap:8px;min-width:44px;min-height:32px;max-width:100%;vertical-align:middle}
+#talk-stage .stage-header>div:first-child{display:flex;flex-direction:column;align-items:flex-start;min-width:0;flex:1}
 .stage-edit-pencil{flex-shrink:0;width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--stage-border);border-radius:6px;background:var(--stage-surface);color:var(--stage-text);font-size:20px;line-height:1;opacity:0;pointer-events:none}
 .stage-edit-pencil[hidden]{display:none}
 .stage-editable:hover>.stage-edit-pencil,.stage-editable:focus-within>.stage-edit-pencil{opacity:1;pointer-events:auto}
