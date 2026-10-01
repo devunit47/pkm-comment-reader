@@ -27,6 +27,7 @@ let studio = readStudio(storage);
 let currentSpeech = null;
 let speechDisplayTimer;
 let imageGeneration = 0;
+let speechImageGeneration = 0;
 try {
   const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
   for (const platform of Object.keys(states)) states[platform].speechOptions = normalizeSpeechOptions(saved?.[platform]);
@@ -373,7 +374,7 @@ function renderStageSpeech() {
   $('stage-speech-status').textContent = currentSpeech?.speaking ? '読み上げ中' : '待機中';
   $('stage-speech-user').textContent = currentSpeech?.user || '';
   $('stage-speech-text').textContent = currentSpeech?.text || '次のコメントを待っています。';
-  $('stage-speech-text').parentElement.dataset.speaking = String(!!currentSpeech?.speaking);
+  $('stage-speech-text').closest('.stage-speech').dataset.speaking = String(!!currentSpeech?.speaking);
 }
 
 function renderStudio() {
@@ -391,6 +392,8 @@ function renderStudio() {
   }).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0);
   stage.style.setProperty('--speech-ink', luminance > .179 ? '#000000' : '#ffffff');
   document.querySelector('.stage-speech').dataset.style = studio.speechStyle;
+  stage.style.setProperty('--speech-image', `url("${studio.speechImage || './speech-background.svg'}")`);
+  stage.style.setProperty('--speech-image-ink', studio.speechTextColor);
   stage.style.setProperty('--actor-width', `${studio.actorWidth}fr`);
   stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
   $('stage-title').textContent = studio.title;
@@ -401,6 +404,9 @@ function renderStudio() {
   $('studio-speech-style').value = studio.speechStyle;
   $('studio-speech-background').value = studio.speechBackground;
   $('studio-speech-background').disabled = studio.speechStyle !== 'bubble';
+  $('studio-speech-text-color').value = studio.speechTextColor;
+  $('studio-speech-image-status').textContent = studio.speechImage ? 'ユーザーの背景画像を登録済みです。' : '標準の背景画像を使用します。';
+  $('reset-speech-image').disabled = !studio.speechImage;
   const hasImage = studio.source === 'image' && !!studio.image;
   $('actor-image').hidden = !hasImage;
   if ($('actor-image').getAttribute('src') !== (studio.image || null)) {
@@ -452,6 +458,7 @@ function updateStudio() {
     title: $('studio-title').value, subtitle: $('studio-subtitle').value,
     speechTitle: $('studio-speech-title').value, speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
+    speechTextColor: $('studio-speech-text-color').value,
     fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
     chatCount: Number($('studio-chat-count').value),
     actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
@@ -460,7 +467,7 @@ function updateStudio() {
   renderStudio();
   renderStageChat();
 }
-for (const id of ['theme', 'accent', 'title', 'subtitle', 'speech-title', 'speech-font-size', 'speech-style', 'speech-background', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'title', 'subtitle', 'speech-title', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {
@@ -468,13 +475,14 @@ $('studio-theme').onchange = () => {
   updateStudio();
 };
 $('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
-$('studio-image').onchange = async () => {
-  const file = $('studio-image').files[0];
-  const generation = ++imageGeneration;
+async function uploadStudioImage(input, target) {
+  const file = input.files[0];
+  const isSpeech = target === 'speechImage';
+  const generation = isSpeech ? ++speechImageGeneration : ++imageGeneration;
   if (!file) return;
   if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2 * 1024 * 1024) {
     notify('PNG・JPEG・WebP・GIFの2MB以下の画像を選んでください。');
-    $('studio-image').value = '';
+    input.value = '';
     return;
   }
   try {
@@ -487,15 +495,23 @@ $('studio-image').onchange = async () => {
     const probe = new Image();
     probe.src = image;
     await probe.decode();
-    if (generation !== imageGeneration) return;
-    const next = normalizeStudio({ ...studio, source: 'image', image });
+    if (generation !== (isSpeech ? speechImageGeneration : imageGeneration)) return;
+    const next = normalizeStudio({ ...studio, ...(isSpeech ? { speechStyle: 'image', speechImage: image } : { source: 'image', image }) });
     // Only replace the previous image once saving the new one succeeds.
     if (!storage) throw new Error('ブラウザに画像を保存できません。');
     storage.setItem('pokome-studio', JSON.stringify(next));
     studio = next;
     renderStudio();
   } catch { notify('画像を読み込み・保存できませんでした。小さい画像やブラウザの保存設定を確認してください。'); }
-  $('studio-image').value = '';
+  input.value = '';
+}
+$('studio-image').onchange = () => uploadStudioImage($('studio-image'), 'image');
+$('studio-speech-image').onchange = () => uploadStudioImage($('studio-speech-image'), 'speechImage');
+$('reset-speech-image').onclick = () => {
+  speechImageGeneration++;
+  studio = { ...studio, speechImage: '', speechStyle: 'image' };
+  save('pokome-studio', studio);
+  renderStudio();
 };
 $('remove-actor-image').onclick = () => {
   imageGeneration++;

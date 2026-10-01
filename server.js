@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { validChannel } from './connections.js';
 const files = {'/':'index.html','/app.js':'app.js','/style.css':'style.css',
-  '/connections.js':'connections.js','/kick.js':'kick.js','/chat-state.js':'chat-state.js','/speech-options.js':'speech-options.js','/studio.js':'studio.js','/app-config.js':'app-config.js'};
-const types = {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
+  '/connections.js':'connections.js','/kick.js':'kick.js','/chat-state.js':'chat-state.js','/speech-options.js':'speech-options.js','/studio.js':'studio.js','/app-config.js':'app-config.js','/speech-background.svg':'speech-background.svg'};
+const types = {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',svg:'image/svg+xml'};
 
 export function createServer({ fetchImpl = globalThis.fetch } = {}) {
  return http.createServer(async (req,res)=>{

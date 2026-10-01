@@ -45,5 +45,12 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speech[data-style=bubble]{position:relative;height:clamp(160px,26dvh,210px);max-height:44%;background:var(--speech-background);color:var(--speech-ink);border-color:var(--speech-background);overflow:visible}
 .stage-speech[data-style=bubble]:after{content:'';position:absolute;right:36px;bottom:-12px;width:24px;height:14px;background:var(--speech-background);clip-path:polygon(0 0,100% 0,25% 100%);pointer-events:none}
 .stage-speech[data-style=bubble] .stage-panel-label,.stage-speech[data-style=bubble] .stage-panel-label h2,.stage-speech[data-style=bubble] .stage-speaker,.stage-speech[data-style=bubble] .stage-wave,.stage-speech[data-style=bubble] #stage-speech-user{color:var(--speech-ink)}
-.stage-speech[data-style=bubble] #stage-speech-text{max-height:calc(100% - 62px);overflow:auto;scrollbar-width:thin}
+.stage-speech[data-style=bubble] #stage-speech-text{max-height:none;overflow:visible}
 .stage-speech[data-style=bubble] .stage-panel-label{padding-top:14px;padding-bottom:12px}
+.stage-speech{display:flex;flex-direction:column}
+.stage-speech-content{flex:1;min-height:0;overflow:auto;scrollbar-width:thin}
+.stage-speech[data-style=image]{height:clamp(180px,30dvh,240px);max-height:48%;background:transparent;border-color:transparent;padding-bottom:0;overflow:visible}
+.stage-speech[data-style=image] .stage-panel-label{padding:0 8px 12px}
+.stage-speech[data-style=image] .stage-speech-content{background-image:var(--speech-image);background-size:100% 100%;background-repeat:no-repeat;padding:16px 22% 24px 22px;color:var(--speech-image-ink)}
+.stage-speech[data-style=image] #stage-speech-user{padding:0;color:inherit}
+.stage-speech[data-style=image] #stage-speech-text{margin:8px 0 0;color:inherit}

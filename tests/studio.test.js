@@ -39,8 +39,8 @@ test('speech bubble appearance restores and rejects invalid styles and colors', 
   for (const speechBackground of ['red', '#abc', 'url(x)', null]) {
     assert.equal(normalizeStudio({ speechBackground }).speechBackground, DEFAULT_STUDIO.speechBackground);
   }
-  assert.equal(normalizeStudio({ speechStyle: 'invalid' }).speechStyle, 'panel');
-  assert.equal(normalizeStudio({ title: '旧設定' }).speechStyle, 'panel');
+  assert.equal(normalizeStudio({ speechStyle: 'invalid' }).speechStyle, 'image');
+  assert.equal(normalizeStudio({ title: '旧設定' }).speechStyle, 'image');
 });
 
 test('chat count accepts 1–100, preserves older settings and rejects invalid counts', () => {
@@ -51,4 +51,16 @@ test('chat count accepts 1–100, preserves older settings and rejects invalid c
     assert.equal(normalizeStudio({ chatCount }).chatCount, 30);
   }
   assert.equal(normalizeStudio({ theme: 'rose' }).chatCount, 30);
+});
+
+test('speech images accept only bounded raster data and preserve independent actor images', () => {
+  const speechImage = 'data:image/png;base64,aGVsbG8=';
+  const value = readStudio({ getItem: () => JSON.stringify({ speechImage, speechStyle: 'image', speechTextColor: '#abcdef', image: 'data:image/jpeg;base64,YWJj' }) });
+  assert.equal(value.speechImage, speechImage);
+  assert.equal(value.image, 'data:image/jpeg;base64,YWJj');
+  assert.equal(value.speechTextColor, '#abcdef');
+  for (const speechImage of ['https://example.com/a.png', 'data:image/svg+xml;base64,YWJj', 'data:image/png;base64,' + 'a'.repeat(2800000), null]) {
+    assert.equal(normalizeStudio({ speechImage }).speechImage, '');
+  }
+  assert.equal(normalizeStudio({ speechTextColor: 'url(x)' }).speechTextColor, DEFAULT_STUDIO.speechTextColor);
 });
