@@ -1,16 +1,23 @@
 export const DEFAULT_SPEECH_OPTIONS = Object.freeze({
   maxLength: 100, skipUrls: true, skipDuplicates: true, skipCommands: false, userInterval: 0,
+  skipNightbot: true, skipBroadcaster: true,
 });
 
 export function normalizeSpeechOptions(value = {}) {
   const options = { ...DEFAULT_SPEECH_OPTIONS };
   if (!value || typeof value !== 'object') return options;
-  for (const key of ['skipUrls', 'skipDuplicates', 'skipCommands']) {
+  for (const key of ['skipUrls', 'skipDuplicates', 'skipCommands', 'skipNightbot', 'skipBroadcaster']) {
     if (typeof value[key] === 'boolean') options[key] = value[key];
   }
   if (Number.isInteger(value.maxLength) && value.maxLength >= 10 && value.maxLength <= 500) options.maxLength = value.maxLength;
   if (Number.isInteger(value.userInterval) && value.userInterval >= 0 && value.userInterval <= 60) options.userInterval = value.userInterval;
   return options;
+}
+
+export function isSpeechUserExcluded(message, channel, options) {
+  const login = (message.login || message.user).toLowerCase();
+  return (options.skipNightbot && login === 'nightbot') ||
+    (options.skipBroadcaster && !!channel && login === channel.toLowerCase());
 }
 
 const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });

@@ -1,6 +1,6 @@
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel } from './connections.js';
-import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory } from './speech-options.js';
+import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded } from './speech-options.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };
@@ -71,7 +71,7 @@ function renderSelection() {
   const message = state.selected;
   $('preview-user').textContent = message?.user || 'ぽこめ Reader';
   $('preview-text').textContent = message
-    ? prepareSpeechText(message.text, state.speechOptions) || 'このコメントは読み上げ対象外です。'
+    ? (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions)) || 'このコメントは読み上げ対象外です。'
     : `${names[active]}のコメントを待っています。`;
   $('selected-user').textContent = message?.user || 'コメントを選択してください';
   $('hide-user').disabled = !message;
@@ -107,9 +107,9 @@ function render() {
   renderUsers();
 }
 
-function add(platform, user, text, createdAt) {
+function add(platform, user, text, createdAt, login = user) {
   const state = states[platform];
-  const message = addMessage(state, user, text, ++session, createdAt);
+  const message = addMessage(state, user, text, ++session, createdAt, login);
   if (!message) return;
   if (platform === active) {
     render();
@@ -121,6 +121,10 @@ function speak(message, automatic = false) {
   if (!supported) { notify('このブラウザは読み上げに対応していません。'); return; }
   if (pendingSpeech >= 20) return;
   const state = states[active];
+  if (isSpeechUserExcluded(message, state.channel, state.speechOptions)) {
+    if (!automatic) notify('このユーザーは設定により読み上げ対象外です。');
+    return;
+  }
   const text = prepareSpeechText(message.text, state.speechOptions);
   if (!text) { if (!automatic) notify('URLのみ・コマンドなど、設定により読み上げ対象外です。'); return; }
   if (automatic && !shouldAutoRead(state.speechHistory, message.user, text, state.speechOptions)) return;
@@ -243,12 +247,15 @@ function renderSpeechOptions() {
   $('skip-urls').checked = options.skipUrls;
   $('skip-duplicates').checked = options.skipDuplicates;
   $('skip-commands').checked = options.skipCommands;
+  $('skip-nightbot').checked = options.skipNightbot;
+  $('skip-broadcaster').checked = options.skipBroadcaster;
 }
 function updateSpeechOptions() {
   states[active].speechOptions = normalizeSpeechOptions({
     maxLength: Number($('max-length').value), userInterval: Number($('user-interval').value),
     skipUrls: $('skip-urls').checked, skipDuplicates: $('skip-duplicates').checked,
     skipCommands: $('skip-commands').checked,
+    skipNightbot: $('skip-nightbot').checked, skipBroadcaster: $('skip-broadcaster').checked,
   });
   stop();
   states[active].speechHistory = createSpeechHistory();
@@ -256,7 +263,7 @@ function updateSpeechOptions() {
   renderSpeechOptions();
   renderSelection();
 }
-for (const id of ['max-length', 'user-interval', 'skip-urls', 'skip-duplicates', 'skip-commands']) {
+for (const id of ['max-length', 'user-interval', 'skip-urls', 'skip-duplicates', 'skip-commands', 'skip-nightbot', 'skip-broadcaster']) {
   $(id).onchange = updateSpeechOptions;
 }
 for (const id of ['volume', 'rate']) $(id).oninput = () => {
@@ -301,7 +308,7 @@ for (const platform of Object.keys(states)) {
       states[platform].channel = channel;
       renderConnection();
     },
-    onMessage(message) { add(platform, message.user, message.text, message.createdAt); },
+    onMessage(message) { add(platform, message.user, message.text, message.createdAt, message.login); },
     onConnected(channel) {
       savedConnections[platform] = channel;
       save('pokome-connections', savedConnections);

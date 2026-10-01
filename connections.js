@@ -24,7 +24,7 @@ export function parseTwitchMessage(line, channel) {
     .map(tag => { const index = tag.indexOf('='); return [tag.slice(0, index), tag.slice(index + 1)]; }));
   const displayName = (tags['display-name'] || match[2]).replace(/\\([s:rn\\])/g,
     (_, value) => ({ s: ' ', ':': ';', r: '\r', n: '\n', '\\': '\\' })[value]);
-  return { user: displayName, text: match[4] };
+  return { user: displayName, login: match[2], text: match[4] };
 }
 
 export function parseKickMessage(event, room) {
@@ -32,7 +32,8 @@ export function parseKickMessage(event, room) {
   try {
     const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
     if (typeof data?.sender?.username !== 'string' || typeof data.content !== 'string') return null;
-    return { user: data.sender.username, text: data.content, id: data.id, createdAt: data.created_at };
+    const login = typeof data.sender.slug === 'string' && data.sender.slug ? data.sender.slug : data.sender.username;
+    return { user: data.sender.username, login, text: data.content, id: data.id, createdAt: data.created_at };
   } catch { return null; }
 }
 

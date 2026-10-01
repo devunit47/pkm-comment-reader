@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions, prepareSpeechText, createSpeechHistory, shouldAutoRead, rememberAutoRead } from '../speech-options.js';
+import { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions, prepareSpeechText, createSpeechHistory, shouldAutoRead, rememberAutoRead, isSpeechUserExcluded } from '../speech-options.js';
 import { createChatState, addMessage } from '../chat-state.js';
 
 test('URL omission retains surrounding Japanese and removes URL-only messages', () => {
@@ -58,5 +58,21 @@ test('saved settings validate bounds and tolerate corrupt storage values', () =>
   assert.deepEqual(normalizeSpeechOptions(null), DEFAULT_SPEECH_OPTIONS);
   assert.deepEqual(normalizeSpeechOptions({ maxLength: -1, userInterval: Infinity, skipUrls: 'false' }), DEFAULT_SPEECH_OPTIONS);
   const saved = { maxLength: 30, skipUrls: false, skipDuplicates: false, skipCommands: true, userInterval: 5 };
-  assert.deepEqual(normalizeSpeechOptions(JSON.parse(JSON.stringify(saved))), saved);
+  assert.deepEqual(normalizeSpeechOptions(JSON.parse(JSON.stringify(saved))), { ...DEFAULT_SPEECH_OPTIONS, ...saved });
+});
+
+test('Nightbot and broadcaster exclusions use exact account names and independent settings', () => {
+  const options = normalizeSpeechOptions();
+  const owner = addMessage(createChatState(), '配信者', 'hello', 1, Date.now(), 'Owner');
+  assert.equal(isSpeechUserExcluded(owner, 'owner', options), true);
+  assert.equal(isSpeechUserExcluded(owner, 'different_channel', options), false);
+  assert.equal(isSpeechUserExcluded(owner, '', options), false);
+  assert.equal(isSpeechUserExcluded(owner, 'owner', { ...options, skipBroadcaster: false }), false);
+  assert.equal(isSpeechUserExcluded({ user: 'NIGHTBOT' }, 'owner', options), true);
+  assert.equal(isSpeechUserExcluded({ user: 'Nightbot', login: 'viewer' }, 'owner', options), false);
+  assert.equal(isSpeechUserExcluded({ user: 'nightbot_fan' }, 'owner', options), false);
+  const disabled = normalizeSpeechOptions({ skipNightbot: false, skipBroadcaster: false });
+  assert.equal(isSpeechUserExcluded({ user: 'Nightbot' }, 'owner', disabled), false);
+  assert.equal(isSpeechUserExcluded(owner, 'owner', disabled), false);
+  assert.deepEqual(normalizeSpeechOptions(JSON.parse(JSON.stringify(disabled))), disabled);
 });
