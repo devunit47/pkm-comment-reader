@@ -1,1 +1,1 @@
-{"name":"pokome-reader","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js","check":"node --check app.js && node --check server.js"}}
+{"name":"pokome-reader","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node server.js","test":"node --test","check":"node --check app.js && node --check server.js && node --check connections.js && node --check chat-state.js"}}
