@@ -1,5 +1,14 @@
 export const KICK_SOCKET_URL = 'wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0&flash=false';
 
+export function connectionPresentation(status) {
+  if (status === '接続中') return { kind: 'connected', label: '接続済み', detail: 'コメント受信待機中' };
+  if (status === '接続準備中') return { kind: 'connecting', label: '接続準備中', detail: '接続完了を待っています' };
+  if (status === 'デモモード') return { kind: 'disconnected', label: '未接続・デモ', detail: 'サンプルコメントを表示中' };
+  if (status === '未接続') return { kind: 'disconnected', label: '未接続', detail: '接続してコメントを受信' };
+  if (status.startsWith('切断') || status === '再接続が必要です') return { kind: 'error', label: '切断・要再接続', detail: status };
+  return { kind: 'error', label: '接続エラー', detail: status };
+}
+
 export function validChannel(platform, channel) {
   return typeof channel === 'string' && (platform === 'twitch'
     ? /^[a-z0-9_]{1,25}$/i.test(channel)

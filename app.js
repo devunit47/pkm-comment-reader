@@ -1,5 +1,5 @@
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
-import { ChatConnection, readSavedConnections, validChannel } from './connections.js';
+import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded } from './speech-options.js';
 
 const $ = id => document.getElementById(id);
@@ -55,14 +55,25 @@ function make(tag, className, text) {
 
 function renderConnection() {
   const state = states[active];
-  $('connection-status').textContent = state.status;
-  $('channel-label').textContent = state.channel ? `#${state.channel}` : '接続してコメントを受信';
-  $('connection-dot').style.background = state.status === '接続中' ? '#ace5cd' : '#d9bd7c';
+  const presentation = connectionPresentation(state.status);
+  $('connection-status').textContent = presentation.label;
+  $('connection-summary').dataset.state = presentation.kind;
+  $('connection-detail').textContent = presentation.detail;
+  $('channel-label').textContent = state.channel ? `#${state.channel}` : '';
+  $('chat-connection-status').textContent = presentation.label;
+  $('chat-connection-status').dataset.state = presentation.kind;
   $('platform-pill').textContent = names[active];
   $('platform-pill').className = `pill ${active}`;
   for (const platform of Object.keys(states)) {
-    $(`${platform}-status`).textContent = states[platform].status;
-    $(`${platform}-tab-status`).textContent = states[platform].status;
+    const service = states[platform];
+    const view = connectionPresentation(service.status);
+    for (const id of [`${platform}-status`, `${platform}-tab-status`]) {
+      $(id).textContent = view.label;
+      $(id).dataset.state = view.kind;
+      $(id).title = view.detail;
+    }
+    $(`${platform}-tab-channel`).textContent = service.channel ? `#${service.channel}` : 'チャンネル未接続';
+    $(`${platform}-connection-detail`).textContent = view.detail;
   }
 }
 
@@ -219,6 +230,14 @@ function switchPlatform(platform) {
 }
 
 document.querySelectorAll('[data-platform]').forEach(button => { button.onclick = () => switchPlatform(button.dataset.platform); });
+document.querySelectorAll('[data-connection-settings]').forEach(button => {
+  button.onclick = () => {
+    const platform = button.dataset.connectionSettings;
+    switchPlatform(platform);
+    page('settings');
+    $(`${platform}-channel`).focus();
+  };
+});
 document.querySelectorAll('.nav').forEach(button => { button.onclick = () => page(button.dataset.page); });
 $('open-settings').onclick = () => page('settings');
 $('search').oninput = () => { states[active].search = $('search').value; render(); };

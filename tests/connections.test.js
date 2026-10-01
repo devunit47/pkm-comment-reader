@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ChatConnection, parseKickMessage, parseTwitchMessage, readSavedConnections, validChannel } from '../connections.js';
+import { ChatConnection, parseKickMessage, parseTwitchMessage, readSavedConnections, validChannel, connectionPresentation } from '../connections.js';
+
+test('connection labels distinguish actual subscriptions from demos, pending connections and failures', () => {
+  for (const status of ['デモモード', '未接続', '接続準備中', '接続失敗', '接続エラー — 通信環境を確認してください', '切断されました — 再接続してください', '再接続が必要です']) {
+    assert.notEqual(connectionPresentation(status).kind, 'connected');
+  }
+  assert.equal(connectionPresentation('接続中').label, '接続済み');
+  assert.equal(connectionPresentation('接続中').kind, 'connected');
+  assert.equal(connectionPresentation('接続準備中').kind, 'connecting');
+  assert.equal(connectionPresentation('デモモード').label, '未接続・デモ');
+  assert.equal(connectionPresentation('切断されました — 再接続してください').label, '切断・要再接続');
+  assert.equal(connectionPresentation('チャンネル情報の取得タイムアウト').detail, 'チャンネル情報の取得タイムアウト');
+});
 
 class FakeSocket {
   static instances = [];
