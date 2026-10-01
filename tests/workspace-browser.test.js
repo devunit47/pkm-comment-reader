@@ -42,6 +42,11 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.locator('#stage-volume-settings').hover();
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), true);
     assert.equal(await page.locator('#stage-volume').evaluate(element => getComputedStyle(element).writingMode), 'vertical-lr');
+    await page.locator('#stage-volume').hover();
+    assert.equal(await page.locator('#stage-volume-dialog').isVisible(), true);
+    await page.locator('#stage-title').hover();
+    await page.locator('#stage-volume-dialog').waitFor({ state: 'hidden' });
+    await page.locator('#stage-volume-settings').hover();
     await page.locator('#stage-title').click();
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), false);
     assert.equal(await page.locator('#talk-stage').isVisible(), true);

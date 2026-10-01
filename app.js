@@ -338,7 +338,20 @@ $('stage-volume').oninput = () => {
   $('volume').value = states[active].volume;
   renderSpeechSettings();
 };
+let volumeCloseTimer;
+let volumeDragging = false;
+function cancelVolumeClose() { clearTimeout(volumeCloseTimer); }
+function scheduleVolumeClose() {
+  cancelVolumeClose();
+  if (volumeDragging) return;
+  volumeCloseTimer = setTimeout(() => {
+    const popover = $('stage-volume-dialog');
+    if (popover.matches(':hover') || $('stage-volume-settings').matches(':hover') || popover.contains(document.activeElement)) return;
+    if (popover.matches(':popover-open')) popover.hidePopover();
+  }, 300);
+}
 function openStageVolume() {
+  cancelVolumeClose();
   const button = $('stage-volume-settings');
   const popover = $('stage-volume-dialog');
   if (popover.matches(':popover-open')) return;
@@ -349,6 +362,16 @@ function openStageVolume() {
   popover.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - panel.height - 8))}px`;
 }
 $('stage-volume-settings').onpointerenter = event => { if (event.pointerType !== 'touch') openStageVolume(); };
+$('stage-volume-settings').onpointerleave = scheduleVolumeClose;
+$('stage-volume-dialog').onpointerenter = cancelVolumeClose;
+$('stage-volume-dialog').onpointerleave = scheduleVolumeClose;
+$('stage-volume-dialog').addEventListener('focusout', scheduleVolumeClose);
+$('stage-volume').addEventListener('pointerdown', () => { volumeDragging = true; cancelVolumeClose(); });
+for (const event of ['pointerup', 'pointercancel']) $('stage-volume').addEventListener(event, () => {
+  volumeDragging = false;
+  $('stage-volume').blur();
+  scheduleVolumeClose();
+});
 $('stage-volume-settings').onclick = () => { openStageVolume(); $('stage-volume').focus(); };
 $('stage-volume-dialog').addEventListener('keydown', event => {
   if (event.key === 'Escape') event.stopPropagation();
