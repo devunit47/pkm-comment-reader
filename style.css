@@ -145,3 +145,5 @@ main[data-view=updates]>.platform-tabs,main[data-view=updates]>header .eyebrow,m
 main[data-view=studio]>.platform-tabs,main[data-view=studio]>header .eyebrow,main[data-view=studio]>header p,main[data-view=studio]>header .header-right{display:none}
 
 main[data-view=settings]>.platform-tabs,main[data-view=settings]>header .eyebrow,main[data-view=settings]>header p,main[data-view=settings]>header .header-right{display:none}
+
+main[data-view=users]>.platform-tabs,main[data-view=users]>header .eyebrow,main[data-view=users]>header p,main[data-view=users]>header .header-right{display:none}
