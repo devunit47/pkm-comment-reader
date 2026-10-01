@@ -83,3 +83,14 @@ Kick接続の参考: [Pusherプロトコル](https://pusher.com/docs/channels/li
 ## 確認
 
 `npm run check` でJavaScript構文を、`npm test` でサービス分離・接続管理・保存値の復元・Kickチャンネル情報取得の回帰テストを実行できます。自動テストは外部サービスに接続しません。
+
+## ライセンス・利用上の案内
+
+本プロジェクトは[MITライセンス](LICENSE)で公開しています。改変・再配布・商用利用が可能です。配布時は著作権表示とライセンス文を保持してください。正式な条件はLICENSEを参照してください。
+
+- [免責事項・利用上の注意](DISCLAIMER.md)
+- [保存データ・外部通信について](PRIVACY.md)
+- [不具合報告・貢献の案内](CONTRIBUTING.md)
+- [セキュリティ上の問題の報告](SECURITY.md)
+
+外部サービス、OS・ブラウザの音声、第三者が提供する画像などには、それぞれの利用条件が適用されます。Google Fontsから取得するNoto Sans JPのライセンスは[公式配布元のOFL.txt](https://github.com/google/fonts/blob/main/ofl/notosansjp/OFL.txt)を参照してください。
