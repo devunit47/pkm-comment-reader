@@ -1,13 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="280" viewBox="0 0 900 280" preserveAspectRatio="none">
-  <path d="M30 4H870Q896 4 896 30V232Q896 258 870 258H805L780 277L768 258H30Q4 258 4 232V30Q4 4 30 4Z" fill="#f3f1dc" stroke="#ace5cd" stroke-width="4"/>
-  <path d="m835 26 4 12 12 4-12 4-4 12-4-12-12-4 12-4Z" fill="#ace5cd"/>
-  <circle cx="865" cy="73" r="5" fill="#efb4c5"/>
+  <!-- Keep the dialogue on the left, with its tail pointing to the character's mouth. -->
+  <path d="M32 8H688Q718 8 718 38V174L775 207L718 218V242Q718 272 688 272H32Q4 272 4 242V38Q4 8 32 8Z" fill="#f3f1dc" stroke="#ace5cd" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m832 38 4 12 12 4-12 4-4 12-4-12-12-4 12-4Z" fill="#ace5cd"/>
+  <circle cx="873" cy="96" r="5" fill="#efb4c5"/>
   <g fill="#b9e5d3" stroke="#55776b" stroke-width="4">
-    <circle cx="779" cy="163" r="20"/><circle cx="849" cy="163" r="20"/>
-    <ellipse cx="814" cy="200" rx="51" ry="43"/>
+    <ellipse cx="818" cy="248" rx="47" ry="26"/>
+    <circle cx="776" cy="153" r="22"/><circle cx="860" cy="153" r="22"/>
+    <ellipse cx="818" cy="197" rx="59" ry="49"/>
   </g>
-  <ellipse cx="814" cy="210" rx="30" ry="24" fill="#fff9e8"/>
-  <g fill="#35564b"><circle cx="795" cy="191" r="4"/><circle cx="833" cy="191" r="4"/><ellipse cx="814" cy="204" rx="5" ry="4"/></g>
-  <path d="M803 214q11 12 22 0" fill="none" stroke="#35564b" stroke-width="3" stroke-linecap="round"/>
-  <g fill="#efb4c5"><ellipse cx="785" cy="204" rx="7" ry="4"/><ellipse cx="843" cy="204" rx="7" ry="4"/></g>
+  <g fill="#fff9e8"><circle cx="776" cy="153" r="11"/><circle cx="860" cy="153" r="11"/><ellipse cx="818" cy="212" rx="34" ry="26"/></g>
+  <g fill="#35564b"><circle cx="797" cy="186" r="4"/><circle cx="839" cy="186" r="4"/><ellipse cx="818" cy="201" rx="5" ry="4"/></g>
+  <path d="M807 212q11 19 22 0Z" fill="#35564b"/>
+  <path d="M812 219q6-4 12 0" fill="none" stroke="#efb4c5" stroke-width="3" stroke-linecap="round"/>
+  <g fill="#efb4c5"><ellipse cx="783" cy="204" rx="8" ry="4"/><ellipse cx="853" cy="204" rx="8" ry="4"/></g>
 </svg>
