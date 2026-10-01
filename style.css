@@ -35,6 +35,10 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-volume-control{display:flex;align-items:center;gap:10px;padding:0 24px 12px;color:var(--stage-muted);font-size:12px}
 .stage-volume-control input{width:100px;min-width:40px;max-width:100%;accent-color:var(--stage-accent)}
 .stage-volume-control output{min-width:4em;text-align:right}
+#stage-volume-settings{display:inline-flex;align-items:center;justify-content:center;padding:4px;min-width:32px;min-height:32px;color:inherit;flex-shrink:0}
+#stage-volume-dialog .stage-volume-control{padding:0;width:100%}
+#stage-volume-dialog input{flex:1;width:auto}
+#stage-volume-dialog p{margin:0;font-size:13px;line-height:1.6}
 #stage-speech-user[hidden]{display:none}
 .stage-wave{display:flex;align-items:center;gap:3px;height:20px;width:27px;color:var(--stage-accent)}
 .stage-wave i{display:block;width:3px;height:18px;border-radius:2px;background:currentColor;transform:scaleY(.18);opacity:.45}

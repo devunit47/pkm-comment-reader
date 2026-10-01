@@ -338,6 +338,10 @@ $('stage-volume').oninput = () => {
   $('volume').value = states[active].volume;
   renderSpeechSettings();
 };
+$('stage-volume-settings').onclick = () => $('stage-volume-dialog').showModal();
+$('stage-volume-dialog').addEventListener('keydown', event => {
+  if (event.key === 'Escape') event.stopPropagation();
+});
 for (const id of ['volume', 'rate']) $(id).oninput = () => {
   states[active][id] = Number($(id).value);
   renderSpeechSettings();

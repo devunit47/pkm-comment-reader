@@ -30,10 +30,15 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     const exitBox = await page.locator('#leave-talk').boundingBox();
     assert.ok(Math.abs(titleBox.y - exitBox.y) < 2, 'title and exit button have aligned top edges');
     const wavePosition = await page.locator('.stage-wave').boundingBox();
+    assert.equal(await page.locator('#stage-volume').isVisible(), false);
+    await page.getByRole('button', { name: '読み上げの音量設定', exact: true }).click();
     await page.locator('#stage-volume').fill('0.4');
     await page.locator('#stage-volume').dispatchEvent('input');
     assert.equal(await page.locator('#stage-volume-value').textContent(), '40%');
     assert.equal(await page.locator('#volume').inputValue(), '0.4');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#stage-volume-dialog').isVisible(), false);
+    assert.equal(await page.locator('#talk-stage').isVisible(), true);
     await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '読み上げ中'; });
     assert.deepEqual(await page.locator('.stage-wave').boundingBox(), wavePosition);
     await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '待機中'; });
