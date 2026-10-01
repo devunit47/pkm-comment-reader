@@ -149,3 +149,5 @@ main[data-view=settings]>.platform-tabs,main[data-view=settings]>header .eyebrow
 main[data-view=users]>.platform-tabs,main[data-view=users]>header .eyebrow,main[data-view=users]>header p,main[data-view=users]>header .header-right{display:none}
 
 #stage-connection-dialog{width:min(600px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:0;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;font:13px "Noto Sans JP",sans-serif;overflow:auto}#stage-connection-dialog::backdrop{background:#0008;backdrop-filter:blur(4px)}#stage-connection-content{padding:20px}#stage-connection-content .panel-heading{display:none}#stage-connection-content form,#stage-connection-content p{margin:20px}#stage-connection-content .connect-fields{flex-wrap:wrap}#stage-connection-content input{min-width:0;width:100%}
+
+.comment-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}.comments>.panel-heading{gap:12px;flex-wrap:wrap}.comment-heading-actions #demo{font-size:11px;padding:7px 10px}
