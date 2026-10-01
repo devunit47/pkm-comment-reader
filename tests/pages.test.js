@@ -24,6 +24,11 @@ test('Pages output is Twitch-only, works below a repository path, and excludes l
   assert.deepEqual(config.enabledPlatforms, ['twitch']);
   assert.equal(config.publication, 'pages');
   const html = await readFile(new URL('index.html', destination), 'utf8');
+  const version = html.match(/app\.js\?v=([a-f0-9]{16})/)[1];
+  const app = await readFile(new URL('app.js', destination), 'utf8');
+  for (const [, modulePath] of app.matchAll(/from ['"]([^'"]+)['"]/g)) {
+    assert.ok(modulePath.endsWith(`?v=${version}`), modulePath);
+  }
   for (const [, path] of html.matchAll(/(?:src|href)="(\.[^\"]+)"/g)) {
     assert.ok(new URL(path, 'https://example.github.io/reader/').pathname.startsWith('/reader/'));
   }
