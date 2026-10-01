@@ -38,6 +38,11 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     const titleBox = await page.locator('#stage-title').boundingBox();
     const exitBox = await page.locator('#leave-talk').boundingBox();
     assert.ok(Math.abs(titleBox.y - exitBox.y) < 2, 'title and exit button have aligned top edges');
+    const hintBox = await page.locator('.stage-exit-hint').boundingBox();
+    assert.ok(hintBox.y >= exitBox.y + exitBox.height, 'Escape hint is below the exit button');
+    const statusBox = await page.locator('#stage-connection').boundingBox();
+    const switchBox = await page.locator('.stage-switch').boundingBox();
+    assert.ok(Math.abs(statusBox.y + statusBox.height / 2 - switchBox.y - switchBox.height / 2) < 2, 'connection status and service switches share a row');
     const wavePosition = await page.locator('.stage-wave').boundingBox();
     assert.equal(await page.locator('#stage-volume').isVisible(), false);
     await page.getByRole('button', { name: '読み上げの音量設定', exact: true }).click();

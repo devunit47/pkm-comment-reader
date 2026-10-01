@@ -42,6 +42,10 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 #stage-volume-dialog input{writing-mode:vertical-lr;direction:rtl;width:24px;height:130px;min-width:0;padding:0;touch-action:none}
 #stage-volume-dialog output{text-align:center;min-width:0}
 #stage-volume-dialog::backdrop{background:transparent}
+.stage-controls{flex-direction:column;align-items:flex-end;gap:6px}
+.stage-actions .stage-service{display:flex;align-items:center;justify-content:flex-end;gap:8px;max-width:none}
+.stage-switch{width:auto;flex-shrink:0}
+.stage-actions .stage-service>#stage-channel{order:1;width:100%;text-align:right}
 #stage-speech-user[hidden]{display:none}
 .stage-wave{display:flex;align-items:center;gap:3px;height:20px;width:27px;color:var(--stage-accent)}
 .stage-wave i{display:block;width:3px;height:18px;border-radius:2px;background:currentColor;transform:scaleY(.18);opacity:.45}
