@@ -97,6 +97,9 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-style-label{display:flex;align-items:center;gap:6px;font-size:12px}
 .stage-style-label select{font-size:12px;max-width:180px;min-height:32px}
 #stage-comment-settings{min-width:36px;min-height:36px;font-size:20px}
+.stage-chat .stage-font-controls,.stage-chat #stage-comment-settings{opacity:0;pointer-events:none}
+.stage-chat .stage-panel-label:hover .stage-font-controls,.stage-chat .stage-panel-label:focus-within .stage-font-controls,.stage-chat .stage-panel-label:hover #stage-comment-settings,.stage-chat .stage-panel-label:focus-within #stage-comment-settings{opacity:1;pointer-events:auto}
+@media(hover:none){.stage-chat .stage-font-controls,.stage-chat #stage-comment-settings{opacity:1;pointer-events:auto}}
 #stage-comment-settings-dialog .stage-style-label{display:grid;gap:8px;width:100%}
 #stage-comment-settings-dialog select{max-width:none;width:100%}
 #stage-comment-settings-dialog p{font-size:13px;line-height:1.6;margin:0}

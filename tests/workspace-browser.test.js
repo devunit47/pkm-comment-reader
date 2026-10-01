@@ -70,6 +70,12 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.deepEqual(await page.locator('.stage-wave').boundingBox(), wavePosition);
     await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '待機中'; });
     const initialCount = await page.locator('.stage-comment').count();
+    await page.locator('#stage-title').hover();
+    await page.locator('#talk-stage').focus();
+    assert.equal(await page.locator('#stage-comment-settings').evaluate(element => getComputedStyle(element).opacity), '0');
+    await page.locator('.stage-chat .stage-panel-label').hover();
+    assert.equal(await page.locator('#stage-comment-settings').evaluate(element => getComputedStyle(element).opacity), '1');
+    assert.equal(await page.locator('.stage-font-controls').evaluate(element => getComputedStyle(element).opacity), '1');
     assert.equal(await page.locator('#stage-comment-style').isVisible(), false);
     await page.getByRole('button', { name: 'コメントの表示設定', exact: true }).click();
     await page.locator('#stage-comment-style').selectOption('anonymous');
