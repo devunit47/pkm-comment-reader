@@ -401,9 +401,7 @@ function renderStudio() {
   $('stage-title').textContent = studio.title;
   $('stage-subtitle').textContent = studio.subtitle;
   $('stage-footer-text').textContent = studio.footer;
-  $('studio-footer').value = studio.footer;
   $('stage-speech-title').textContent = studio.speechTitle;
-  $('studio-speech-title').value = studio.speechTitle;
   $('studio-speech-font-size').value = studio.speechFontSize;
   $('studio-speech-style').value = studio.speechStyle;
   $('studio-speech-background').value = studio.speechBackground;
@@ -421,7 +419,7 @@ function renderStudio() {
   $('actor-placeholder').querySelector('small').textContent = studio.source === 'image'
     ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
   $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
-  for (const key of ['theme', 'accent', 'title', 'subtitle', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
+  for (const key of ['theme', 'accent', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
   $('studio-font-size').value = studio.fontSize;
   $('studio-chat-count').value = studio.chatCount;
   $('studio-actor-width').value = studio.actorWidth;
@@ -441,6 +439,7 @@ function enterTalk() {
   $('talk-stage').focus({ preventScroll: true });
 }
 function leaveTalk() {
+  closeTextEditor?.();
   document.body.classList.remove('talk-mode');
   $('talk-stage').hidden = true;
   $('enter-talk').focus({ preventScroll: true });
@@ -459,9 +458,7 @@ function updateStudio() {
   const source = $('studio-source').value;
   studio = normalizeStudio({ ...studio,
     theme: $('studio-theme').value, accent: $('studio-accent').value,
-    title: $('studio-title').value, subtitle: $('studio-subtitle').value,
-    footer: $('studio-footer').value,
-    speechTitle: $('studio-speech-title').value, speechFontSize: Number($('studio-speech-font-size').value),
+    speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     speechTextColor: $('studio-speech-text-color').value,
     fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
@@ -472,7 +469,7 @@ function updateStudio() {
   renderStudio();
   renderStageChat();
 }
-for (const id of ['theme', 'accent', 'title', 'subtitle', 'footer', 'speech-title', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {
@@ -480,6 +477,40 @@ $('studio-theme').onchange = () => {
   updateStudio();
 };
 $('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
+let closeTextEditor = null;
+for (const [id, key, label, limit] of [
+  ['stage-title', 'title', '配信タイトル', 60],
+  ['stage-subtitle', 'subtitle', 'ひとこと', 100],
+  ['stage-footer-text', 'footer', '画面下の文章', 100],
+  ['stage-speech-title', 'speechTitle', '読み上げ枠の見出し', 40],
+]) {
+  const text = $(id);
+  const wrapper = make('span', 'stage-editable', '');
+  text.replaceWith(wrapper);
+  wrapper.append(text);
+  const edit = make('button', 'stage-edit-pencil', '✎');
+  edit.type = 'button'; edit.setAttribute('aria-label', `${label}を編集`); edit.title = `${label}を編集`;
+  wrapper.append(edit);
+  edit.onclick = () => {
+    closeTextEditor?.();
+    const form = make('form', 'stage-text-editor', '');
+    const caption = make('label', '', `${label}（${limit}文字まで）`);
+    const input = document.createElement('input'); input.value = studio[key]; input.maxLength = limit; input.setAttribute('aria-label', label);
+    caption.append(input);
+    const submit = make('button', 'button primary', '保存'); submit.type = 'submit';
+    const cancel = make('button', 'button', 'キャンセル'); cancel.type = 'button';
+    form.append(caption, submit, cancel); wrapper.append(form); edit.hidden = true;
+    const close = () => { form.remove(); edit.hidden = false; edit.focus({ preventScroll: true }); closeTextEditor = null; };
+    closeTextEditor = close;
+    cancel.onclick = close;
+    form.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } };
+    form.onsubmit = event => {
+      event.preventDefault(); studio = normalizeStudio({ ...studio, [key]: input.value });
+      save('pokome-studio', studio); renderStudio(); close();
+    };
+    input.focus(); input.select();
+  };
+}
 async function uploadStudioImage(input, target) {
   const file = input.files[0];
   const isSpeech = target === 'speechImage';

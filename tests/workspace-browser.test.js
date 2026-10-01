@@ -18,6 +18,25 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
+    for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
+    await page.locator('#enter-talk').click();
+    for (const [id, label, key] of [['stage-title', '配信タイトル', 'title'], ['stage-subtitle', 'ひとこと', 'subtitle'], ['stage-footer-text', '画面下の文章', 'footer'], ['stage-speech-title', '読み上げ枠の見出し', 'speechTitle']]) {
+      await page.locator(`#${id}`).hover();
+      await page.getByRole('button', { name: `${label}を編集`, exact: true }).click();
+      await page.getByRole('textbox', { name: label, exact: true }).fill(`<新しい${label}>`);
+      await page.locator('.stage-text-editor').getByRole('button', { name: '保存', exact: true }).click();
+      assert.equal(await page.locator(`#${id}`).textContent(), `<新しい${label}>`);
+      assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem('pokome-studio'))[key], key), `<新しい${label}>`);
+    }
+    await page.locator('#stage-title').hover();
+    await page.getByRole('button', { name: '配信タイトルを編集', exact: true }).click();
+    await page.getByRole('textbox', { name: '配信タイトル', exact: true }).fill('保存しない');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#talk-stage').isVisible(), true);
+    assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
+    await page.keyboard.press('Escape');
+    await page.reload();
+    assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
     const editor = page.locator('#workspace-editor');
     const session = page.locator('#layout-session');
     assert.equal(await editor.isVisible(), false);
