@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 
 // Only browser assets belong in the public artifact. Never copy the repository.
-const assets = ['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'speech-background.svg'];
+const assets = ['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'speech-background.svg'];
 
 export async function buildPages(destination = new URL('./dist/', import.meta.url)) {
   await mkdir(destination, { recursive: true });
@@ -17,7 +17,7 @@ export async function buildPages(destination = new URL('./dist/', import.meta.ur
     "export const enabledPlatforms = Object.freeze(['twitch']);\nexport const publication = 'pages';\n");
   // Hide unavailable controls before JavaScript loads as well.
   const html = await readFile(new URL('index.html', destination), 'utf8');
-  await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden'));
+  await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden').replace('id="local-speech-controls"', 'id="local-speech-controls" hidden'));
   // Version the entire module graph together: HTML and cached modules must agree.
   const publicFiles = [...assets, 'app-config.js'];
   const contents = await Promise.all(publicFiles.map(file => readFile(new URL(file, destination), 'utf8')));

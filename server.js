@@ -1,8 +1,9 @@
+import { handleLocalSpeech } from './local-speech.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { validChannel } from './connections.js';
-const files = {'/':'index.html','/app.js':'app.js','/style.css':'style.css',
+const files = {'/':'index.html','/speech-engine.js':'speech-engine.js','/app.js':'app.js','/style.css':'style.css',
   '/connections.js':'connections.js','/kick.js':'kick.js','/chat-state.js':'chat-state.js','/speech-options.js':'speech-options.js','/studio.js':'studio.js','/workspace.js':'workspace.js','/workspace-model.js':'workspace-model.js','/theme.js':'theme.js','/app-config.js':'app-config.js','/speech-background.svg':'speech-background.svg'};
 const types = {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',svg:'image/svg+xml'};
 
@@ -10,6 +11,7 @@ export function createServer({ fetchImpl = globalThis.fetch } = {}) {
  return http.createServer(async (req,res)=>{
   res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
   const url = new URL(req.url,'http://localhost');
+  if (url.pathname.startsWith('/api/speech/')) { await handleLocalSpeech(req, res, url, fetchImpl); return; }
   if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); res.end(); return; }
   if (url.pathname.startsWith('/api/kick/channel/')) {
     const json = (code, data) => {

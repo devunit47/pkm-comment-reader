@@ -1,3 +1,4 @@
+import { readSpeechEngines, LocalSpeechPlayer } from './speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
@@ -23,6 +24,10 @@ try { storage = window.localStorage; } catch { /* Storage may be disabled by the
 const savedConnections = readSavedConnections(storage);
 const savedAutoSpeech = readSavedAutoSpeech(storage);
 for (const platform of Object.keys(states)) states[platform].autoSpeech = savedAutoSpeech[platform];
+const enginePreferences = readSpeechEngines(storage, publication !== 'pages');
+const engineVoices = { voicevox: null, coeiroink: null };
+let voiceLoadGeneration = 0;
+const localSpeech = new LocalSpeechPlayer({ onError: message => { notify(message); stop(); } });
 const savedVoices = readSavedVoices(storage);
 for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
 let studio = readStudio(storage);
@@ -156,7 +161,9 @@ function add(platform, user, text, createdAt, login = user, readAutomatically = 
 }
 
 function speak(message, automatic = false) {
-  if (!supported) { notify('このブラウザは読み上げに対応していません。'); return; }
+  const preference = enginePreferences[active];
+  if (!supported && preference.engine === 'browser') { notify('このブラウザは読み上げに対応していません。'); return; }
+  if (preference.engine !== 'browser' && !preference[preference.engine]) { notify('音声ソフトを起動し、声を取得・選択してください。'); return; }
   if (pendingSpeech >= 20) return;
   const state = states[active];
   if (isSpeechUserExcluded(message, state.channel, state.speechOptions)) {
@@ -168,7 +175,8 @@ function speak(message, automatic = false) {
   if (automatic && !shouldAutoRead(state.speechHistory, message.user, text, state.speechOptions)) return;
   const platform = active;
   const generation = speechGeneration;
-  const utterance = new SpeechSynthesisUtterance((state.readName ? `${message.user}さん。` : '') + text);
+  const spokenText = (state.readName ? `${message.user}さん。` : '') + text;
+  const utterance = preference.engine === 'browser' ? new SpeechSynthesisUtterance(spokenText) : { text: spokenText };
   utterance.lang = 'ja-JP';
   utterance.rate = state.rate;
   utterance.volume = state.volume;
@@ -199,18 +207,20 @@ function speak(message, automatic = false) {
   };
   utterance.onend = done;
   utterance.onerror = done;
-  window.speechSynthesis.speak(utterance);
+  if (preference.engine === 'browser') window.speechSynthesis.speak(utterance);
+  else localSpeech.speak(utterance, preference.engine, preference[preference.engine]);
   if (automatic) rememberAutoRead(state.speechHistory, message.user, text);
 }
 
 function stop() {
   speechGeneration++;
+  localSpeech.cancel();
   clearTimeout(speechDisplayTimer);
   if (supported) window.speechSynthesis.cancel();
   pendingSpeech = 0;
   currentSpeech = null;
   renderStageSpeech();
-  $('speech-status').textContent = supported ? '待機中' : 'ブラウザ非対応';
+  $('speech-status').textContent = supported || enginePreferences[active].engine !== 'browser' ? '待機中' : 'ブラウザ非対応';
 }
 
 function toggleRule(user, key) {
@@ -261,7 +271,7 @@ function switchPlatform(platform) {
   $('filter').value = state.filter;
   $('auto-speech').checked = state.autoSpeech;
   $('read-name').checked = state.readName;
-  $('voice').value = state.voice;
+  loadVoices();
   $('volume').value = state.volume;
   $('rate').value = state.rate;
   renderSpeechSettings();
@@ -296,9 +306,22 @@ $('auto-speech').onchange = () => {
 $('read-name').onchange = () => { states[active].readName = $('read-name').checked; };
 $('voice').onchange = () => {
   stop();
-  states[active].voice = $('voice').value;
-  save('pokome-voices', { twitch: states.twitch.voice, kick: states.kick.voice });
+  const preference = enginePreferences[active];
+  if (preference.engine === 'browser') {
+    states[active].voice = $('voice').value;
+    save('pokome-voices', { twitch: states.twitch.voice, kick: states.kick.voice });
+  } else { preference[preference.engine] = $('voice').value; save('pokome-speech-engines', enginePreferences); }
 };
+$('speech-engine').onchange = () => {
+  stop();
+  enginePreferences[active].engine = $('speech-engine').value;
+  save('pokome-speech-engines', enginePreferences);
+  loadVoices();
+};
+$('refresh-voices').onclick = () => loadVoices(true);
+$('test-voice').onclick = () => speak({ user: '音声テスト', login: 'pokome_test', text: 'こんにちは。読み上げ音声のテストです。' });
+$('local-speech-controls').hidden = publication === 'pages';
+if (publication === 'pages') for (const option of $('speech-engine').options) option.hidden = option.value !== 'browser';
 function renderSpeechSettings() {
   const state = states[active];
   $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
@@ -380,8 +403,8 @@ for (const id of ['volume', 'rate']) $(id).oninput = () => {
   states[active][id] = Number($(id).value);
   renderSpeechSettings();
 };
-function loadVoices() {
-  voices = window.speechSynthesis.getVoices();
+function loadBrowserVoices() {
+  voices = supported ? window.speechSynthesis.getVoices() : [];
   $('voice').replaceChildren(make('option', '', 'ブラウザの標準音声'));
   $('voice').firstChild.value = '';
   for (const voice of voices.filter(voice => voice.lang.startsWith('ja'))) {
@@ -392,12 +415,47 @@ function loadVoices() {
   $('voice').value = states[active].voice;
   if (!$('voice').value) $('voice').value = '';
 }
+async function loadVoices(refresh = false) {
+  const generation = ++voiceLoadGeneration;
+  const platform = active;
+  const preference = enginePreferences[platform];
+  const engine = preference.engine;
+  $('speech-engine').value = engine;
+  $('refresh-voices').hidden = engine === 'browser';
+  $('voice').disabled = engine !== 'browser';
+  const status = $('engine-status');
+  if (engine === 'browser') { status.textContent = ''; loadBrowserVoices(); return; }
+  $('voice').replaceChildren(make('option', '', '声を取得中…'));
+  status.textContent = '音声ソフトへ接続中…';
+  try {
+    if (refresh || !engineVoices[engine]) {
+      const response = await fetch('./api/speech/' + engine + '/voices', { signal: AbortSignal.timeout(10000) });
+      const data = await response.json();
+      if (!response.ok || !Array.isArray(data.voices) || !data.voices.length) throw new Error(data.error || '利用できる声がありません。');
+      if (generation !== voiceLoadGeneration) return;
+      engineVoices[engine] = data.voices;
+    }
+    if (generation !== voiceLoadGeneration || active !== platform) return;
+    const list = engineVoices[engine];
+    $('voice').replaceChildren(...list.map(voice => { const option = make('option', '', voice.name); option.value = voice.id; return option; }));
+    if (!list.some(voice => voice.id === preference[engine])) preference[engine] = list[0].id;
+    $('voice').value = preference[engine];
+    $('voice').disabled = false;
+    save('pokome-speech-engines', enginePreferences);
+    status.textContent = list.length + '種類の声を取得しました。';
+  } catch (error) {
+    if (generation !== voiceLoadGeneration || active !== platform) return;
+    $('voice').replaceChildren(make('option', '', '声を取得できません'));
+    status.textContent = error.message === 'The operation was aborted due to timeout' ? '接続がタイムアウトしました。音声ソフトを起動して再取得してください。' : error.message;
+  }
+}
 if (supported) {
   loadVoices();
-  window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
+  window.speechSynthesis.addEventListener('voiceschanged', () => { if (enginePreferences[active].engine === 'browser') loadVoices(); });
 } else {
   for (const state of Object.values(states)) state.autoSpeech = false;
-  $('auto-speech').disabled = true;
+  $('auto-speech').disabled = publication === 'pages';
+  loadVoices();
   $('speech-status').textContent = 'ブラウザ非対応';
 }
 $('clear').onclick = () => { clearMessages(states[active]); stop(); renderSelection(); render(); };

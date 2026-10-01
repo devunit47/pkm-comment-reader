@@ -19,7 +19,7 @@ test('Pages output is Twitch-only, works below a repository path, and excludes l
   await buildPages(destination);
   assert.deepEqual(enabledPlatforms, ['twitch', 'kick']);
   const files = await readdir(folder);
-  assert.deepEqual(files.sort(), ['.nojekyll', 'app-config.js', 'app.js', 'chat-state.js', 'connections.js', 'index.html', 'speech-options.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'style.css', 'speech-background.svg'].sort());
+  assert.deepEqual(files.sort(), ['.nojekyll', 'app-config.js', 'app.js', 'chat-state.js', 'connections.js', 'index.html', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'style.css', 'speech-background.svg'].sort());
   const config = await import(new URL('app-config.js', destination));
   assert.deepEqual(config.enabledPlatforms, ['twitch']);
   assert.equal(config.publication, 'pages');
@@ -33,6 +33,8 @@ test('Pages output is Twitch-only, works below a repository path, and excludes l
     assert.ok(new URL(path, 'https://example.github.io/reader/').pathname.startsWith('/reader/'));
   }
   assert.doesNotMatch(html, /(?:src|href)="\//);
+  assert.match(html, /id="local-speech-controls" hidden/);
+  assert.ok(!files.includes('local-speech.js'));
   assert.equal((html.match(/data-service="kick" hidden/g) || []).length, 3);
   const connections = await readFile(new URL('connections.js', destination), 'utf8');
   assert.doesNotMatch(connections, /pusher\.com|32cbd69e4b950bf97679/);

@@ -266,3 +266,60 @@ test('platform buttons toggle saved connections independently and open settings 
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+
+test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+  const uuid = '3c37646f-3881-5374-2a83-149267990abc';
+  const server = createServer({ fetchImpl: async url => {
+    if (url.endsWith('/speakers') && url.includes(':50021')) return Response.json([{ name: 'ボイステスト', styles: [{ id: 3, name: 'ノーマル' }] }]);
+    if (url.endsWith('/v1/speakers')) return Response.json([{ speakerName: '声色テスト', speakerUuid: uuid, styles: [{ styleId: 0, styleName: 'れいせい' }] }]);
+    if (url.includes('/audio_query?')) return Response.json({ accent_phrases: [] });
+    return new Response(Buffer.from('RIFF0000WAVEdata'));
+  } });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { chromium } = require(runtime);
+  const browser = await chromium.launch({ headless: true, executablePath });
+  try {
+    const page = await browser.newPage(); const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => {
+      window.testAudio = [];
+      window.Audio = class {
+        constructor() { window.testAudio.push(this); }
+        play() { this.onplaying(); return Promise.resolve(); }
+        pause() { this.paused = true; }
+        removeAttribute() {}
+      };
+    });
+    await page.goto('http://127.0.0.1:' + server.address().port);
+    await page.locator('#speech-engine').selectOption('voicevox');
+    await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+    assert.equal(await page.locator('#voice').inputValue(), '3');
+    await page.locator('#test-voice').click();
+    await page.waitForFunction(() => document.querySelector('#speech-status').textContent === '読み上げ中');
+    assert.equal(await page.locator('#stage-speech-text').textContent(), 'こんにちは。読み上げ音声のテストです。');
+    await page.locator('#stop-speech').click();
+    assert.equal(await page.locator('#speech-status').textContent(), '待機中');
+    assert.equal(await page.evaluate(() => window.testAudio[0].paused), true);
+    await page.locator('[data-platform="kick"]').click();
+    assert.equal(await page.locator('#speech-engine').inputValue(), 'browser');
+    await page.locator('#speech-engine').selectOption('coeiroink');
+    await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+    assert.equal(await page.locator('#voice').inputValue(), uuid + ':0');
+    await page.locator('#test-voice').click();
+    await page.waitForFunction(() => document.querySelector('#speech-status').textContent === '読み上げ中');
+    await page.locator('[data-platform="twitch"]').click();
+    assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
+    assert.equal(await page.locator('#speech-status').textContent(), '待機中');
+    await page.reload(); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+    assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
+    assert.equal(await page.locator('#voice').inputValue(), '3');
+    await page.route('**/api/speech/voicevox/voices', route => route.fulfill({ status: 502, json: { error: '音声ソフトを起動してください。' } }));
+    await page.locator('#refresh-voices').click();
+    await page.waitForFunction(() => document.querySelector('#engine-status').textContent.includes('起動してください'));
+    assert.equal(await page.locator('#voice').isDisabled(), true);
+    await page.locator('#speech-engine').selectOption('browser');
+    assert.equal(await page.locator('#voice').isDisabled(), false);
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+});

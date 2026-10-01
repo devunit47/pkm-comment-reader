@@ -127,3 +127,5 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .platform-settings{flex-shrink:0;width:44px;min-height:44px;padding:8px;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:19px;transition:background-color .15s,scale .15s}
 .platform-settings:hover{background:#ffffff08;color:var(--platform-accent)}
 @media(prefers-reduced-motion:reduce){.platform-control,.platform-connect,.platform-settings{transition:none}}
+
+.speech-engine-actions{display:flex;gap:12px;padding:0 18px 8px}.speech-help a{color:var(--mint)}.speech-engine-actions button{min-height:32px}
