@@ -371,8 +371,23 @@ function renderStageChat() {
   }
   if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
   if (bottom) list.scrollTop = list.scrollHeight;
+  updateStageCommentVisibility();
   $('stage-count').textContent = `${state.received} COMMENTS`;
 }
+
+function updateStageCommentVisibility() {
+  const list = $('stage-chat-list');
+  if (!list.clientHeight) return;
+  const bounds = list.getBoundingClientRect();
+  for (const comment of list.querySelectorAll('.stage-comment')) {
+    const rect = comment.getBoundingClientRect();
+    // Long comments remain scrollable even when they cannot fit in one view.
+    const clipped = rect.height <= list.clientHeight && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1);
+    comment.classList.toggle('stage-comment-clipped', clipped);
+  }
+}
+$('stage-chat-list').addEventListener('scroll', updateStageCommentVisibility, { passive: true });
+new ResizeObserver(updateStageCommentVisibility).observe($('stage-chat-list'));
 
 function renderStageSpeech() {
   $('stage-speech-status').textContent = currentSpeech?.speaking ? '読み上げ中' : '待機中';
@@ -439,6 +454,7 @@ function enterTalk() {
   document.body.classList.add('talk-mode');
   renderStageChat();
   $('stage-chat-list').scrollTop = $('stage-chat-list').scrollHeight;
+  updateStageCommentVisibility();
   renderStageSpeech();
   // Move focus to the canvas so controls disappear for screen capture.
   $('talk-stage').setAttribute('tabindex', '-1');
@@ -494,6 +510,7 @@ for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
     studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(28, studio.fontSize + step)) });
     save('pokome-studio', studio); renderStudio();
     if (bottom) list.scrollTop = list.scrollHeight;
+    updateStageCommentVisibility();
   };
 }
 let closeTextEditor = null;

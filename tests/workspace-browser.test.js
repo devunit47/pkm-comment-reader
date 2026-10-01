@@ -28,6 +28,16 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('.stage-comment').count(), initialCount);
     assert.deepEqual(await page.locator('#stage-subtitle').boundingBox(), subtitleBefore);
     await page.locator('#stage-font-minus').click();
+    await page.locator('#stage-chat-list').evaluate(list => {
+      list.style.flex = 'none';
+      list.style.height = `${list.firstElementChild.getBoundingClientRect().height + 20}px`;
+      list.scrollTop = 10;
+      list.dispatchEvent(new Event('scroll'));
+    });
+    assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'hidden');
+    await page.locator('#stage-chat-list').evaluate(list => { list.scrollTop = 0; list.dispatchEvent(new Event('scroll')); });
+    assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'visible');
+    await page.locator('#stage-chat-list').evaluate(list => { list.style.removeProperty('flex'); list.style.removeProperty('height'); });
     for (const [id, label, key] of [['stage-title', '配信タイトル', 'title'], ['stage-subtitle', 'ひとこと', 'subtitle'], ['stage-footer-text', '画面下の文章', 'footer'], ['stage-speech-title', '読み上げ枠の見出し', 'speechTitle']]) {
       await page.locator(`#${id}`).hover();
       const alignment = await page.locator(`#${id}`).evaluate(element => {

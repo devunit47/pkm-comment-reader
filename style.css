@@ -68,3 +68,4 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 
 #stage-chat-list{flex:1;display:block;overflow:auto;font-size:var(--stage-font-size,20px)}
 .stage-font-controls{display:flex;align-items:center;gap:8px}.stage-font-controls button{min-width:36px;min-height:36px;font-size:22px}.stage-font-controls output{font-size:12px}
+.stage-comment-clipped{visibility:hidden}
