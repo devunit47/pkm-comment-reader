@@ -471,6 +471,10 @@ function leaveTalk() {
 $('enter-talk').onclick = enterTalk;
 $('preview-talk').onclick = enterTalk;
 $('leave-talk').onclick = leaveTalk;
+$('stage-connection').onclick = () => {
+  leaveTalk();
+  document.querySelector(`[data-connection-settings="${active}"]`).click();
+};
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && document.body.classList.contains('talk-mode')) leaveTalk();
 });

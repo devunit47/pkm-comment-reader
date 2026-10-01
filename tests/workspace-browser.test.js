@@ -20,6 +20,12 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
+    await page.locator('#stage-connection').click();
+    assert.equal(await page.locator('#talk-stage').isVisible(), false);
+    assert.equal(await page.locator('#settings-page').isVisible(), true);
+    assert.equal(await page.locator('#twitch-channel').evaluate(element => element === document.activeElement), true);
+    await page.locator('[data-page="home"]').click();
+    await page.locator('#enter-talk').click();
     const titleBox = await page.locator('#stage-title').boundingBox();
     const exitBox = await page.locator('#leave-talk').boundingBox();
     assert.ok(Math.abs(titleBox.y - exitBox.y) < 2, 'title and exit button have aligned top edges');
