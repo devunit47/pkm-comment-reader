@@ -20,6 +20,18 @@ test('voice preferences restore separately and tolerate invalid storage', () => 
   assert.deepEqual(readSavedVoices(undefined), { twitch: '', kick: '' });
 });
 
+test('speech heading and font size persist with safe bounds and legacy defaults', () => {
+  const saved = readStudio({ getItem: () => JSON.stringify({ speechTitle: 'あなたからのお便り', speechFontSize: 28 }) });
+  assert.equal(saved.speechTitle, 'あなたからのお便り');
+  assert.equal(saved.speechFontSize, 28);
+  assert.equal(normalizeStudio({ speechTitle: 'a'.repeat(80) }).speechTitle.length, 40);
+  assert.equal(normalizeStudio({ speechTitle: null }).speechTitle, DEFAULT_STUDIO.speechTitle);
+  for (const speechFontSize of [0, 15, 33, 22.5, '28', null]) {
+    assert.equal(normalizeStudio({ speechFontSize }).speechFontSize, 22);
+  }
+  assert.equal(normalizeStudio({ title: '旧設定' }).speechFontSize, 22);
+});
+
 test('chat count accepts 1–100, preserves older settings and rejects invalid counts', () => {
   for (const chatCount of [1, 3, 100]) {
     assert.equal(readStudio({ getItem: () => JSON.stringify({ chatCount }) }).chatCount, chatCount);

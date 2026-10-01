@@ -383,10 +383,14 @@ function renderStudio() {
   stage.dataset.decorated = String(studio.decoration);
   stage.style.setProperty('--stage-accent', studio.accent);
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
+  stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
   stage.style.setProperty('--actor-width', `${studio.actorWidth}fr`);
   stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
   $('stage-title').textContent = studio.title;
   $('stage-subtitle').textContent = studio.subtitle;
+  $('stage-speech-title').textContent = studio.speechTitle;
+  $('studio-speech-title').value = studio.speechTitle;
+  $('studio-speech-font-size').value = studio.speechFontSize;
   const hasImage = studio.source === 'image' && !!studio.image;
   $('actor-image').hidden = !hasImage;
   if ($('actor-image').getAttribute('src') !== (studio.image || null)) {
@@ -436,6 +440,7 @@ function updateStudio() {
   studio = normalizeStudio({ ...studio,
     theme: $('studio-theme').value, accent: $('studio-accent').value,
     title: $('studio-title').value, subtitle: $('studio-subtitle').value,
+    speechTitle: $('studio-speech-title').value, speechFontSize: Number($('studio-speech-font-size').value),
     fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
     chatCount: Number($('studio-chat-count').value),
     actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
@@ -444,7 +449,7 @@ function updateStudio() {
   renderStudio();
   renderStageChat();
 }
-for (const id of ['theme', 'accent', 'title', 'subtitle', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'title', 'subtitle', 'speech-title', 'speech-font-size', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {

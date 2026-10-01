@@ -1,6 +1,7 @@
 export const DEFAULT_STUDIO = Object.freeze({
   theme: 'mint', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
   fontSize: 20, chatCount: 30, layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
+  speechTitle: 'いま、届いた声', speechFontSize: 22,
 });
 
 export function normalizeStudio(value = {}) {
@@ -10,10 +11,11 @@ export function normalizeStudio(value = {}) {
     if (allowed.includes(value[key])) options[key] = value[key];
   }
   if (typeof value.accent === 'string' && /^#[\da-f]{6}$/i.test(value.accent)) options.accent = value.accent;
-  for (const [key, limit] of [['title', 60], ['subtitle', 100]]) {
+  for (const [key, limit] of [['title', 60], ['subtitle', 100], ['speechTitle', 40]]) {
     if (typeof value[key] === 'string') options[key] = value[key].slice(0, limit);
   }
   if (Number.isInteger(value.fontSize) && value.fontSize >= 16 && value.fontSize <= 28) options.fontSize = value.fontSize;
+  if (Number.isInteger(value.speechFontSize) && value.speechFontSize >= 16 && value.speechFontSize <= 32) options.speechFontSize = value.speechFontSize;
   if (Number.isInteger(value.chatCount) && value.chatCount >= 1 && value.chatCount <= 100) options.chatCount = value.chatCount;
   if (Number.isInteger(value.actorWidth) && value.actorWidth >= 30 && value.actorWidth <= 60) options.actorWidth = value.actorWidth;
   if (typeof value.decoration === 'boolean') options.decoration = value.decoration;
