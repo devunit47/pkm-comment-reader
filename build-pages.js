@@ -17,7 +17,7 @@ export async function buildPages(destination = new URL('./dist/', import.meta.ur
     "export const enabledPlatforms = Object.freeze(['twitch']);\nexport const publication = 'pages';\n");
   // Hide unavailable controls before JavaScript loads as well.
   const html = await readFile(new URL('index.html', destination), 'utf8');
-  await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden').replace('id="local-speech-controls"', 'id="local-speech-controls" hidden'));
+  await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden').replace('id="local-speech-controls"', 'id="local-speech-controls" hidden').replaceAll('data-local-only', 'data-local-only hidden'));
   // Version the entire module graph together: HTML and cached modules must agree.
   const publicFiles = [...assets, 'app-config.js'];
   const contents = await Promise.all(publicFiles.map(file => readFile(new URL(file, destination), 'utf8')));

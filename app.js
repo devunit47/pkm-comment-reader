@@ -14,6 +14,7 @@ let active = 'twitch';
 document.querySelectorAll('[data-service]').forEach(element => {
   element.hidden = !enabledPlatforms.includes(element.dataset.service);
 });
+document.querySelectorAll('[data-local-only]').forEach(element => { element.hidden = publication === 'pages'; });
 if (publication === 'pages') {
   $('platform-help').textContent = 'Twitch専用の公開版';
   $('edition-label').textContent = 'ぽこめ Reader / Twitch版';
@@ -252,9 +253,9 @@ function renderUsers() {
 }
 
 function page(name) {
-  for (const item of ['home', 'users', 'settings', 'studio']) $(`${item}-page`).hidden = item !== name;
+  for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
   document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
-  $('page-title').textContent = { home: 'みんなの声が、ここに。', users: 'ひとりひとりを、大切に。', settings: '配信と、つながろう。', studio: 'あなたらしい、雑談の時間。' }[name];
+  $('page-title').textContent = { home: 'みんなの声が、ここに。', users: 'ひとりひとりを、大切に。', settings: '配信と、つながろう。', studio: 'あなたらしい、雑談の時間。', updates: '更新情報' }[name];
 }
 
 function switchPlatform(platform) {
