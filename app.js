@@ -1,5 +1,6 @@
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel } from './connections.js';
+import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory } from './speech-options.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };
@@ -9,6 +10,10 @@ let session = 0;
 let storage;
 try { storage = window.localStorage; } catch { /* Storage may be disabled by the browser. */ }
 const savedConnections = readSavedConnections(storage);
+try {
+  const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
+  for (const platform of Object.keys(states)) states[platform].speechOptions = normalizeSpeechOptions(saved?.[platform]);
+} catch { /* Invalid stored options leave defaults intact. */ }
 try {
   const savedRules = JSON.parse(storage?.getItem('pokome-users-v2') || 'null');
   const legacyRules = JSON.parse(storage?.getItem('pokome-users') || '{}');
@@ -65,7 +70,9 @@ function renderSelection() {
   const state = states[active];
   const message = state.selected;
   $('preview-user').textContent = message?.user || 'ぽこめ Reader';
-  $('preview-text').textContent = message?.text || `${names[active]}のコメントを待っています。`;
+  $('preview-text').textContent = message
+    ? prepareSpeechText(message.text, state.speechOptions) || 'このコメントは読み上げ対象外です。'
+    : `${names[active]}のコメントを待っています。`;
   $('selected-user').textContent = message?.user || 'コメントを選択してください';
   $('hide-user').disabled = !message;
   $('mute-user').disabled = !message;
@@ -106,17 +113,20 @@ function add(platform, user, text, createdAt) {
   if (!message) return;
   if (platform === active) {
     render();
-    if (state.autoSpeech && !userRule(state, user).hidden && !userRule(state, user).muted) speak(message);
+    if (state.autoSpeech && !userRule(state, user).hidden && !userRule(state, user).muted) speak(message, true);
   }
 }
 
-function speak(message) {
+function speak(message, automatic = false) {
   if (!supported) { notify('このブラウザは読み上げに対応していません。'); return; }
   if (pendingSpeech >= 20) return;
   const state = states[active];
+  const text = prepareSpeechText(message.text, state.speechOptions);
+  if (!text) { if (!automatic) notify('URLのみ・コマンドなど、設定により読み上げ対象外です。'); return; }
+  if (automatic && !shouldAutoRead(state.speechHistory, message.user, text, state.speechOptions)) return;
   const platform = active;
   const generation = speechGeneration;
-  const utterance = new SpeechSynthesisUtterance((state.readName ? `${message.user}さん。` : '') + message.text);
+  const utterance = new SpeechSynthesisUtterance((state.readName ? `${message.user}さん。` : '') + text);
   utterance.lang = 'ja-JP';
   utterance.rate = state.rate;
   utterance.volume = state.volume;
@@ -126,7 +136,7 @@ function speak(message) {
     if (generation !== speechGeneration || platform !== active) return;
     $('speech-status').textContent = '読み上げ中';
     $('preview-user').textContent = message.user;
-    $('preview-text').textContent = message.text;
+    $('preview-text').textContent = text;
   };
   const done = () => {
     if (generation !== speechGeneration) return;
@@ -136,6 +146,7 @@ function speak(message) {
   utterance.onend = done;
   utterance.onerror = done;
   window.speechSynthesis.speak(utterance);
+  if (automatic) rememberAutoRead(state.speechHistory, message.user, text);
 }
 
 function stop() {
@@ -197,6 +208,7 @@ function switchPlatform(platform) {
   $('volume').value = state.volume;
   $('rate').value = state.rate;
   renderSpeechSettings();
+  renderSpeechOptions();
   renderSelection();
   render();
   $('comment-list').scrollTop = $('comment-list').scrollHeight;
@@ -223,6 +235,29 @@ function renderSpeechSettings() {
   $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
   $('volume-value').textContent = `${Math.round(state.volume * 100)}%`;
   $('rate-value').textContent = `${state.rate}×`;
+}
+function renderSpeechOptions() {
+  const options = states[active].speechOptions;
+  $('max-length').value = options.maxLength;
+  $('user-interval').value = options.userInterval;
+  $('skip-urls').checked = options.skipUrls;
+  $('skip-duplicates').checked = options.skipDuplicates;
+  $('skip-commands').checked = options.skipCommands;
+}
+function updateSpeechOptions() {
+  states[active].speechOptions = normalizeSpeechOptions({
+    maxLength: Number($('max-length').value), userInterval: Number($('user-interval').value),
+    skipUrls: $('skip-urls').checked, skipDuplicates: $('skip-duplicates').checked,
+    skipCommands: $('skip-commands').checked,
+  });
+  stop();
+  states[active].speechHistory = createSpeechHistory();
+  save('pokome-speech-options', { twitch: states.twitch.speechOptions, kick: states.kick.speechOptions });
+  renderSpeechOptions();
+  renderSelection();
+}
+for (const id of ['max-length', 'user-interval', 'skip-urls', 'skip-duplicates', 'skip-commands']) {
+  $(id).onchange = updateSpeechOptions;
 }
 for (const id of ['volume', 'rate']) $(id).oninput = () => {
   states[active][id] = Number($(id).value);
@@ -281,6 +316,7 @@ for (const platform of Object.keys(states)) {
     clearMessages(states[platform]);
     states[platform].seen.clear();
     states[platform].received = 0;
+    states[platform].speechHistory = createSpeechHistory();
     if (platform === active) { stop(); renderSelection(); render(); }
     await connections[platform].connect(channel);
   };
@@ -295,6 +331,7 @@ for (const platform of Object.keys(states)) {
   states[platform].selected = states[platform].messages[0];
 }
 renderSelection();
+renderSpeechOptions();
 render();
 window.addEventListener('beforeunload', () => {
   stop();
