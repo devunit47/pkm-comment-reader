@@ -11,6 +11,15 @@ async function serve(t, fetchImpl) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
+test('the app forbids camera and microphone access and serves the studio module', async t => {
+  const base = await serve(t);
+  const page = await fetch(base);
+  assert.equal(page.headers.get('permissions-policy'), 'camera=(), microphone=()');
+  const studio = await fetch(`${base}/studio.js`);
+  assert.equal(studio.status, 200);
+  assert.match(studio.headers.get('content-type'), /javascript/);
+});
+
 test('Kick lookup returns only the room ID and always uses the fixed Kick destination', async t => {
   let upstreamUrl;
   const base = await serve(t, async url => {

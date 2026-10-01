@@ -1,6 +1,7 @@
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
+import { readStudio, normalizeStudio, readSavedVoices } from './studio.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };
@@ -12,6 +13,11 @@ try { storage = window.localStorage; } catch { /* Storage may be disabled by the
 const savedConnections = readSavedConnections(storage);
 const savedAutoSpeech = readSavedAutoSpeech(storage);
 for (const platform of Object.keys(states)) states[platform].autoSpeech = savedAutoSpeech[platform];
+const savedVoices = readSavedVoices(storage);
+for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
+let studio = readStudio(storage);
+let currentSpeech = null;
+let imageGeneration = 0;
 try {
   const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
   for (const platform of Object.keys(states)) states[platform].speechOptions = normalizeSpeechOptions(saved?.[platform]);
@@ -66,6 +72,10 @@ function renderConnection() {
   $('chat-connection-status').dataset.state = presentation.kind;
   $('platform-pill').textContent = names[active];
   $('platform-pill').className = `pill ${active}`;
+  $('stage-platform').textContent = names[active];
+  $('stage-channel').textContent = state.channel ? `#${state.channel}` : '';
+  $('stage-connection').textContent = presentation.label;
+  $('stage-connection').dataset.state = presentation.kind;
   for (const platform of Object.keys(states)) {
     const service = states[platform];
     const view = connectionPresentation(service.status);
@@ -118,6 +128,7 @@ function render() {
   $('comment-list').setAttribute('aria-label', `${names[active]}の受信コメント`);
   renderConnection();
   renderUsers();
+  renderStageChat();
 }
 
 function add(platform, user, text, createdAt, login = user, readAutomatically = true) {
@@ -154,10 +165,16 @@ function speak(message, automatic = false) {
     $('speech-status').textContent = '読み上げ中';
     $('preview-user').textContent = message.user;
     $('preview-text').textContent = text;
+    currentSpeech = { user: message.user, text, utterance };
+    renderStageSpeech();
   };
   const done = () => {
     if (generation !== speechGeneration) return;
     pendingSpeech = Math.max(0, pendingSpeech - 1);
+    if (currentSpeech?.utterance === utterance) {
+      currentSpeech = null;
+      renderStageSpeech();
+    }
     if (!pendingSpeech) $('speech-status').textContent = '待機中';
   };
   utterance.onend = done;
@@ -170,6 +187,8 @@ function stop() {
   speechGeneration++;
   if (supported) window.speechSynthesis.cancel();
   pendingSpeech = 0;
+  currentSpeech = null;
+  renderStageSpeech();
   $('speech-status').textContent = supported ? '待機中' : 'ブラウザ非対応';
 }
 
@@ -202,9 +221,9 @@ function renderUsers() {
 }
 
 function page(name) {
-  for (const item of ['home', 'users', 'settings']) $(`${item}-page`).hidden = item !== name;
+  for (const item of ['home', 'users', 'settings', 'studio']) $(`${item}-page`).hidden = item !== name;
   document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
-  $('page-title').textContent = { home: 'みんなの声が、ここに。', users: 'ひとりひとりを、大切に。', settings: '配信と、つながろう。' }[name];
+  $('page-title').textContent = { home: 'みんなの声が、ここに。', users: 'ひとりひとりを、大切に。', settings: '配信と、つながろう。', studio: 'あなたらしい、雑談の時間。' }[name];
 }
 
 function switchPlatform(platform) {
@@ -255,7 +274,11 @@ $('auto-speech').onchange = () => {
   if (!states[active].autoSpeech) stop();
 };
 $('read-name').onchange = () => { states[active].readName = $('read-name').checked; };
-$('voice').onchange = () => { states[active].voice = $('voice').value; };
+$('voice').onchange = () => {
+  stop();
+  states[active].voice = $('voice').value;
+  save('pokome-voices', { twitch: states.twitch.voice, kick: states.kick.voice });
+};
 function renderSpeechSettings() {
   const state = states[active];
   $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
@@ -302,6 +325,7 @@ function loadVoices() {
     $('voice').append(option);
   }
   $('voice').value = states[active].voice;
+  if (!$('voice').value) $('voice').value = '';
 }
 if (supported) {
   loadVoices();
@@ -312,6 +336,142 @@ if (supported) {
   $('speech-status').textContent = 'ブラウザ非対応';
 }
 $('clear').onclick = () => { clearMessages(states[active]); stop(); renderSelection(); render(); };
+
+function renderStageChat() {
+  const state = states[active];
+  const messages = state.messages.filter(message => !userRule(state, message.user).hidden).slice(-30);
+  const list = $('stage-chat-list');
+  const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+  list.replaceChildren();
+  for (const message of messages) {
+    const card = make('div', 'stage-comment', '');
+    card.append(make('strong', '', message.user), make('p', '', message.text));
+    list.append(card);
+  }
+  if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
+  $('stage-count').textContent = `${state.received} COMMENTS`;
+  if (bottom) list.scrollTop = list.scrollHeight;
+}
+
+function renderStageSpeech() {
+  $('stage-speech-status').textContent = currentSpeech ? '読み上げ中' : '待機中';
+  $('stage-speech-user').textContent = currentSpeech?.user || '';
+  $('stage-speech-text').textContent = currentSpeech?.text || '次のコメントを待っています。';
+  $('stage-speech-text').parentElement.dataset.speaking = String(!!currentSpeech);
+}
+
+function renderStudio() {
+  const stage = $('talk-stage');
+  stage.dataset.theme = studio.theme;
+  stage.dataset.layout = studio.layout;
+  stage.dataset.decorated = String(studio.decoration);
+  stage.style.setProperty('--stage-accent', studio.accent);
+  stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
+  stage.style.setProperty('--actor-width', `${studio.actorWidth}fr`);
+  stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
+  $('stage-title').textContent = studio.title;
+  $('stage-subtitle').textContent = studio.subtitle;
+  const hasImage = studio.source === 'image' && !!studio.image;
+  $('actor-image').hidden = !hasImage;
+  if ($('actor-image').getAttribute('src') !== (studio.image || null)) {
+    if (studio.image) $('actor-image').src = studio.image;
+    else $('actor-image').removeAttribute('src');
+  }
+  $('actor-placeholder').hidden = hasImage;
+  $('actor-placeholder').querySelector('small').textContent = studio.source === 'image'
+    ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
+  $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
+  for (const key of ['theme', 'accent', 'title', 'subtitle', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
+  $('studio-font-size').value = studio.fontSize;
+  $('studio-actor-width').value = studio.actorWidth;
+  $('studio-width-value').textContent = `${studio.actorWidth}%`;
+  $('studio-decoration').checked = studio.decoration;
+  $('studio-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
+  $('remove-actor-image').disabled = !studio.image;
+}
+
+function enterTalk() {
+  $('talk-stage').hidden = false;
+  document.body.classList.add('talk-mode');
+  renderStageChat();
+  renderStageSpeech();
+  $('stage-chat-list').scrollTop = $('stage-chat-list').scrollHeight;
+  // Move focus to the canvas so controls disappear for screen capture.
+  $('talk-stage').setAttribute('tabindex', '-1');
+  $('talk-stage').focus({ preventScroll: true });
+}
+function leaveTalk() {
+  document.body.classList.remove('talk-mode');
+  $('talk-stage').hidden = true;
+  $('enter-talk').focus({ preventScroll: true });
+}
+$('enter-talk').onclick = enterTalk;
+$('preview-talk').onclick = enterTalk;
+$('leave-talk').onclick = leaveTalk;
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && document.body.classList.contains('talk-mode')) leaveTalk();
+});
+document.querySelectorAll('[data-stage-platform]').forEach(button => {
+  button.onclick = () => switchPlatform(button.dataset.stagePlatform);
+});
+
+function updateStudio() {
+  const source = $('studio-source').value;
+  studio = normalizeStudio({ ...studio,
+    theme: $('studio-theme').value, accent: $('studio-accent').value,
+    title: $('studio-title').value, subtitle: $('studio-subtitle').value,
+    fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
+    actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
+  });
+  save('pokome-studio', studio);
+  renderStudio();
+}
+for (const id of ['theme', 'accent', 'title', 'subtitle', 'font-size', 'layout', 'actor-width', 'decoration', 'source']) {
+  $(`studio-${id}`).onchange = updateStudio;
+}
+$('studio-theme').onchange = () => {
+  $('studio-accent').value = { mint: '#ace5cd', rose: '#efb4c5', violet: '#c8b4f1', paper: '#527250' }[$('studio-theme').value];
+  updateStudio();
+};
+$('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
+$('studio-image').onchange = async () => {
+  const file = $('studio-image').files[0];
+  const generation = ++imageGeneration;
+  if (!file) return;
+  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2 * 1024 * 1024) {
+    notify('PNG・JPEG・WebP・GIFの2MB以下の画像を選んでください。');
+    $('studio-image').value = '';
+    return;
+  }
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('画像を読み込めませんでした。'));
+      reader.readAsDataURL(file);
+    });
+    const probe = new Image();
+    probe.src = image;
+    await probe.decode();
+    if (generation !== imageGeneration) return;
+    const next = normalizeStudio({ ...studio, source: 'image', image });
+    // Only replace the previous image once saving the new one succeeds.
+    if (!storage) throw new Error('ブラウザに画像を保存できません。');
+    storage.setItem('pokome-studio', JSON.stringify(next));
+    studio = next;
+    renderStudio();
+  } catch { notify('画像を読み込み・保存できませんでした。小さい画像やブラウザの保存設定を確認してください。'); }
+  $('studio-image').value = '';
+};
+$('remove-actor-image').onclick = () => {
+  imageGeneration++;
+  studio = { ...studio, image: '' };
+  save('pokome-studio', studio);
+  renderStudio();
+};
+
+renderStudio();
+renderStageSpeech();
 
 const samples = {
   twitch: [['minto_0123', 'ぽこめちゃん、はじめまして！いつも配信楽しみにしてます！'], ['sakura_pink', '今日も配信ありがとう 🌸'], ['nekotan_22', 'こんばんは〜！'], ['game_lover', 'このステージの雰囲気、すごく好き'], ['yuki_4649', '音声ちゃんと聞こえてるよ！'], ['tanaka2525', 'ナイスプレイ！！'], ['mochi_chan', 'お茶飲みながら、のんびり見てます 🍵'], ['harupeko', 'そのキャラクターかわいい！'], ['ao_ooo', '初見です！よろしくお願いします'], ['kana_night', 'きょうもおつかれさま ♡'], ['minto_0123', '次のステージも楽しみ！'], ['sakura_pink', '888888 👏']],

@@ -3,11 +3,12 @@ import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { validChannel } from './connections.js';
 const files = {'/':'index.html','/app.js':'app.js','/style.css':'style.css',
-  '/connections.js':'connections.js','/chat-state.js':'chat-state.js','/speech-options.js':'speech-options.js'};
+  '/connections.js':'connections.js','/chat-state.js':'chat-state.js','/speech-options.js':'speech-options.js','/studio.js':'studio.js'};
 const types = {html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8'};
 
 export function createServer({ fetchImpl = globalThis.fetch } = {}) {
  return http.createServer(async (req,res)=>{
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
   const url = new URL(req.url,'http://localhost');
   if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); res.end(); return; }
   if (url.pathname.startsWith('/api/kick/channel/')) {
