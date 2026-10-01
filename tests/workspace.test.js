@@ -18,3 +18,17 @@ test('saved layouts roundtrip without carrying unrelated fields', () => {
   assert.deepEqual(normalizeWorkspace(JSON.parse(JSON.stringify(state))), state);
   assert.equal(state.token, undefined);
 });
+
+test('removed user panel space expands the preview without overlapping settings', () => {
+  const panels = {
+    comments: { x: 0, y: 0, w: 65, h: 100 },
+    now: { x: 67, y: 0, w: 33, h: 20 },
+    reading: { x: 67, y: 22, w: 33, h: 60 },
+    moderation: { x: 67, y: 84, w: 33, h: 14 },
+  };
+  const result = normalizeWorkspace({ version: 1, home: { panels }, talk: null });
+  assert.equal(result.home.panels.now.h, 38);
+  assert.equal(result.home.panels.reading.y, 40);
+  assert.equal(result.home.panels.reading.y + result.home.panels.reading.h, 100);
+  assert.deepEqual(normalizeWorkspace(result), result);
+});

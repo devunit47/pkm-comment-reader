@@ -355,10 +355,14 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
     await page.locator('[data-page="users"]').click();
     await page.locator('#user-list .user-row').filter({ hasText: username.slice(1) }).getByRole('button', { name: '非表示を解除', exact: true }).click();
     await page.locator('[data-page="home"]').click();
-    for (const selector of ['.now', '.reading']) {
+    for (const selector of ['.reading']) {
       const measurements = await page.locator(selector).evaluate(panel => ({ overflow: getComputedStyle(panel).overflowY, height: panel.clientHeight, content: panel.scrollHeight }));
       assert.equal(measurements.overflow, 'auto'); assert.ok(measurements.content > measurements.height);
     }
+    const preview = await page.locator('.now').boundingBox();
+    const settings = await page.locator('.reading').boundingBox();
+    assert.ok(preview.height > 280);
+    assert.ok(preview.y + preview.height <= settings.y);
     await page.locator('#stop-speech').scrollIntoViewIfNeeded();
     const button = await page.locator('#stop-speech').boundingBox(); const panel = await page.locator('.reading').boundingBox();
     assert.ok(button.y >= panel.y && button.y + button.height <= panel.y + panel.height);

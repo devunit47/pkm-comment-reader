@@ -22,5 +22,18 @@ export function normalizeWorkspace(value) {
     result[key] = value[key] == null ? null : normalizeLayout(value[key], PANEL_IDS[key]);
     if (value[key] != null && !result[key]) throw new Error('必要なパネルの配置がありません。');
   }
+  // Reclaim the removed user panel's space in older stacked home layouts.
+  const legacy = value.home?.panels?.moderation;
+  const home = result.home?.panels;
+  if (legacy && home) {
+    const { now, reading, comments } = home;
+    const aligned = Math.abs(now.x - reading.x) < 1 && Math.abs(now.w - reading.w) < 1;
+    const stacked = reading.y >= now.y + now.h && comments.x + comments.w <= now.x;
+    if (aligned && stacked && !now.hidden && !reading.hidden) {
+      const extra = Math.max(0, 100 - reading.y - reading.h);
+      now.h += extra;
+      reading.y += extra;
+    }
+  }
   return result;
 }
