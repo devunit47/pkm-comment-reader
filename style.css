@@ -143,3 +143,5 @@ main[data-view=updates]>.platform-tabs,main[data-view=updates]>header .eyebrow,m
 #user-actions .mod-buttons{flex-direction:column}#user-actions .mod-buttons button{text-align:left;padding:10px 12px}#user-actions #hide-comment{border-color:#7d505b;background:#59393f;color:#efbbc6}
 
 main[data-view=studio]>.platform-tabs,main[data-view=studio]>header .eyebrow,main[data-view=studio]>header p,main[data-view=studio]>header .header-right{display:none}
+
+main[data-view=settings]>.platform-tabs,main[data-view=settings]>header .eyebrow,main[data-view=settings]>header p,main[data-view=settings]>header .header-right{display:none}
