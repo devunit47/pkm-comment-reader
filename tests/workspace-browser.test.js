@@ -339,7 +339,23 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
       } } }));
     });
     await page.goto('http://127.0.0.1:' + server.address().port);
-    for (const selector of ['.now', '.reading', '.moderation']) {
+    assert.equal(await page.locator('.moderation').count(), 0);
+    const author = page.locator('#comment-list .username').first();
+    const username = await author.textContent();
+    await author.focus(); await page.keyboard.press('Enter');
+    assert.equal(await page.locator('#user-actions').isVisible(), true);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#user-actions').isVisible(), false);
+    await author.click(); await page.locator('#mute-user').click();
+    const rules = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-users-v2')));
+    assert.equal(Object.values(rules.twitch).some(rule => rule.muted), true);
+    assert.equal(Object.values(rules.kick).some(rule => rule.muted), false);
+    await author.click(); await page.locator('#hide-user').click();
+    assert.equal(await page.locator('#comment-list .username').filter({ hasText: username.slice(1) }).count(), 0);
+    await page.locator('[data-page="users"]').click();
+    await page.locator('#user-list .user-row').filter({ hasText: username.slice(1) }).getByRole('button', { name: '非表示を解除', exact: true }).click();
+    await page.locator('[data-page="home"]').click();
+    for (const selector of ['.now', '.reading']) {
       const measurements = await page.locator(selector).evaluate(panel => ({ overflow: getComputedStyle(panel).overflowY, height: panel.clientHeight, content: panel.scrollHeight }));
       assert.equal(measurements.overflow, 'auto'); assert.ok(measurements.content > measurements.height);
     }

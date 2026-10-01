@@ -1,5 +1,5 @@
 export const WORKSPACE_KEY = 'pokome-workspace-v1';
-export const PANEL_IDS = { home: ['comments', 'now', 'reading', 'moderation'], talk: ['header', 'chat', 'speech', 'actor', 'footer'] };
+export const PANEL_IDS = { home: ['comments', 'now', 'reading'], talk: ['header', 'chat', 'speech', 'actor', 'footer'] };
 const bounded = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 
 // Coordinates and dimensions are percentages of the workspace canvas.

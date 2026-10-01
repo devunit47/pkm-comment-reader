@@ -130,12 +130,30 @@ function render() {
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
   list.replaceChildren();
   for (const message of visible) {
-    const row = make('button', `comment pokome-comment${state.selected?.id === message.id ? ' selected' : ''}`, '');
-    row.setAttribute('aria-pressed', String(state.selected?.id === message.id));
-    const name = make('span', 'username pokome-comment__author', '');
+    const row = make('div', `comment pokome-comment${state.selected?.id === message.id ? ' selected' : ''}`, '');
+    const name = make('button', 'username pokome-comment__author', '');
     name.append(make('span', `avatar ${active}`, active === 'kick' ? 'K' : '▣'), document.createTextNode(message.user));
-    row.append(name, make('span', 'message pokome-comment__body', message.text), make('span', 'time', message.time));
-    row.onclick = () => { state.selected = message; renderSelection(); render(); };
+    name.setAttribute('aria-haspopup', 'dialog');
+    name.setAttribute('aria-controls', 'user-actions');
+    name.setAttribute('aria-label', message.user + ' の操作');
+    name.onclick = () => {
+      state.selected = message;
+      renderSelection();
+      for (const item of list.querySelectorAll('.comment')) {
+        item.classList.toggle('selected', item === row);
+        item.querySelector('.message').setAttribute('aria-pressed', String(item === row));
+      }
+      const rect = name.getBoundingClientRect();
+      const menu = $('user-actions');
+      menu.showPopover();
+      menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8)) + 'px';
+      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, innerHeight - menu.offsetHeight - 8)) + 'px';
+      $('hide-user').focus();
+    };
+    const body = make('button', 'message pokome-comment__body', message.text);
+    body.setAttribute('aria-pressed', String(state.selected?.id === message.id));
+    body.onclick = () => { state.selected = message; renderSelection(); render(); };
+    row.append(name, body, make('span', 'time', message.time));
     list.append(row);
   }
   if (!visible.length) list.append(make('p', 'empty', `${names[active]}の表示するコメントがありません。`));
@@ -253,6 +271,7 @@ function renderUsers() {
 }
 
 function page(name) {
+  $('user-actions').hidePopover();
   document.querySelector('main').dataset.view = name;
   for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
   document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
@@ -261,6 +280,7 @@ function page(name) {
 
 function switchPlatform(platform) {
   if (!enabledPlatforms.includes(platform) || active === platform) return;
+  $('user-actions').hidePopover();
   stop();
   active = platform;
   const state = states[active];
@@ -295,8 +315,13 @@ document.querySelectorAll('[data-connection-settings]').forEach(button => {
 document.querySelectorAll('.nav').forEach(button => { button.onclick = () => page(button.dataset.page); });
 $('search').oninput = () => { states[active].search = $('search').value; render(); };
 $('filter').onchange = () => { states[active].filter = $('filter').value; render(); };
-$('hide-user').onclick = () => states[active].selected && toggleRule(states[active].selected.user, 'hidden');
-$('mute-user').onclick = () => states[active].selected && toggleRule(states[active].selected.user, 'muted');
+for (const [id, key] of [['hide-user', 'hidden'], ['mute-user', 'muted']]) {
+  $(id).onclick = () => {
+    $('user-actions').hidePopover();
+    if (states[active].selected) toggleRule(states[active].selected.user, key);
+    $('search').focus();
+  };
+}
 $('read-selected').onclick = () => states[active].selected ? speak(states[active].selected) : notify('コメントを選択してください。');
 $('stop-speech').onclick = stop;
 $('auto-speech').onchange = () => {
@@ -563,7 +588,7 @@ function renderStudio() {
   $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
   $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
   $('studio-list-count').value = studio.listCount;
-  $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · 選択してユーザーを管理`;
+  $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · ユーザー名から操作`;
   $('studio-actor-width').value = studio.actorWidth;
   $('studio-width-value').textContent = `${studio.actorWidth}%`;
   $('studio-decoration').checked = studio.decoration;

@@ -3,9 +3,9 @@ export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from './workspace-
 
 export function initializeWorkspace(storage) {
   const roots = { home: document.querySelector('.workspace'), talk: document.querySelector('#talk-stage') };
-  const selectors = { home: ['.comments', '.now', '.reading', '.moderation'], talk: ['.stage-header', '.stage-chat', '.stage-speech', '.stage-actor', '.stage-footer'] };
+  const selectors = { home: ['.comments', '.now', '.reading'], talk: ['.stage-header', '.stage-chat', '.stage-speech', '.stage-actor', '.stage-footer'] };
   let layouts = { version: 1, home: null, talk: null }, editing = false, snap = true, selected = 'comments', lastMode = '', target = 'home';
-  const names = { comments: 'コメント一覧', now: '読み上げプレビュー', reading: '読み上げ設定', moderation: 'ユーザー管理', header: 'タイトル・接続状態', chat: '配信用コメント一覧', speech: '読み上げ中のコメント', actor: '立ち絵・映像のスペース', footer: '画面下のひとこと' };
+  const names = { comments: 'コメント一覧', now: '読み上げプレビュー', reading: '読み上げ設定', header: 'タイトル・接続状態', chat: '配信用コメント一覧', speech: '読み上げ中のコメント', actor: '立ち絵・映像のスペース', footer: '画面下のひとこと' };
   try { const saved = storage.getItem(WORKSPACE_KEY); if (saved) layouts = normalizeWorkspace(JSON.parse(saved)); } catch { /* Keep the original layout when saved data is unusable. */ }
   const panels = {}, originals = new Map();
   for (const mode of Object.keys(roots)) {
