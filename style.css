@@ -153,3 +153,5 @@ main[data-view=users]>.platform-tabs,main[data-view=users]>header .eyebrow,main[
 .comment-heading-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}.comments>.panel-heading{gap:12px;flex-wrap:wrap}.comment-heading-actions #demo{font-size:11px;padding:7px 10px}
 
 .studio-fields .inactive-field{color:var(--muted)}.studio-fields .inactive-field input{opacity:.4;cursor:not-allowed}
+
+.studio-category{min-width:0;margin:0;padding:16px;display:grid;gap:14px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 35%,var(--panel))}.studio-category legend{padding:0 8px;font-size:13px;font-weight:700;color:var(--mint)}.studio-category>label{display:grid;gap:8px;font-size:12px;color:var(--text)}
