@@ -1,4 +1,5 @@
 name: Publish Twitch version to GitHub Pages
+run-name: Publish Twitch-only GitHub Pages
 
 on:
   workflow_dispatch:

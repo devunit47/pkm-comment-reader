@@ -4,6 +4,8 @@ Twitch・Kickのコメント表示・音声読み上げ・ローカルのユー�
 
 ## GitHub Pages版（github.io）について
 
+[公開ページを開く](https://devunit47.github.io/pkm-comment-reader/)
+
 **GitHub Pagesの公開ページではTwitchのみ利用できます。このページではKickに接続できません。**
 
 Kickへの接続は、今後公開予定のローカル版で対応予定です。現時点では、このリポジトリの開発版をPC上で起動するとTwitch・Kickの両方を利用できます。ローカル版の公開時期は未定です。
