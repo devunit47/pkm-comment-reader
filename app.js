@@ -583,6 +583,8 @@ function renderStudio() {
   $('studio-speech-style').value = studio.speechStyle;
   $('studio-speech-background').value = studio.speechBackground;
   $('studio-speech-background').disabled = studio.speechStyle !== 'bubble';
+  $('speech-background-field').classList.toggle('inactive-field', studio.speechStyle !== 'bubble');
+  $('speech-background-help').textContent = studio.speechStyle === 'bubble' ? 'セリフの吹き出しの背景に使う色です。' : '「読み上げ枠のスタイル」で「セリフの吹き出し」を選ぶと変更できます。';
   $('studio-speech-text-color').value = studio.speechTextColor;
   $('studio-speech-image-status').textContent = studio.speechImage ? 'ユーザーの背景画像を登録済みです。' : '標準の背景画像を使用します。';
   $('reset-speech-image').disabled = !studio.speechImage;
