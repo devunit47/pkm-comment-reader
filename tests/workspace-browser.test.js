@@ -38,6 +38,12 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('#volume').inputValue(), '0.4');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), false);
+    await page.locator('#stage-title').hover();
+    await page.locator('#stage-volume-settings').hover();
+    assert.equal(await page.locator('#stage-volume-dialog').isVisible(), true);
+    assert.equal(await page.locator('#stage-volume').evaluate(element => getComputedStyle(element).writingMode), 'vertical-lr');
+    await page.locator('#stage-title').click();
+    assert.equal(await page.locator('#stage-volume-dialog').isVisible(), false);
     assert.equal(await page.locator('#talk-stage').isVisible(), true);
     await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '読み上げ中'; });
     assert.deepEqual(await page.locator('.stage-wave').boundingBox(), wavePosition);

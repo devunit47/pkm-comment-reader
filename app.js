@@ -338,7 +338,18 @@ $('stage-volume').oninput = () => {
   $('volume').value = states[active].volume;
   renderSpeechSettings();
 };
-$('stage-volume-settings').onclick = () => $('stage-volume-dialog').showModal();
+function openStageVolume() {
+  const button = $('stage-volume-settings');
+  const popover = $('stage-volume-dialog');
+  if (popover.matches(':popover-open')) return;
+  popover.showPopover();
+  const anchor = button.getBoundingClientRect();
+  const panel = popover.getBoundingClientRect();
+  popover.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - panel.width - 8))}px`;
+  popover.style.top = `${Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - panel.height - 8))}px`;
+}
+$('stage-volume-settings').onpointerenter = event => { if (event.pointerType !== 'touch') openStageVolume(); };
+$('stage-volume-settings').onclick = () => { openStageVolume(); $('stage-volume').focus(); };
 $('stage-volume-dialog').addEventListener('keydown', event => {
   if (event.key === 'Escape') event.stopPropagation();
 });
@@ -475,6 +486,7 @@ function enterTalk() {
   $('talk-stage').focus({ preventScroll: true });
 }
 function leaveTalk() {
+  if ($('stage-volume-dialog').matches(':popover-open')) $('stage-volume-dialog').hidePopover();
   closeTextEditor?.();
   document.body.classList.remove('talk-mode');
   $('talk-stage').hidden = true;

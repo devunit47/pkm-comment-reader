@@ -36,12 +36,12 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-volume-control input{width:100px;min-width:40px;max-width:100%;accent-color:var(--stage-accent)}
 .stage-volume-control output{min-width:4em;text-align:right}
 #stage-volume-settings{display:inline-flex;align-items:center;justify-content:center;padding:4px;min-width:32px;min-height:32px;color:inherit;flex-shrink:0}
-#stage-volume-dialog .stage-volume-control{padding:0;width:100%}
-#stage-volume-dialog input{flex:1;width:auto}
-#stage-volume-dialog p{margin:0;font-size:13px;line-height:1.6}
 #stage-volume-settings{position:relative;overflow:visible}
-#stage-volume-tooltip{position:absolute;left:0;top:calc(100% + 6px);z-index:20;display:none;padding:8px 12px;border:1px solid var(--stage-accent);border-radius:6px;background:var(--stage-bg);color:var(--stage-text);box-shadow:0 4px 12px #0005;font-size:13px;font-weight:600;line-height:1.4;letter-spacing:normal;white-space:nowrap;pointer-events:none}
-#stage-volume-settings:hover #stage-volume-tooltip,#stage-volume-settings:focus-visible #stage-volume-tooltip{display:block}
+#stage-volume-dialog{position:fixed;inset:auto;margin:0;padding:12px;border:1px solid var(--stage-accent);border-radius:8px;background:var(--stage-surface);color:var(--stage-text);box-shadow:0 6px 20px #0005;width:72px;max-height:calc(100dvh - 16px)}
+#stage-volume-dialog .stage-volume-control{display:flex;flex-direction:column;gap:10px;padding:0;color:inherit}
+#stage-volume-dialog input{writing-mode:vertical-lr;direction:rtl;width:24px;height:130px;min-width:0;padding:0;touch-action:none}
+#stage-volume-dialog output{text-align:center;min-width:0}
+#stage-volume-dialog::backdrop{background:transparent}
 #stage-speech-user[hidden]{display:none}
 .stage-wave{display:flex;align-items:center;gap:3px;height:20px;width:27px;color:var(--stage-accent)}
 .stage-wave i{display:block;width:3px;height:18px;border-radius:2px;background:currentColor;transform:scaleY(.18);opacity:.45}
