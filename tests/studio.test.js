@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+test('comment styles persist and unknown styles use the default', () => {
+  for (const commentStyle of ['stacked', 'anonymous', 'inline', 'compact']) assert.equal(readStudio({ getItem: () => JSON.stringify({ commentStyle }) }).commentStyle, commentStyle);
+  assert.equal(normalizeStudio({ commentStyle: 'unknown' }).commentStyle, 'stacked');
+});
 import { DEFAULT_STUDIO, normalizeStudio, readStudio, readSavedVoices } from '../studio.js';
 
 test('studio settings validate styles, bounds and raster data without accepting arbitrary sources', () => {

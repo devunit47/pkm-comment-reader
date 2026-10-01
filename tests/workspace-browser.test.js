@@ -21,6 +21,15 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
     const initialCount = await page.locator('.stage-comment').count();
+    await page.locator('#stage-comment-style').selectOption('anonymous');
+    assert.equal(await page.locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
+    await page.locator('#stage-comment-style').selectOption('inline');
+    assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
+    await page.locator('#stage-comment-style').selectOption('compact');
+    assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-studio')).commentStyle), 'compact');
+    assert.equal(await page.locator('.stage-comment').count(), initialCount);
+    await page.locator('#stage-comment-style').selectOption('stacked');
     const initialSize = await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize);
     const subtitleBefore = await page.locator('#stage-subtitle').boundingBox();
     await page.locator('#stage-font-plus').click();

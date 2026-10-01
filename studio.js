@@ -1,6 +1,6 @@
 export const DEFAULT_STUDIO = Object.freeze({
   theme: 'mint', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
-  fontSize: 20, listCount: 300, layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
+  fontSize: 20, listCount: 300, commentStyle: 'stacked', layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
   speechStyle: 'image', speechBackground: '#f3f1dc', speechImage: '', speechTextColor: '#25382f',
   footer: 'ひとつのコメントから、おしゃべりが広がる。',
@@ -9,6 +9,7 @@ export const DEFAULT_STUDIO = Object.freeze({
 export function normalizeStudio(value = {}) {
   const options = { ...DEFAULT_STUDIO };
   if (!value || typeof value !== 'object') return options;
+  if (['stacked', 'anonymous', 'inline', 'compact'].includes(value.commentStyle)) options.commentStyle = value.commentStyle;
   for (const [key, allowed] of Object.entries({ theme: ['mint', 'rose', 'violet', 'paper'], layout: ['left', 'right'], source: ['space', 'image'], speechStyle: ['panel', 'bubble', 'image'] })) {
     if (allowed.includes(value[key])) options[key] = value[key];
   }

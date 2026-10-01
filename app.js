@@ -403,6 +403,8 @@ function renderStudio() {
   stage.dataset.decorated = String(studio.decoration);
   stage.style.setProperty('--stage-accent', studio.accent);
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
+  $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
+  $('stage-comment-style').value = studio.commentStyle;
   stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
   stage.style.setProperty('--speech-background', studio.speechBackground);
   const luminance = studio.speechBackground.slice(1).match(/../g).map(hex => {
@@ -503,6 +505,14 @@ $('studio-theme').onchange = () => {
   updateStudio();
 };
 $('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
+$('stage-comment-style').onchange = () => {
+  const list = $('stage-chat-list');
+  const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
+  studio = normalizeStudio({ ...studio, commentStyle: $('stage-comment-style').value });
+  save('pokome-studio', studio); renderStudio();
+  if (bottom) list.scrollTop = list.scrollHeight;
+  updateStageCommentVisibility();
+};
 for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
   $(id).onclick = () => {
     const list = $('stage-chat-list');
