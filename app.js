@@ -77,14 +77,9 @@ function make(tag, className, text) {
 function renderConnection() {
   const state = states[active];
   const presentation = connectionPresentation(state.status);
-  $('connection-status').textContent = presentation.label;
-  $('connection-summary').dataset.state = presentation.kind;
-  $('connection-detail').textContent = presentation.detail;
-  $('channel-label').textContent = state.channel ? `#${state.channel}` : '';
+  $('chat-demo-note').hidden = state.status !== 'デモモード';
   $('chat-connection-status').textContent = presentation.label;
   $('chat-connection-status').dataset.state = presentation.kind;
-  $('platform-pill').textContent = names[active];
-  $('platform-pill').className = `pill ${active}`;
   $('stage-platform').textContent = names[active];
   $('stage-channel').textContent = state.channel ? `#${state.channel}` : '';
   $('stage-connection').textContent = presentation.label;
@@ -280,7 +275,6 @@ document.querySelectorAll('[data-connection-settings]').forEach(button => {
   };
 });
 document.querySelectorAll('.nav').forEach(button => { button.onclick = () => page(button.dataset.page); });
-$('open-settings').onclick = () => page('settings');
 $('search').oninput = () => { states[active].search = $('search').value; render(); };
 $('filter').onchange = () => { states[active].filter = $('filter').value; render(); };
 $('hide-user').onclick = () => states[active].selected && toggleRule(states[active].selected.user, 'hidden');
