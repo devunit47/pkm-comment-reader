@@ -28,3 +28,4 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-comment strong{display:block;flex-shrink:0;font-size:min(calc(var(--stage-font-size)*.7),28cqh);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stage-comment p{flex-shrink:0;margin:0;font-size:min(var(--stage-font-size),42cqh);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #stage-chat-list .stage-empty{grid-row:1/-1}
+.stage-speech{height:clamp(120px,22dvh,190px);min-height:0}
