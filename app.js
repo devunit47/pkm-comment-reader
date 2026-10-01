@@ -370,7 +370,7 @@ function renderStageChat() {
 }
 
 function renderStageSpeech() {
-  $('stage-speech-status').textContent = currentSpeech?.speaking ? '読み上げ中' : currentSpeech ? '読み上げ完了' : '待機中';
+  $('stage-speech-status').textContent = currentSpeech?.speaking ? '読み上げ中' : '待機中';
   $('stage-speech-user').textContent = currentSpeech?.user || '';
   $('stage-speech-text').textContent = currentSpeech?.text || '次のコメントを待っています。';
   $('stage-speech-text').parentElement.dataset.speaking = String(!!currentSpeech?.speaking);
@@ -384,6 +384,13 @@ function renderStudio() {
   stage.style.setProperty('--stage-accent', studio.accent);
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
+  stage.style.setProperty('--speech-background', studio.speechBackground);
+  const luminance = studio.speechBackground.slice(1).match(/../g).map(hex => {
+    const channel = parseInt(hex, 16) / 255;
+    return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+  }).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0);
+  stage.style.setProperty('--speech-ink', luminance > .179 ? '#000000' : '#ffffff');
+  document.querySelector('.stage-speech').dataset.style = studio.speechStyle;
   stage.style.setProperty('--actor-width', `${studio.actorWidth}fr`);
   stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
   $('stage-title').textContent = studio.title;
@@ -391,6 +398,9 @@ function renderStudio() {
   $('stage-speech-title').textContent = studio.speechTitle;
   $('studio-speech-title').value = studio.speechTitle;
   $('studio-speech-font-size').value = studio.speechFontSize;
+  $('studio-speech-style').value = studio.speechStyle;
+  $('studio-speech-background').value = studio.speechBackground;
+  $('studio-speech-background').disabled = studio.speechStyle !== 'bubble';
   const hasImage = studio.source === 'image' && !!studio.image;
   $('actor-image').hidden = !hasImage;
   if ($('actor-image').getAttribute('src') !== (studio.image || null)) {
@@ -441,6 +451,7 @@ function updateStudio() {
     theme: $('studio-theme').value, accent: $('studio-accent').value,
     title: $('studio-title').value, subtitle: $('studio-subtitle').value,
     speechTitle: $('studio-speech-title').value, speechFontSize: Number($('studio-speech-font-size').value),
+    speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
     chatCount: Number($('studio-chat-count').value),
     actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
@@ -449,7 +460,7 @@ function updateStudio() {
   renderStudio();
   renderStageChat();
 }
-for (const id of ['theme', 'accent', 'title', 'subtitle', 'speech-title', 'speech-font-size', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'title', 'subtitle', 'speech-title', 'speech-font-size', 'speech-style', 'speech-background', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {

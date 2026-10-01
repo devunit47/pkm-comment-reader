@@ -32,6 +32,17 @@ test('speech heading and font size persist with safe bounds and legacy defaults'
   assert.equal(normalizeStudio({ title: '旧設定' }).speechFontSize, 22);
 });
 
+test('speech bubble appearance restores and rejects invalid styles and colors', () => {
+  const value = readStudio({ getItem: () => JSON.stringify({ speechStyle: 'bubble', speechBackground: '#ffeedd' }) });
+  assert.equal(value.speechStyle, 'bubble');
+  assert.equal(value.speechBackground, '#ffeedd');
+  for (const speechBackground of ['red', '#abc', 'url(x)', null]) {
+    assert.equal(normalizeStudio({ speechBackground }).speechBackground, DEFAULT_STUDIO.speechBackground);
+  }
+  assert.equal(normalizeStudio({ speechStyle: 'invalid' }).speechStyle, 'panel');
+  assert.equal(normalizeStudio({ title: '旧設定' }).speechStyle, 'panel');
+});
+
 test('chat count accepts 1–100, preserves older settings and rejects invalid counts', () => {
   for (const chatCount of [1, 3, 100]) {
     assert.equal(readStudio({ getItem: () => JSON.stringify({ chatCount }) }).chatCount, chatCount);

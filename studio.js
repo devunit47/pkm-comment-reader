@@ -2,15 +2,17 @@ export const DEFAULT_STUDIO = Object.freeze({
   theme: 'mint', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
   fontSize: 20, chatCount: 30, layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
+  speechStyle: 'panel', speechBackground: '#f3f1dc',
 });
 
 export function normalizeStudio(value = {}) {
   const options = { ...DEFAULT_STUDIO };
   if (!value || typeof value !== 'object') return options;
-  for (const [key, allowed] of Object.entries({ theme: ['mint', 'rose', 'violet', 'paper'], layout: ['left', 'right'], source: ['space', 'image'] })) {
+  for (const [key, allowed] of Object.entries({ theme: ['mint', 'rose', 'violet', 'paper'], layout: ['left', 'right'], source: ['space', 'image'], speechStyle: ['panel', 'bubble'] })) {
     if (allowed.includes(value[key])) options[key] = value[key];
   }
   if (typeof value.accent === 'string' && /^#[\da-f]{6}$/i.test(value.accent)) options.accent = value.accent;
+  if (typeof value.speechBackground === 'string' && /^#[\da-f]{6}$/i.test(value.speechBackground)) options.speechBackground = value.speechBackground;
   for (const [key, limit] of [['title', 60], ['subtitle', 100], ['speechTitle', 40]]) {
     if (typeof value[key] === 'string') options[key] = value[key].slice(0, limit);
   }

@@ -33,3 +33,17 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .search input:focus-visible{outline:none}
 .stage-presenter .actor-spark{font-size:clamp(32px,6dvh,70px)}
 .stage-presenter #actor-placeholder{padding-bottom:52px}
+.stage-speech-heading{display:flex;align-items:center;gap:8px;min-width:0}
+.stage-speaker{width:20px;height:20px;flex-shrink:0;color:var(--stage-accent)}
+.stage-speech-indicator{display:flex;align-items:center;gap:8px;flex-shrink:0;white-space:nowrap}
+.stage-wave{display:flex;align-items:center;gap:3px;height:20px;width:27px;color:var(--stage-accent)}
+.stage-wave i{display:block;width:3px;height:18px;border-radius:2px;background:currentColor;transform:scaleY(.18);opacity:.45}
+.stage-speech[data-speaking=true] .stage-wave i{opacity:1;animation:stage-wave .75s ease-in-out infinite alternate}
+.stage-wave i:nth-child(2){animation-delay:-.45s}.stage-wave i:nth-child(3){animation-delay:-.2s}.stage-wave i:nth-child(4){animation-delay:-.6s}.stage-wave i:nth-child(5){animation-delay:-.35s}
+@keyframes stage-wave{from{transform:scaleY(.25)}to{transform:scaleY(1)}}
+@media(prefers-reduced-motion:reduce){.stage-speech[data-speaking=true] .stage-wave i{animation:none;transform:scaleY(.7)}}
+.stage-speech[data-style=bubble]{position:relative;height:clamp(160px,26dvh,210px);max-height:44%;background:var(--speech-background);color:var(--speech-ink);border-color:var(--speech-background);overflow:visible}
+.stage-speech[data-style=bubble]:after{content:'';position:absolute;right:36px;bottom:-12px;width:24px;height:14px;background:var(--speech-background);clip-path:polygon(0 0,100% 0,25% 100%);pointer-events:none}
+.stage-speech[data-style=bubble] .stage-panel-label,.stage-speech[data-style=bubble] .stage-panel-label h2,.stage-speech[data-style=bubble] .stage-speaker,.stage-speech[data-style=bubble] .stage-wave,.stage-speech[data-style=bubble] #stage-speech-user{color:var(--speech-ink)}
+.stage-speech[data-style=bubble] #stage-speech-text{max-height:calc(100% - 62px);overflow:auto;scrollbar-width:thin}
+.stage-speech[data-style=bubble] .stage-panel-label{padding-top:14px;padding-bottom:12px}
