@@ -347,7 +347,7 @@ $('clear').onclick = () => { clearMessages(states[active]); stop(); renderSelect
 
 function renderStageChat() {
   const state = states[active];
-  const messages = state.messages.filter(message => !userRule(state, message.user).hidden).slice(-30);
+  const messages = state.messages.filter(message => !userRule(state, message.user).hidden).slice(-studio.chatCount);
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
   list.replaceChildren();
@@ -391,6 +391,7 @@ function renderStudio() {
   $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
   for (const key of ['theme', 'accent', 'title', 'subtitle', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
   $('studio-font-size').value = studio.fontSize;
+  $('studio-chat-count').value = studio.chatCount;
   $('studio-actor-width').value = studio.actorWidth;
   $('studio-width-value').textContent = `${studio.actorWidth}%`;
   $('studio-decoration').checked = studio.decoration;
@@ -429,12 +430,14 @@ function updateStudio() {
     theme: $('studio-theme').value, accent: $('studio-accent').value,
     title: $('studio-title').value, subtitle: $('studio-subtitle').value,
     fontSize: Number($('studio-font-size').value), layout: $('studio-layout').value,
+    chatCount: Number($('studio-chat-count').value),
     actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
   });
   save('pokome-studio', studio);
   renderStudio();
+  renderStageChat();
 }
-for (const id of ['theme', 'accent', 'title', 'subtitle', 'font-size', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'title', 'subtitle', 'font-size', 'chat-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-theme').onchange = () => {

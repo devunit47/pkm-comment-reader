@@ -19,3 +19,13 @@ test('voice preferences restore separately and tolerate invalid storage', () => 
   assert.deepEqual(readSavedVoices({ getItem: () => JSON.stringify({ twitch: null, kick: false }) }), { twitch: '', kick: '' });
   assert.deepEqual(readSavedVoices(undefined), { twitch: '', kick: '' });
 });
+
+test('chat count accepts 1–100, preserves older settings and rejects invalid counts', () => {
+  for (const chatCount of [1, 3, 100]) {
+    assert.equal(readStudio({ getItem: () => JSON.stringify({ chatCount }) }).chatCount, chatCount);
+  }
+  for (const chatCount of [0, -1, 101, 2.5, '3', null]) {
+    assert.equal(normalizeStudio({ chatCount }).chatCount, 30);
+  }
+  assert.equal(normalizeStudio({ theme: 'rose' }).chatCount, 30);
+});
