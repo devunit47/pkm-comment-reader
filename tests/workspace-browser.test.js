@@ -212,3 +212,57 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+
+test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+  const server = createServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { chromium } = require(runtime);
+  const browser = await chromium.launch({ headless: true, executablePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => {
+      localStorage.setItem('pokome-connections', JSON.stringify({ twitch: 'saved_channel', kick: 'saved-kick' }));
+      window.testSockets = [];
+      window.WebSocket = class {
+        constructor(url) { this.url = url; window.testSockets.push(this); }
+        send() {}
+        close() { this.closed = true; }
+      };
+    });
+    await page.route('**/api/kick/channel/*', route => route.fulfill({ json: { chatroomId: 123 } }));
+    await page.goto('http://127.0.0.1:' + server.address().port);
+    await page.locator('#twitch-channel').evaluate(input => { input.value = 'unsaved_edit'; });
+    await page.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
+    assert.equal(await page.locator('#twitch-tab-channel').textContent(), '#saved_channel');
+    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '切断');
+    assert.equal(await page.locator('#kick-connection-toggle').textContent(), '接続');
+    await page.getByRole('button', { name: 'Twitchを切断', exact: true }).click();
+    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続');
+    assert.equal(await page.evaluate(() => window.testSockets[0].closed), true);
+    await page.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
+    await page.evaluate(() => window.testSockets[1].onmessage({ data: ':server 366 user #saved_channel :End of names' }));
+    assert.equal(await page.locator('#twitch-tab-status').textContent(), '接続済み');
+    await page.getByRole('button', { name: 'Kickに接続', exact: true }).click();
+    await page.waitForFunction(() => window.testSockets.length === 3);
+    assert.equal(await page.locator('#kick-tab-channel').textContent(), '#saved-kick');
+    await page.getByRole('button', { name: 'Kickを切断', exact: true }).click();
+    assert.equal(await page.locator('#twitch-tab-status').textContent(), '接続済み');
+    await page.evaluate(() => window.testSockets[1].onerror());
+    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-connections')).twitch), 'saved_channel');
+    await page.evaluate(() => localStorage.removeItem('pokome-connections'));
+    // Use a fresh page without the saved-connection initialization script.
+    const freshPage = await browser.newPage();
+    await freshPage.goto('http://127.0.0.1:' + server.address().port);
+    await freshPage.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
+    assert.equal(await freshPage.locator('#settings-page').isVisible(), true);
+    assert.equal(await freshPage.locator('#twitch-channel').evaluate(element => element === document.activeElement), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

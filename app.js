@@ -87,6 +87,12 @@ function renderConnection() {
   for (const platform of Object.keys(states)) {
     const service = states[platform];
     const view = connectionPresentation(service.status);
+    const disconnectable = ['connected', 'connecting'].includes(view.kind);
+    const toggle = $(`${platform}-connection-toggle`);
+    toggle.textContent = disconnectable ? '切断' : '接続';
+    toggle.setAttribute('aria-label', `${names[platform]}${disconnectable ? 'を切断' : 'に接続'}`);
+    toggle.title = disconnectable ? '接続を切断します' : savedConnections[platform]
+      ? `保存済みの #${savedConnections[platform]} に接続します` : '接続設定でチャンネルを保存してください';
     for (const id of [`${platform}-status`, `${platform}-tab-status`]) {
       $(id).textContent = view.label;
       $(id).dataset.state = view.kind;
@@ -678,6 +684,15 @@ $('demo').onclick = () => {
 };
 
 const connections = {};
+async function connectChannel(platform, channel) {
+  if (!validChannel(platform, channel)) { notify('チャンネル名を確認してください。'); return; }
+  clearMessages(states[platform]);
+  states[platform].seen.clear();
+  states[platform].received = 0;
+  states[platform].speechHistory = createSpeechHistory();
+  if (platform === active) { stop(); renderSelection(); render(); }
+  await connections[platform].connect(channel);
+}
 for (const platform of enabledPlatforms) {
   $(`${platform}-channel`).value = savedConnections[platform];
   connections[platform] = new ChatConnection(platform, {
@@ -691,19 +706,24 @@ for (const platform of enabledPlatforms) {
       savedConnections[platform] = channel;
       save('pokome-connections', savedConnections);
       $(`${platform}-channel`).value = channel;
+      renderConnection();
     },
   });
   $(`${platform}-disconnect`).onclick = () => connections[platform].disconnect();
+  $(`${platform}-connection-toggle`).onclick = async () => {
+    if (['接続中', '接続準備中'].includes(states[platform].status)) {
+      connections[platform].disconnect();
+    } else if (savedConnections[platform]) {
+      await connectChannel(platform, savedConnections[platform]);
+    } else {
+      document.querySelector(`[data-connection-settings="${platform}"]`).click();
+      notify('チャンネルを入力して接続すると、次回からこのボタンで接続できます。');
+    }
+  };
   $(`${platform}-connect-form`).onsubmit = async event => {
     event.preventDefault();
     const channel = $(`${platform}-channel`).value.trim().toLowerCase();
-    if (!validChannel(platform, channel)) { notify('チャンネル名を確認してください。'); return; }
-    clearMessages(states[platform]);
-    states[platform].seen.clear();
-    states[platform].received = 0;
-    states[platform].speechHistory = createSpeechHistory();
-    if (platform === active) { stop(); renderSelection(); render(); }
-    await connections[platform].connect(channel);
+    await connectChannel(platform, channel);
   };
 }
 function clock() {
