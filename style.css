@@ -62,7 +62,7 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speech[data-style=image]{height:clamp(180px,30dvh,240px);max-height:48%;background:transparent;border-color:transparent;padding-bottom:0;overflow:visible}
 .stage-speech[data-style=image] .stage-panel-label{padding:0 8px 12px}
 .stage-speech[data-style=image] .stage-speech-content,.speech-bubble[data-style=image]{background-image:var(--speech-image);background-size:100% 100%;background-repeat:no-repeat;padding:16px 22% 24px 22px;color:var(--speech-image-ink)}
-.speech-bubble[data-style]{min-height:140px}
+.speech-bubble[data-style]{min-height:260px}
 .speech-bubble[data-style=panel]{background:color-mix(in srgb,var(--stage-accent) 8%,var(--stage-surface));color:var(--stage-text);border:1px solid var(--stage-border)}
 .speech-bubble[data-style=bubble]{background:var(--speech-background);color:var(--speech-ink)}
 .speech-bubble[data-style=bubble]:after{border-top-color:var(--speech-background)}
