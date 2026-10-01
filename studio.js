@@ -1,5 +1,6 @@
+export const THEME_ACCENTS = Object.freeze({ mint: '#ace5cd', rose: '#efb4c5', violet: '#c8b4f1', paper: '#527250' });
 export const DEFAULT_STUDIO = Object.freeze({
-  theme: 'mint', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
+  theme: 'mint', accentMode: 'theme', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
   fontSize: 20, listCount: 300, commentStyle: 'stacked', layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
   speechStyle: 'image', speechBackground: '#f3f1dc', speechImage: '', speechTextColor: '#25382f',
@@ -14,6 +15,8 @@ export function normalizeStudio(value = {}) {
     if (allowed.includes(value[key])) options[key] = value[key];
   }
   if (typeof value.accent === 'string' && /^#[\da-f]{6}$/i.test(value.accent)) options.accent = value.accent;
+  options.accentMode = ['theme', 'custom'].includes(value.accentMode) ? value.accentMode
+    : options.accent.toLowerCase() === THEME_ACCENTS[options.theme] ? 'theme' : 'custom';
   if (typeof value.speechBackground === 'string' && /^#[\da-f]{6}$/i.test(value.speechBackground)) options.speechBackground = value.speechBackground;
   if (typeof value.speechTextColor === 'string' && /^#[\da-f]{6}$/i.test(value.speechTextColor)) options.speechTextColor = value.speechTextColor;
   for (const [key, limit] of [['title', 60], ['subtitle', 100], ['speechTitle', 40], ['footer', 100]]) {

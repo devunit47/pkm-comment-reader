@@ -2,7 +2,7 @@ import { readSpeechEngines, LocalSpeechPlayer } from './speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { readStudio, normalizeStudio, readSavedVoices } from './studio.js';
+import { readStudio, normalizeStudio, readSavedVoices, THEME_ACCENTS } from './studio.js';
 import { enabledPlatforms, publication } from './app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from './theme.js';
@@ -505,7 +505,7 @@ function renderStudio() {
   stage.dataset.theme = studio.theme;
   stage.dataset.layout = studio.layout;
   stage.dataset.decorated = String(studio.decoration);
-  stage.style.setProperty('--stage-accent', studio.accent);
+  stage.style.setProperty('--stage-accent', studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent);
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
   $('stage-comment-style').value = studio.commentStyle;
@@ -553,10 +553,14 @@ function renderStudio() {
   $('actor-placeholder').querySelector('small').textContent = studio.source === 'image'
     ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
   $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
-  for (const key of ['theme', 'accent', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
+  for (const key of ['theme', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
   $('stage-font-value').textContent = `${studio.fontSize}px`;
   $('stage-font-minus').disabled = studio.fontSize <= 16;
   $('stage-font-plus').disabled = studio.fontSize >= 28;
+  $('studio-accent-mode').value = studio.accentMode;
+  $('studio-accent').disabled = studio.accentMode === 'theme';
+  $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
+  $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
   $('studio-list-count').value = studio.listCount;
   $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · 選択してユーザーを管理`;
   $('studio-actor-width').value = studio.actorWidth;
@@ -601,7 +605,8 @@ document.querySelectorAll('[data-stage-platform]').forEach(button => {
 function updateStudio() {
   const source = $('studio-source').value;
   studio = normalizeStudio({ ...studio,
-    theme: $('studio-theme').value, accent: $('studio-accent').value,
+    theme: $('studio-theme').value, accentMode: $('studio-accent-mode').value,
+    accent: studio.accentMode === 'custom' ? $('studio-accent').value : studio.accent,
     speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     speechTextColor: $('studio-speech-text-color').value,
@@ -620,10 +625,7 @@ function updateStudio() {
 for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'layout', 'actor-width', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
-$('studio-theme').onchange = () => {
-  $('studio-accent').value = { mint: '#ace5cd', rose: '#efb4c5', violet: '#c8b4f1', paper: '#527250' }[$('studio-theme').value];
-  updateStudio();
-};
+$('studio-accent-mode').onchange = updateStudio;
 $('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
 $('stage-comment-style').onchange = () => {
   const list = $('stage-chat-list');

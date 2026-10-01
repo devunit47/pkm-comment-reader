@@ -75,3 +75,12 @@ test('footer text persists including empty text and validates legacy settings', 
   assert.equal(normalizeStudio({ footer: 'a'.repeat(150) }).footer.length, 100);
   assert.equal(normalizeStudio({ footer: null }).footer, DEFAULT_STUDIO.footer);
 });
+
+
+test('accent modes preserve custom colors and infer legacy settings', () => {
+  assert.equal(normalizeStudio({ theme: 'rose', accent: '#efb4c5' }).accentMode, 'theme');
+  assert.equal(normalizeStudio({ theme: 'rose', accent: '#123456' }).accentMode, 'custom');
+  assert.equal(normalizeStudio({ theme: 'mint', accent: '#ACE5CD' }).accentMode, 'theme');
+  assert.equal(normalizeStudio({ accentMode: 'theme', accent: '#123456' }).accent, '#123456');
+  assert.equal(normalizeStudio({ accentMode: 'custom', accent: '#ace5cd' }).accentMode, 'custom');
+});
