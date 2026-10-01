@@ -21,6 +21,8 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
     const initialCount = await page.locator('.stage-comment').count();
+    assert.equal(await page.locator('#stage-comment-style').isVisible(), false);
+    await page.getByRole('button', { name: 'コメントの表示設定', exact: true }).click();
     await page.locator('#stage-comment-style').selectOption('anonymous');
     assert.equal(await page.locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
     await page.locator('#stage-comment-style').selectOption('inline');
@@ -30,6 +32,9 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-studio')).commentStyle), 'compact');
     assert.equal(await page.locator('.stage-comment').count(), initialCount);
     await page.locator('#stage-comment-style').selectOption('stacked');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#stage-comment-settings-dialog').isVisible(), false);
+    assert.equal(await page.locator('#talk-stage').isVisible(), true);
     const initialSize = await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize);
     const subtitleBefore = await page.locator('#stage-subtitle').boundingBox();
     await page.locator('#stage-font-plus').click();
@@ -55,7 +60,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
       });
       assert.ok(alignment < 2, `${label}: pencil center differs by ${alignment}px`);
       await page.getByRole('button', { name: `${label}を編集`, exact: true }).click();
-      assert.equal(await page.locator('.stage-text-dialog').evaluate(dialog => dialog.matches(':modal')), true);
+      assert.equal(await page.locator('.stage-text-dialog[open]').evaluate(dialog => dialog.matches(':modal')), true);
       await page.getByRole('textbox', { name: label, exact: true }).fill(`<新しい${label}>`);
       await page.locator('.stage-text-editor').getByRole('button', { name: '保存', exact: true }).click();
       assert.equal(await page.locator(`#${id}`).textContent(), `<新しい${label}>`);

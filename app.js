@@ -513,6 +513,10 @@ $('stage-comment-style').onchange = () => {
   if (bottom) list.scrollTop = list.scrollHeight;
   updateStageCommentVisibility();
 };
+$('stage-comment-settings').onclick = () => $('stage-comment-settings-dialog').showModal();
+$('stage-comment-settings-dialog').addEventListener('keydown', event => {
+  if (event.key === 'Escape') event.stopPropagation();
+});
 for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
   $(id).onclick = () => {
     const list = $('stage-chat-list');
