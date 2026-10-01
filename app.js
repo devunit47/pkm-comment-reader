@@ -633,7 +633,6 @@ function leaveTalk() {
   $('enter-talk').focus({ preventScroll: true });
 }
 $('enter-talk').onclick = enterTalk;
-$('preview-talk').onclick = enterTalk;
 $('leave-talk').onclick = leaveTalk;
 let connectionPanelOrigin;
 $('stage-connection').onclick = () => {

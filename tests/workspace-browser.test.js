@@ -30,11 +30,10 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
     await page.locator('#stage-connection').click();
-    assert.equal(await page.locator('#talk-stage').isVisible(), false);
-    assert.equal(await page.locator('#settings-page').isVisible(), true);
+    assert.equal(await page.locator('#talk-stage').isVisible(), true);
+    assert.equal(await page.locator('#stage-connection-dialog').isVisible(), true);
     assert.equal(await page.locator('#twitch-channel').evaluate(element => element === document.activeElement), true);
-    await page.locator('[data-page="home"]').click();
-    await page.locator('#enter-talk').click();
+    await page.locator('#close-stage-connection').click();
     const titleBox = await page.locator('#stage-title').boundingBox();
     const subtitleBox = await page.locator('#stage-subtitle').boundingBox();
     assert.ok(subtitleBox.y >= titleBox.y + titleBox.height, 'subtitle stays below the title');
@@ -135,7 +134,8 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.locator('[data-page="studio"]').click();
     await page.locator('#studio-list-count').fill('3');
     await page.locator('#studio-list-count').dispatchEvent('change');
-    await page.locator('#preview-talk').click();
+    await page.locator('[data-page="home"]').click();
+    await page.locator('#enter-talk').click();
     assert.equal(await page.locator('.stage-comment').count(), 3);
     await page.keyboard.press('Escape');
     await page.locator('[data-page="home"]').click();
@@ -178,7 +178,8 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await session.locator('#finish').click();
     await editor.locator('.fields summary').click();
     await editor.locator('#hidden').check();
-    await page.locator('#preview-talk').click();
+    await page.locator('[data-page="home"]').click();
+    await page.locator('#enter-talk').click();
     await page.locator('.stage-header').waitFor({ state: 'hidden' });
     await page.keyboard.press('Escape');
     await page.locator('[data-page="studio"]').click();
