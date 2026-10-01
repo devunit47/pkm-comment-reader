@@ -613,7 +613,9 @@ function renderStudio() {
   $('remove-actor-image').disabled = !studio.image;
 }
 
-function enterTalk() {
+function enterTalk(fromHistory = false) {
+  if (document.body.classList.contains('talk-mode')) return;
+  if (fromHistory !== true) history.pushState({ ...history.state, pokomeTalk: true }, '');
   $('talk-stage').hidden = false;
   document.body.classList.add('talk-mode');
   renderStageChat();
@@ -624,14 +626,21 @@ function enterTalk() {
   $('talk-stage').setAttribute('tabindex', '-1');
   $('talk-stage').focus({ preventScroll: true });
 }
-function leaveTalk() {
+function leaveTalk(fromHistory = false) {
+  if (!document.body.classList.contains('talk-mode')) return;
+  if (fromHistory !== true && history.state?.pokomeTalk) history.back();
   if ($('stage-connection-dialog').open) $('stage-connection-dialog').close();
   if ($('stage-volume-dialog').matches(':popover-open')) $('stage-volume-dialog').hidePopover();
   closeTextEditor?.();
   document.body.classList.remove('talk-mode');
   $('talk-stage').hidden = true;
+  page('home');
   $('enter-talk').focus({ preventScroll: true });
 }
+window.addEventListener('popstate', () => {
+  if (history.state?.pokomeTalk) enterTalk(true);
+  else leaveTalk(true);
+});
 $('enter-talk').onclick = enterTalk;
 $('leave-talk').onclick = leaveTalk;
 let connectionPanelOrigin;
