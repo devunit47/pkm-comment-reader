@@ -598,7 +598,7 @@ function renderStudio() {
   $('actor-placeholder').querySelector('small').textContent = studio.source === 'image'
     ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
   $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
-  for (const key of ['theme', 'layout', 'source']) $(`studio-${key}`).value = studio[key];
+  for (const key of ['theme', 'source']) $(`studio-${key}`).value = studio[key];
   $('stage-font-value').textContent = `${studio.fontSize}px`;
   $('stage-font-minus').disabled = studio.fontSize <= 16;
   $('stage-font-plus').disabled = studio.fontSize >= 28;
@@ -608,8 +608,6 @@ function renderStudio() {
   $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
   $('studio-list-count').value = studio.listCount;
   $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · ユーザー名・コメントから操作`;
-  $('studio-actor-width').value = studio.actorWidth;
-  $('studio-width-value').textContent = `${studio.actorWidth}%`;
   $('studio-decoration').checked = studio.decoration;
   $('studio-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
   $('remove-actor-image').disabled = !studio.image;
@@ -676,9 +674,8 @@ function updateStudio() {
     speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     speechTextColor: $('studio-speech-text-color').value,
-    layout: $('studio-layout').value,
     listCount: Number($('studio-list-count').value),
-    actorWidth: Number($('studio-actor-width').value), decoration: $('studio-decoration').checked, source,
+    decoration: $('studio-decoration').checked, source,
   });
   save('pokome-studio', studio);
   for (const state of Object.values(states)) {
@@ -688,11 +685,10 @@ function updateStudio() {
   renderStudio();
   render();
 }
-for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'layout', 'actor-width', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'decoration', 'source']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-accent-mode').onchange = updateStudio;
-$('studio-actor-width').oninput = () => { $('studio-width-value').textContent = `${$('studio-actor-width').value}%`; };
 $('stage-comment-style').onchange = () => {
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
