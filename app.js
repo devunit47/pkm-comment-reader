@@ -303,6 +303,8 @@ function renderSpeechSettings() {
   const state = states[active];
   $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
   $('volume-value').textContent = `${Math.round(state.volume * 100)}%`;
+  $('stage-volume').value = state.volume;
+  $('stage-volume-value').textContent = `${Math.round(state.volume * 100)}%`;
   $('rate-value').textContent = `${state.rate}×`;
 }
 function renderSpeechOptions() {
@@ -331,6 +333,11 @@ function updateSpeechOptions() {
 for (const id of ['max-length', 'user-interval', 'skip-urls', 'skip-duplicates', 'skip-commands', 'skip-nightbot', 'skip-broadcaster']) {
   $(id).onchange = updateSpeechOptions;
 }
+$('stage-volume').oninput = () => {
+  states[active].volume = Number($('stage-volume').value);
+  $('volume').value = states[active].volume;
+  renderSpeechSettings();
+};
 for (const id of ['volume', 'rate']) $(id).oninput = () => {
   states[active][id] = Number($(id).value);
   renderSpeechSettings();

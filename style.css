@@ -32,6 +32,9 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speaker{width:20px;height:20px;flex-shrink:0;color:var(--stage-accent)}
 .stage-speech-indicator{display:flex;align-items:center;gap:8px;flex-shrink:0;white-space:nowrap}
 #stage-speech-status{display:inline-block;width:5em;text-align:right;flex-shrink:0}
+.stage-volume-control{display:flex;align-items:center;gap:10px;padding:0 24px 12px;color:var(--stage-muted);font-size:12px}
+.stage-volume-control input{width:100px;min-width:40px;max-width:100%;accent-color:var(--stage-accent)}
+.stage-volume-control output{min-width:4em;text-align:right}
 .stage-wave{display:flex;align-items:center;gap:3px;height:20px;width:27px;color:var(--stage-accent)}
 .stage-wave i{display:block;width:3px;height:18px;border-radius:2px;background:currentColor;transform:scaleY(.18);opacity:.45}
 .stage-speech[data-speaking=true] .stage-wave i{opacity:1;animation:stage-wave .75s ease-in-out infinite alternate}
