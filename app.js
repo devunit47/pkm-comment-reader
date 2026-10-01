@@ -3,6 +3,8 @@ import { ChatConnection, readSavedConnections, validChannel, connectionPresentat
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 import { readStudio, normalizeStudio, readSavedVoices } from './studio.js';
 import { enabledPlatforms, publication } from './app-config.js';
+import { initializeWorkspace } from './workspace.js';
+import { initializeTheme } from './theme.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };
@@ -120,11 +122,11 @@ function render() {
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
   list.replaceChildren();
   for (const message of visible) {
-    const row = make('button', `comment${state.selected?.id === message.id ? ' selected' : ''}`, '');
+    const row = make('button', `comment pokome-comment${state.selected?.id === message.id ? ' selected' : ''}`, '');
     row.setAttribute('aria-pressed', String(state.selected?.id === message.id));
-    const name = make('span', 'username', '');
+    const name = make('span', 'username pokome-comment__author', '');
     name.append(make('span', `avatar ${active}`, active === 'kick' ? 'K' : '▣'), document.createTextNode(message.user));
-    row.append(name, make('span', 'message', message.text), make('span', 'time', message.time));
+    row.append(name, make('span', 'message pokome-comment__body', message.text), make('span', 'time', message.time));
     row.onclick = () => { state.selected = message; renderSelection(); render(); };
     list.append(row);
   }
@@ -361,9 +363,9 @@ function renderStageChat() {
   list.style.setProperty('--visible-chat-count', studio.chatCount);
   list.replaceChildren();
   for (const message of messages) {
-    const card = make('div', 'stage-comment', '');
+    const card = make('div', 'stage-comment pokome-comment', '');
     card.title = `${message.user}: ${message.text}`;
-    card.append(make('strong', '', message.user), make('p', '', message.text));
+    card.append(make('strong', 'pokome-comment__author', message.user), make('p', 'pokome-comment__body', message.text));
     list.append(card);
   }
   if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
@@ -578,6 +580,8 @@ $('auto-speech').checked = states[active].autoSpeech;
 renderSpeechSettings();
 renderSpeechOptions();
 render();
+const themeEditor = initializeTheme(storage);
+themeEditor.connectWorkspace(initializeWorkspace(storage, { resetTheme: themeEditor.resetTheme }));
 window.addEventListener('beforeunload', () => {
   stop();
   for (const connection of Object.values(connections)) connection.disconnect(false);

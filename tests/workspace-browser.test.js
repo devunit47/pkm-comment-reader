@@ -1,0 +1,76 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { existsSync } from 'node:fs';
+import { createServer } from '../server.js';
+
+const runtime = 'C:/Users/<user>/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright';
+const executablePath = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const require = createRequire(import.meta.url);
+
+test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+  const server = createServer();
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { chromium } = require(runtime);
+  const browser = await chromium.launch({ headless: true, executablePath });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    const editor = page.locator('#workspace-editor');
+    await editor.locator('#edit').click();
+    await editor.locator('#x').fill('10');
+    await editor.locator('#x').dispatchEvent('change');
+    await editor.locator('#w').fill('45');
+    await editor.locator('#w').dispatchEvent('change');
+    const move = page.getByRole('button', { name: 'comments を移動', exact: true });
+    const before = await move.boundingBox();
+    await page.mouse.move(before.x + 12, before.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(before.x + 65, before.y + 30, { steps: 4 });
+    await page.mouse.up();
+    const resize = page.getByRole('button', { name: 'comments のサイズ変更', exact: true });
+    const handle = await resize.boundingBox();
+    await page.mouse.move(handle.x + 8, handle.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + 38, handle.y + 28, { steps: 4 });
+    await page.mouse.up();
+    const home = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).home);
+    assert.ok(home.panels.comments.x > 10);
+    assert.ok(home.panels.comments.w > 45);
+    await page.reload();
+    assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
+    await page.locator('#enter-talk').click();
+    await editor.locator('#edit').click();
+    await editor.locator('#hidden').check();
+    await editor.locator('#edit').click();
+    await page.locator('.stage-header').waitFor({ state: 'hidden' });
+    await editor.getByRole('button', { name: '雑談モードを終了', exact: true }).click();
+    await page.locator('#talk-stage').waitFor({ state: 'hidden' });
+    await page.locator('[data-page="studio"]').click();
+    await page.locator('#theme-css').fill('.pokome-workspace .pokome-panel { border-radius: 3px; }');
+    await page.locator('#theme-apply').click();
+    assert.match(await page.locator('#pokome-user-theme').textContent(), /border-radius: 3px/);
+    await page.locator('#theme-import').setInputFiles({ name: 'theme.css', mimeType: 'text/css', buffer: Buffer.from('.pokome-workspace { color: rgb(1, 2, 3); }') });
+    await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('rgb(1, 2, 3)'));
+    const downloadEvent = page.waitForEvent('download');
+    await page.locator('#design-export').click();
+    const download = await downloadEvent;
+    const stream = await download.createReadStream();
+    const chunks = [];
+    for await (const chunk of stream) chunks.push(chunk);
+    const exported = Buffer.concat(chunks);
+    const design = JSON.parse(exported.toString());
+    assert.deepEqual(design.layout.home, home);
+    assert.equal(design.layout.talk.panels.header.hidden, true);
+    await editor.locator('#css').click();
+    await page.locator('#theme-import').setInputFiles({ name: 'design.json', mimeType: 'application/json', buffer: exported });
+    await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('rgb(1, 2, 3)'));
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1'))), design.layout);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

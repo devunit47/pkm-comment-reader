@@ -55,3 +55,8 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speech[data-style=image] #stage-speech-user{padding:0;color:inherit}
 .stage-speech[data-style=image] #stage-speech-text{margin:8px 0 0;color:inherit}
 #stage-footer-text{min-width:0;overflow-wrap:anywhere}
+
+.pokome-workspace{font-family:var(--pk-font-family,inherit);color:var(--pk-text-color,inherit)}
+
+.pokome-workspace .pokome-comment__author{color:var(--pk-accent-color,var(--mint))}
+.studio-fields textarea{width:100%;font:13px monospace;min-height:200px;resize:vertical;background:var(--bg);color:var(--text);padding:12px;border:1px solid var(--line)}

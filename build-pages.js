@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile, copyFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url';
 
 // Only browser assets belong in the public artifact. Never copy the repository.
-const assets = ['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'studio.js', 'speech-background.svg'];
+const assets = ['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'speech-background.svg'];
 
 export async function buildPages(destination = new URL('./dist/', import.meta.url)) {
   await mkdir(destination, { recursive: true });
