@@ -625,6 +625,7 @@ function enterTalk() {
   $('talk-stage').focus({ preventScroll: true });
 }
 function leaveTalk() {
+  if ($('stage-connection-dialog').open) $('stage-connection-dialog').close();
   if ($('stage-volume-dialog').matches(':popover-open')) $('stage-volume-dialog').hidePopover();
   closeTextEditor?.();
   document.body.classList.remove('talk-mode');
@@ -634,12 +635,24 @@ function leaveTalk() {
 $('enter-talk').onclick = enterTalk;
 $('preview-talk').onclick = enterTalk;
 $('leave-talk').onclick = leaveTalk;
+let connectionPanelOrigin;
 $('stage-connection').onclick = () => {
-  leaveTalk();
-  document.querySelector(`[data-connection-settings="${active}"]`).click();
+  const panel = $(active + '-connect-form').closest('section');
+  connectionPanelOrigin = document.createComment('connection panel');
+  panel.before(connectionPanelOrigin);
+  $('stage-connection-content').append(panel);
+  $('stage-connection-title').textContent = names[active] + ' 接続設定';
+  $('stage-connection-dialog').showModal();
+  $(active + '-channel').focus();
 };
+$('close-stage-connection').onclick = () => $('stage-connection-dialog').close();
+$('stage-connection-dialog').addEventListener('close', () => {
+  const panel = $('stage-connection-content').firstElementChild;
+  if (panel && connectionPanelOrigin) connectionPanelOrigin.replaceWith(panel);
+  connectionPanelOrigin = null;
+});
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape' && document.body.classList.contains('talk-mode')) leaveTalk();
+  if (event.key === 'Escape' && document.body.classList.contains('talk-mode') && !$('stage-connection-dialog').open) leaveTalk();
 });
 document.querySelectorAll('[data-stage-platform]').forEach(button => {
   button.onclick = () => switchPlatform(button.dataset.stagePlatform);
