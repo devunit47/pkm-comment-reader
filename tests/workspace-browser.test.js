@@ -375,7 +375,7 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
     await page.locator('#stop-speech').click();
     await page.locator('[data-page="updates"]').click();
     assert.equal(await page.locator('.platform-tabs').isVisible(), false);
-    assert.equal(await page.locator('#enter-talk').isVisible(), false);
+    assert.equal(await page.locator('main>header #enter-talk').count(), 0);
     assert.equal(await page.locator('#page-title').textContent(), '更新情報');
     await page.locator('[data-page="home"]').click();
     assert.equal(await page.locator('.platform-tabs').isVisible(), true);

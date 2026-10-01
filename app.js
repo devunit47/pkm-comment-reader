@@ -316,7 +316,7 @@ document.querySelectorAll('[data-connection-settings]').forEach(button => {
     $(`${platform}-channel`).focus();
   };
 });
-document.querySelectorAll('.nav').forEach(button => { button.onclick = () => page(button.dataset.page); });
+document.querySelectorAll('.nav[data-page]').forEach(button => { button.onclick = () => page(button.dataset.page); });
 $('search').oninput = () => { states[active].search = $('search').value; render(); };
 $('filter').onchange = () => { states[active].filter = $('filter').value; render(); };
 for (const [id, key] of [['hide-user', 'hidden'], ['mute-user', 'muted']]) {
