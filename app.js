@@ -285,7 +285,8 @@ function page(name) {
   document.querySelector('main').dataset.view = name;
   for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
   document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
-  $('page-title').textContent = { home: 'みんなの声が、ここに。', users: 'ユーザー管理', settings: '接続設定', studio: '配信デザイン', updates: '更新情報' }[name];
+  document.querySelector('main>header').hidden = name === 'home';
+  $('page-title').textContent = { home: '', users: 'ユーザー管理', settings: '接続設定', studio: '配信デザイン', updates: '更新情報' }[name];
 }
 
 function switchPlatform(platform) {
