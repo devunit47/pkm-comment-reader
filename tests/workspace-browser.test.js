@@ -381,3 +381,34 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
     assert.equal(await page.locator('.platform-tabs').isVisible(), true);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });
+
+test('first setup guide and full settings backup restore work through the UI', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+  const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const { chromium } = require(runtime); const browser = await chromium.launch({ headless: true, executablePath });
+  try {
+    const page = await browser.newPage();
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto('http://127.0.0.1:' + server.address().port);
+    assert.equal(await page.locator('#setup-welcome').isVisible(), true);
+    await page.locator('#start-setup').click(); await page.locator('#setup-connect').click();
+    assert.equal(await page.locator('#settings-page').isVisible(), true);
+    await page.locator('#open-setup').click(); await page.locator('#setup-voice').click();
+    assert.equal(await page.locator('#home-page').isVisible(), true);
+    await page.locator('#open-setup').click(); await page.locator('#complete-setup').click();
+    assert.equal(await page.locator('#setup-welcome').isVisible(), false);
+    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-theme').selectOption('rose');
+    await page.locator('[data-page="settings"]').click();
+    const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
+    const download = await downloadPromise;
+    const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
+    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-theme').selectOption('mint');
+    await page.locator('[data-page="settings"]').click();
+    await page.locator('#restore-settings').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+    assert.equal(await page.locator('#confirm-restore').isDisabled(), true);
+    await page.locator('#restore-settings').setInputFiles({ name: 'settings.json', mimeType: 'application/json', buffer: backup });
+    assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
+    await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
+    await page.locator('[data-page="studio"]').click(); assert.equal(await page.locator('#studio-theme').inputValue(), 'rose');
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+});

@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 
 // Only browser assets belong in the public artifact. Never copy the repository.
-const assets = ['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'speech-background.svg'];
+const assets = ['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'settings-backup.js', 'speech-background.svg'];
 
 export async function buildPages(destination = new URL('./dist/', import.meta.url)) {
   await mkdir(destination, { recursive: true });

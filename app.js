@@ -1,3 +1,6 @@
+import { normalizeWorkspace } from './workspace-model.js';
+import { exportSettings, parseSettings, restoreSettings } from './settings-backup.js';
+import { compileTheme } from './theme.js';
 import { readSpeechEngines, LocalSpeechPlayer } from './speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
@@ -28,7 +31,7 @@ for (const platform of Object.keys(states)) states[platform].autoSpeech = savedA
 const enginePreferences = readSpeechEngines(storage, publication !== 'pages');
 const engineVoices = { voicevox: null, coeiroink: null };
 let voiceLoadGeneration = 0;
-const localSpeech = new LocalSpeechPlayer({ onError: message => { notify(message); stop(); } });
+const localSpeech = new LocalSpeechPlayer({ onError: message => { $('engine-status').textContent = message + ' 音声ソフトを起動して「声を再取得」を押し、音声テストを試してください。'; notify(message); stop(); } });
 const savedVoices = readSavedVoices(storage);
 for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
 let studio = readStudio(storage);
@@ -105,7 +108,7 @@ function renderConnection() {
       $(id).title = view.detail;
     }
     $(`${platform}-tab-channel`).textContent = service.channel ? `#${service.channel}` : 'チャンネル未接続';
-    $(`${platform}-connection-detail`).textContent = view.detail;
+    $(`${platform}-connection-detail`).textContent = view.detail + (view.kind === 'error' ? ' チャンネル名とネット接続を確認し、接続し直してください。' : '');
   }
 }
 
@@ -229,7 +232,7 @@ function speak(message, automatic = false) {
     if (!pendingSpeech) $('speech-status').textContent = '待機中';
   };
   utterance.onend = done;
-  utterance.onerror = done;
+  utterance.onerror = event => { done(); if (!['canceled', 'interrupted'].includes(event.error)) $('engine-status').textContent = '読み上げに失敗しました。音声を選び直し、音量とブラウザの音声再生設定を確認して音声テストを試してください。'; };
   if (preference.engine === 'browser') window.speechSynthesis.speak(utterance);
   else localSpeech.speak(utterance, preference.engine, preference[preference.engine]);
   if (automatic) rememberAutoRead(state.speechHistory, message.user, text);
@@ -275,6 +278,7 @@ function renderUsers() {
 }
 
 function page(name) {
+  $('settings-backup-panel').hidden = name !== 'settings';
   $('user-actions').hidePopover();
   document.querySelector('main').dataset.view = name;
   for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
@@ -490,7 +494,7 @@ async function loadVoices(refresh = false) {
   } catch (error) {
     if (generation !== voiceLoadGeneration || active !== platform) return;
     $('voice').replaceChildren(make('option', '', '声を取得できません'));
-    status.textContent = error.message === 'The operation was aborted due to timeout' ? '接続がタイムアウトしました。音声ソフトを起動して再取得してください。' : error.message;
+    status.textContent = error.message === 'The operation was aborted due to timeout' ? '接続がタイムアウトしました。音声ソフトを起動して再取得してください。' : error.message + ' 音声ソフトを起動し、読み上げ方式が合っているか確認して「声を再取得」を押してください。';
   }
 }
 if (supported) {
@@ -869,3 +873,35 @@ window.addEventListener('beforeunload', () => {
   stop();
   for (const connection of Object.values(connections)) connection.disconnect(false);
 });
+
+$('open-setup').onclick = () => $('setup-dialog').showModal();
+$('close-setup').onclick = () => $('setup-dialog').close();
+$('setup-connect').onclick = () => { $('setup-dialog').close(); page('settings'); $(active + '-channel').focus(); };
+$('setup-voice').onclick = () => { $('setup-dialog').close(); page('home'); document.querySelector('.reading').scrollIntoView({ block: 'center' }); $('voice').focus(); };
+$('complete-setup').onclick = () => { save('pokome-setup-complete', true); $('setup-welcome').hidden = true; $('setup-dialog').close(); };
+$('setup-welcome').hidden = !!storage?.getItem('pokome-setup-complete') || !!storage?.getItem('pokome-connections');
+$('start-setup').onclick = () => $('setup-dialog').showModal();
+$('backup-settings').onclick = () => {
+  try {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(exportSettings(storage), null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'pokome-settings.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { $('backup-status').textContent = error.message; }
+};
+let pendingSettings = null;
+$('restore-settings').onchange = async event => {
+  pendingSettings = null; $('confirm-restore').disabled = true;
+  try {
+    const file = event.target.files[0]; if (!file) return;
+    if (file.size > 12 * 1024 * 1024) throw new Error('設定ファイルは12MB以下にしてください。');
+    const settings = parseSettings(await file.text());
+    if (settings['pokome-theme-v1']) compileTheme(settings['pokome-theme-v1']);
+    if (settings['pokome-workspace-v1']) normalizeWorkspace(JSON.parse(settings['pokome-workspace-v1']));
+    pendingSettings = settings;
+    $('backup-status').textContent = '現在の接続先・音声・ユーザー設定・見た目を置き換えます。「復元する」で適用します。';
+    $('confirm-restore').disabled = false;
+  } catch (error) { $('backup-status').textContent = '読み込めませんでした。' + error.message; }
+};
+$('confirm-restore').onclick = () => {
+  try { if (!pendingSettings) return; stop(); restoreSettings(storage, pendingSettings); location.reload(); }
+  catch { $('backup-status').textContent = '復元できませんでした。ブラウザの保存容量・保存設定を確認してください。'; }
+};
