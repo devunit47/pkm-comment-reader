@@ -57,7 +57,7 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speech[data-style=bubble] .stage-panel-label,.stage-speech[data-style=bubble] .stage-panel-label h2,.stage-speech[data-style=bubble] .stage-speaker,.stage-speech[data-style=bubble] .stage-wave,.stage-speech[data-style=bubble] #stage-speech-user{color:var(--speech-ink)}
 .stage-speech[data-style=bubble] #stage-speech-text{max-height:none;overflow:visible}
 .stage-speech[data-style=bubble] .stage-panel-label{padding-top:14px;padding-bottom:12px}
-.stage-speech{display:flex;flex-direction:column}
+.stage-speech{display:flex;flex-direction:column;min-height:220px}
 .stage-speech-content{flex:1;min-height:0;overflow:auto;scrollbar-width:thin}
 .stage-speech[data-style=image]{height:clamp(180px,30dvh,240px);max-height:48%;background:transparent;border-color:transparent;padding-bottom:0;overflow:visible}
 .stage-speech[data-style=image] .stage-panel-label{padding:0 8px 12px}
@@ -186,3 +186,12 @@ footer{color:var(--muted);font-size:12px}
 #stage-speech-credit{font-size:13px}
 .stage-speech[data-style=image] #stage-speech-credit{margin:8px 8px 0;max-width:calc(100% - 16px)}
 @media(max-width:800px){#stage-speech-credit{margin-left:16px;margin-right:16px;max-width:calc(100% - 32px)}}
+
+/* Keep heading, readable speech and attribution together on short canvases.
+   Scroll the canvas rather than squeezing the presenter below its contents. */
+@media(max-height:600px){
+  #talk-stage{overflow-y:auto}
+  #talk-stage .stage-grid{flex:none;min-height:440px}
+  #talk-stage .stage-speech{max-height:none}
+  #talk-stage .stage-actor{min-height:200px}
+}

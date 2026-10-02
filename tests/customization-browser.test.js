@@ -350,9 +350,11 @@ test('built Pages subpath explains limits without local APIs while uploads, pers
   await page.locator('#theme-import').setInputFiles({ name: 'uploaded.css', mimeType: 'text/css', buffer: Buffer.from(cssOne) });
   await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('7px'));
   await page.locator('#studio-image').setInputFiles({ name: 'actor.png', mimeType: 'image/png', buffer: redPNG });
-  await page.waitForFunction(value => JSON.parse(localStorage.getItem('pokome-studio')).image === value, redURL);
+  // The change handler decodes asynchronously; storage can still be absent on
+  // the first poll. Wait for the exact persisted image without throwing early.
+  await page.waitForFunction(value => JSON.parse(localStorage.getItem('pokome-studio') || '{}').image === value, redURL);
   await page.locator('#studio-speech-image').setInputFiles({ name: 'speech.png', mimeType: 'image/png', buffer: bluePNG });
-  await page.waitForFunction(value => JSON.parse(localStorage.getItem('pokome-studio')).speechImage === value, blueURL);
+  await page.waitForFunction(value => JSON.parse(localStorage.getItem('pokome-studio') || '{}').speechImage === value, blueURL);
   const good = await savedStudio(page);
   await page.locator('#studio-image').setInputFiles({ name: 'broken.png', mimeType: 'image/png', buffer: redPNG.subarray(0, 33) });
   await page.waitForFunction(() => document.querySelector('#studio-image').value === '');

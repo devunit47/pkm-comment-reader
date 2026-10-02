@@ -115,6 +115,72 @@ test('credits follow voice, style, engine and platform, survive reload and appea
   assert.deepEqual(errors, []);
 });
 
+test('short and resized speech panels keep readable text and visible credits for both engines', { skip: !browserAvailable }, async t => {
+  const { base } = await local(t);
+  const { page, errors } = await open(t, base);
+  for (const engine of ['voicevox', 'coeiroink']) {
+    await choose(page, engine);
+    for (const style of ['panel', 'bubble', 'image']) {
+      await page.locator('[data-page="studio"]').click();
+      await page.locator('#studio-speech-style').selectOption(style);
+      await page.locator('#enter-talk').click();
+      for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
+        await page.setViewportSize(viewport);
+        await page.locator('#stage-speech-credit').scrollIntoViewIfNeeded();
+        const geometry = await page.locator('.stage-speech').evaluate(panel => {
+          const bounds = panel.getBoundingClientRect();
+          const credit = panel.querySelector('#stage-speech-credit');
+          const attribution = credit.getBoundingClientRect();
+          const content = panel.querySelector('.stage-speech-content');
+          const speech = panel.querySelector('#stage-speech-text');
+          const box = content.getBoundingClientRect();
+          const css = getComputedStyle(content);
+          const readableHeight = content.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+          return {
+            visible: !credit.hidden && attribution.top >= 0 && attribution.bottom <= innerHeight,
+            contained: attribution.left >= bounds.left && attribution.right <= bounds.right + 1 && attribution.top >= bounds.top && attribution.bottom <= bounds.bottom + 1,
+            separate: attribution.top >= box.bottom,
+            readable: readableHeight >= parseFloat(getComputedStyle(speech).lineHeight),
+            fontSize: getComputedStyle(speech).fontSize,
+          };
+        });
+        const label = `${engine}/${style}/${viewport.width}x${viewport.height}`;
+        assert.equal(geometry.visible, true, label + ' visible attribution');
+        assert.equal(geometry.contained, true, label + ' contained attribution');
+        assert.equal(geometry.separate, true, label + ' attribution outside text');
+        assert.equal(geometry.readable, true, label + ' at least one readable text line');
+        assert.equal(geometry.fontSize, '22px', label + ' preserves speech typography');
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.locator('#leave-talk').click();
+    }
+    await page.locator('[data-page="home"]').click();
+  }
+  // Resize through the real editor handle, not a test-only style override.
+  await page.locator('[data-page="studio"]').click();
+  await page.locator('#workspace-editor #mode').selectOption('talk');
+  await page.locator('#workspace-editor #edit').click();
+  const resize = page.locator('.stage-speech [data-layout-handle] button').nth(1);
+  const handle = await resize.boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 - 160, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForFunction(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech.h < 20);
+  await page.locator('#layout-session #finish').click();
+  await page.locator('#enter-talk').click();
+  for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
+    await page.setViewportSize(viewport);
+    await page.locator('#stage-speech-credit').scrollIntoViewIfNeeded();
+    const contained = await page.locator('#stage-speech-credit').evaluate(credit => {
+      const c = credit.getBoundingClientRect(), p = credit.closest('.stage-speech').getBoundingClientRect();
+      return p.height >= 220 && c.top >= p.top && c.bottom <= p.bottom + 1 && c.left >= p.left && c.right <= p.right + 1;
+    });
+    assert.equal(contained, true, `drag-resized speech/${viewport.width}x${viewport.height}`);
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('missing or failed metadata cannot retain an old name and markup remains literal text', { skip: !browserAvailable }, async t => {
   const { base, state } = await local(t);
   const { page, errors } = await open(t, base);
