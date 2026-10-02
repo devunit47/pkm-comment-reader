@@ -38,8 +38,8 @@ export async function handleLocalSpeech(req, res, url, fetchImpl) {
       size += chunk.length;
       if (size > MAX_REQUEST_BYTES) {
         res.setHeader('Connection', 'close');
+        res.once('finish', () => req.destroy());
         json(413, { error: '読み上げ本文が長すぎます。' });
-        req.resume();
         return;
       }
       chunks.push(chunk);

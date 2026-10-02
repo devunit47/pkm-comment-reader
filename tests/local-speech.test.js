@@ -21,7 +21,11 @@ test('oversized streaming request returns 413 and closes its connection', async 
       assert.equal(response.statusCode, 413);
       assert.equal(response.headers.connection, 'close');
       response.resume();
-      response.on('end', resolve);
+      response.on('error', reject);
+      response.on('end', () => {
+        if (request.socket.destroyed) resolve();
+        else request.socket.once('close', resolve);
+      });
     });
     request.write('x'.repeat(13000));
     // Keep the body unfinished: the server must reject without waiting for EOF.
