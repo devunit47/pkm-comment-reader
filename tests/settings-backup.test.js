@@ -24,6 +24,23 @@ function storage() {
   const values = new Map();
   return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
 }
+
+test('rollback failure preserves both errors and the original cause', () => {
+  const target = storage();
+  target.setItem('pokome-connections', '{}');
+  const original = new Error('Restore quota');
+  const rollback = new Error('Storage unavailable');
+  let writes = 0;
+  target.setItem = () => { throw ++writes === 1 ? original : rollback; };
+  const after = exportSettings(storage()).settings;
+  after['pokome-connections'] = '{"twitch":"new"}';
+  assert.throws(() => restoreSettings(target, after), error => {
+    assert.ok(error instanceof AggregateError);
+    assert.equal(error.cause, original);
+    assert.deepEqual(error.errors, [original, rollback]);
+    return true;
+  });
+});
 test('backup roundtrip includes settings and excludes unrelated origin data', () => {
   const source = storage(); source.setItem('pokome-connections', '{"twitch":"example"}'); source.setItem('other-app', 'secret');
   const data = exportSettings(source);

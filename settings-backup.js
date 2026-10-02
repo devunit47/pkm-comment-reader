@@ -28,8 +28,12 @@ export function restoreSettings(storage, settings) {
   const clear = () => { for (const key of SETTINGS_KEYS) storage.removeItem(key); };
   try { clear(); for (const key of SETTINGS_KEYS) write(key, settings[key]); }
   catch (error) {
-    clear();
-    for (const key of SETTINGS_KEYS) write(key, previous[key]);
+    try {
+      clear();
+      for (const key of SETTINGS_KEYS) write(key, previous[key]);
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], '設定の復元と元の設定への書き戻しに失敗しました。バックアップを保持して、ブラウザの保存設定を確認してください。', { cause: error });
+    }
     throw error;
   }
 }

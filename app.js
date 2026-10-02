@@ -921,5 +921,5 @@ $('restore-settings').onchange = async event => {
 };
 $('confirm-restore').onclick = () => {
   try { if (!pendingSettings) return; stop(); restoreSettings(storage, pendingSettings); location.reload(); }
-  catch { $('backup-status').textContent = '復元できませんでした。ブラウザの保存容量・保存設定を確認してください。'; }
+  catch (error) { $('backup-status').textContent = error instanceof AggregateError ? error.message : '復元できませんでした。ブラウザの保存容量・保存設定を確認してください。'; }
 };
