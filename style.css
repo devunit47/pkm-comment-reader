@@ -157,3 +157,26 @@ main[data-view=users]>.platform-tabs,main[data-view=users]>header .eyebrow,main[
 .studio-category{min-width:0;margin:0;padding:16px;display:grid;gap:14px;border:1px solid var(--line);border-radius:10px;background:color-mix(in srgb,var(--bg) 35%,var(--panel))}.studio-category legend{padding:0 8px;font-size:13px;font-weight:700;color:var(--mint)}.studio-category>label{display:grid;gap:8px;font-size:12px;color:var(--text)}
 
 #setup-dialog{width:min(560px,calc(100vw - 32px));max-height:calc(100dvh - 48px);overflow:auto;padding:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--text)}#setup-dialog::backdrop{background:#0008}#setup-dialog p{color:var(--muted);line-height:1.8}#setup-dialog li{margin:20px 0}.setup-actions{display:flex;gap:16px;align-items:center}
+
+/* Review fixes: readable controls and a single-column compact talk canvas. */
+footer{color:var(--muted);font-size:12px}
+.speech-help,.voice-label,.stat-note,.table-heading,.list-footer,.studio-fields p,.studio-fields .muted{font-size:12px}
+.comment .username::after{content:' ⋯';font-weight:400}
+.comment .message:hover{text-decoration:underline;text-underline-offset:3px}
+@media(max-width:800px){input:not([type=checkbox]):not([type=range]),select,.studio-fields input:not([type=checkbox]),.studio-fields select{font-size:16px}.stat-note{font-size:12px}}
+@media(max-width:540px){
+  #talk-stage{height:100dvh;overflow-y:auto;display:block}
+  #talk-stage .stage-header{flex-direction:column;gap:16px;margin-bottom:20px}
+  #talk-stage .stage-header>div:first-child{width:100%}
+  #talk-stage .stage-actions{max-width:none;width:100%;align-items:flex-start}
+  #talk-stage .stage-controls{flex-direction:row;align-items:center;justify-content:flex-start;gap:8px}
+  #talk-stage .stage-service{justify-content:flex-start}
+  #talk-stage .stage-grid,#talk-stage[data-layout=left] .stage-grid{display:flex;flex-direction:column;gap:20px}
+  #talk-stage .stage-conversation,#talk-stage .stage-presenter{gap:20px}
+  #talk-stage .stage-chat{min-height:280px;max-height:400px}
+  #talk-stage .stage-speech{max-height:none;flex-shrink:0}
+  #talk-stage .stage-speech-content{min-height:180px}
+  #talk-stage .stage-panel-label h2{font-size:14px}
+  #talk-stage .stage-actor{min-height:240px}
+  #talk-stage .stage-footer{margin-top:20px;font-size:12px}
+}

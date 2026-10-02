@@ -139,6 +139,7 @@ function render() {
     name.setAttribute('aria-haspopup', 'dialog');
     name.setAttribute('aria-controls', 'user-actions');
     name.setAttribute('aria-label', message.user + ' の操作');
+    name.title = 'ユーザー・コメントの操作メニューを開く';
     const openActions = event => {
       state.selected = message;
       renderSelection();
@@ -154,6 +155,7 @@ function render() {
       $('hide-user').focus();
     };
     const body = make('button', 'message pokome-comment__body', message.text);
+    body.title = 'ユーザー・コメントの操作メニューを開く';
     body.setAttribute('aria-pressed', String(state.selected?.id === message.id));
     for (const trigger of [name, body]) {
       trigger.setAttribute('aria-haspopup', 'dialog');
@@ -511,7 +513,10 @@ if (supported) {
   loadVoices();
   $('speech-status').textContent = 'ブラウザ非対応';
 }
-$('clear').onclick = () => { clearMessages(states[active]); stop(); renderSelection(); render(); };
+$('clear').onclick = () => {
+  if (!states[active].messages.length || !window.confirm(`${names[active]}のコメント履歴をすべて削除します。元に戻せません。削除しますか？`)) return;
+  clearMessages(states[active]); stop(); renderSelection(); render();
+};
 
 function renderStageChat() {
   const state = states[active];
