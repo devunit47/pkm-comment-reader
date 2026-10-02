@@ -2,6 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SETTINGS_KEYS, exportSettings, parseSettings, restoreSettings } from '../settings-backup.js';
 
+test('quota rollback removes partial writes before restoring larger original values', () => {
+  const target = storage();
+  const write = target.setItem;
+  target.setItem = (key, value) => {
+    const next = { ...exportSettings(target).settings, [key]: value };
+    if (Object.values(next).reduce((size, item) => size + (item?.length || 0), 0) > 200) throw new Error('Quota');
+    write(key, value);
+  };
+  target.setItem('pokome-connections', 'x'.repeat(150));
+  const before = exportSettings(target);
+  const after = exportSettings(storage()).settings;
+  after['pokome-connections'] = 'x'.repeat(10);
+  after['pokome-auto-speech'] = 'x'.repeat(150);
+  after['pokome-studio'] = 'x'.repeat(80);
+  assert.throws(() => restoreSettings(target, after), /Quota/);
+  assert.deepEqual(exportSettings(target), before);
+});
+
 function storage() {
   const values = new Map();
   return { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };

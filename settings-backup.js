@@ -25,8 +25,10 @@ export function restoreSettings(storage, settings) {
   if (!storage) throw new Error('ブラウザの保存機能を有効にしてください。');
   const previous = exportSettings(storage).settings;
   const write = (key, value) => value === null ? storage.removeItem(key) : storage.setItem(key, value);
-  try { for (const key of SETTINGS_KEYS) write(key, settings[key]); }
+  const clear = () => { for (const key of SETTINGS_KEYS) storage.removeItem(key); };
+  try { clear(); for (const key of SETTINGS_KEYS) write(key, settings[key]); }
   catch (error) {
+    clear();
     for (const key of SETTINGS_KEYS) write(key, previous[key]);
     throw error;
   }

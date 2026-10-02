@@ -769,8 +769,8 @@ async function uploadStudioImage(input, target) {
   const isSpeech = target === 'speechImage';
   const generation = isSpeech ? ++speechImageGeneration : ++imageGeneration;
   if (!file) return;
-  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 2 * 1024 * 1024) {
-    notify('PNG・JPEG・WebP・GIFの2MB以下の画像を選んでください。');
+  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 512 * 1024) {
+    notify('PNG・JPEG・WebP・GIFの512KB以下の画像を選んでください。');
     input.value = '';
     return;
   }
