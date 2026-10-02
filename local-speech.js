@@ -1,3 +1,6 @@
+// JSON envelope limit includes escaped text and voice metadata; text has its own limit.
+const MAX_REQUEST_BYTES = 12000;
+const MAX_TEXT_LENGTH = 1000;
 const engines = { voicevox: { port: 50021, speakers: '/speakers' }, coeiroink: { port: 50032, speakers: '/v1/speakers' } };
 
 export async function handleLocalSpeech(req, res, url, fetchImpl) {
@@ -29,12 +32,22 @@ export async function handleLocalSpeech(req, res, url, fetchImpl) {
       })));
       json(200, { voices }); return;
     }
-    const chunks = []; let size = 0;
-    for await (const chunk of req) { chunks.push(chunk); size += chunk.length; if (size > 12000) { json(413, { error: '読み上げ本文が長すぎます。' }); return; } }
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of req.iterator({ destroyOnReturn: false })) {
+      size += chunk.length;
+      if (size > MAX_REQUEST_BYTES) {
+        res.setHeader('Connection', 'close');
+        json(413, { error: '読み上げ本文が長すぎます。' });
+        req.resume();
+        return;
+      }
+      chunks.push(chunk);
+    }
     let input;
     try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { json(400, { error: '入力が不正です。' }); return; }
     const { text, voice, rate } = input || {};
-    if (typeof text !== 'string' || !text.trim() || text.length > 1000 || typeof voice !== 'string' || !Number.isFinite(rate) || rate < .5 || rate > 2 || !(engine === 'voicevox' ? /^\d{1,9}$/ : /^[a-f\d-]{36}:\d{1,9}$/i).test(voice)) { json(400, { error: '本文・声・速さを確認してください。' }); return; }
+    if (typeof text !== 'string' || !text.trim() || text.length > MAX_TEXT_LENGTH || typeof voice !== 'string' || !Number.isFinite(rate) || rate < .5 || rate > 2 || !(engine === 'voicevox' ? /^\d{1,9}$/ : /^[a-f\d-]{36}:\d{1,9}$/i).test(voice)) { json(400, { error: '本文・声・速さを確認してください。' }); return; }
     let response;
     if (engine === 'voicevox') {
       const queryResponse = await fetchImpl(base + '/audio_query?text=' + encodeURIComponent(text) + '&speaker=' + voice, { method: 'POST', redirect: 'error', signal: controller.signal });

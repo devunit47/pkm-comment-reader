@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import http from 'node:http';
 import { createServer } from '../server.js';
 import { readSpeechEngines, LocalSpeechPlayer } from '../speech-engine.js';
 const wav = Buffer.from('RIFF0000WAVEdata');
@@ -10,6 +11,23 @@ async function serve(t, fetchImpl) {
   return 'http://127.0.0.1:' + server.address().port;
 }
 const post = input => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+
+test('oversized streaming request returns 413 and closes its connection', async t => {
+  const base = await serve(t, () => { throw new Error('unexpected upstream request'); });
+  await new Promise((resolve, reject) => {
+    const request = http.request(base + '/api/speech/voicevox/synthesis', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    request.on('error', reject);
+    request.on('response', response => {
+      assert.equal(response.statusCode, 413);
+      assert.equal(response.headers.connection, 'close');
+      response.resume();
+      response.on('end', resolve);
+    });
+    request.write('x'.repeat(13000));
+    // Keep the body unfinished: the server must reject without waiting for EOF.
+    request.setTimeout(2000, () => request.destroy(new Error('Response timed out')));
+  });
+});
 test('VOICEVOX voices and two-step synthesis preserve text and apply speed', async t => {
   const calls = [];
   const base = await serve(t, async (url, options) => {
