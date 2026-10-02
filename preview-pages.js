@@ -1,10 +1,11 @@
+import { BROWSER_ASSETS } from './asset-manifest.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 // A repository subpath, with no backend API, matches the Pages hosting model.
 export function createPreviewServer(directory = new URL('./dist/', import.meta.url)) {
-  const assets = new Set(['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'app-config.js', 'settings-backup.js', 'speech-background.svg']);
+  const assets = new Set([...BROWSER_ASSETS, 'app-config.js']);
   return http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     const url = new URL(req.url, 'http://localhost');
