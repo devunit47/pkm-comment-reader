@@ -185,7 +185,7 @@ Kick接続の参考: [Pusherプロトコル](https://pusher.com/docs/channels/li
 
 ## Windowsのローカル配布版
 
-開発者がWindows上で `npm run build:local` を実行すると、Node.js同梱の `dist-local/` が生成されます。フォルダー全体を配布し、利用者は展開後に `Start.cmd` をダブルクリックします。Node.jsのインストールやコマンド入力は不要です。VOICEVOX・COEIROINKは別途起動してください。
+開発者がWindows上で `npm run build:local` を実行すると、Node.js同梱のTwitch専用 `dist-local/` が生成されます。配布版ではKickの表示・接続を無効にし、Kick用モジュールを含めません。開発版はTwitch・Kick対応のままです。フォルダー全体を配布し、利用者は展開後に `Start.cmd` をダブルクリックします。Node.jsのインストールやコマンド入力は不要です。VOICEVOX・COEIROINKは別途起動してください。
 
 ブラウザを閉じてもサーバーはバックグラウンドで動作し、PCを終了すると停止します。開発用は5173、配布版は5174を使うため同時に起動できます。起動時にポート5174を確認し、このアプリが起動済みならブラウザだけを開きます。配布物にはNode.jsのライセンスを同梱します。Windowsの警告表示や組織の実行制限には別途対応が必要です。
 

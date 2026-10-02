@@ -18,7 +18,7 @@ document.querySelectorAll('[data-service]').forEach(element => {
   element.hidden = !enabledPlatforms.includes(element.dataset.service);
 });
 document.querySelectorAll('[data-local-only]').forEach(element => { element.hidden = publication === 'pages'; });
-if (publication === 'pages') {
+if (!enabledPlatforms.includes('kick')) {
   $('platform-help').textContent = 'Twitch専用の公開版';
   $('edition-label').textContent = 'ぽこめ Reader / Twitch版';
 }

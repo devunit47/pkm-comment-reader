@@ -1,3 +1,4 @@
+import { enabledPlatforms } from './app-config.js';
 import { handleLocalSpeech } from './local-speech.js';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -11,6 +12,7 @@ export function createServer({ fetchImpl = globalThis.fetch } = {}) {
  return http.createServer(async (req,res)=>{
   res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
   const url = new URL(req.url,'http://localhost');
+  if (!enabledPlatforms.includes('kick') && (url.pathname === '/kick.js' || url.pathname.startsWith('/api/kick/'))) { res.writeHead(404); res.end('Not found'); return; }
   if (url.pathname.startsWith('/api/speech/')) { await handleLocalSpeech(req, res, url, fetchImpl); return; }
   if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); res.end(); return; }
   if (url.pathname.startsWith('/api/kick/channel/')) {

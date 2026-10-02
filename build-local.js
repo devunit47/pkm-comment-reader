@@ -1,13 +1,17 @@
-import { mkdir, readdir, copyFile, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, readdir, copyFile, writeFile, readFile, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 export async function buildLocal(destination = new URL('./dist-local/', import.meta.url)) {
   if (process.platform !== 'win32') throw new Error('Windows上でWindows配布版を作成してください。');
-  const files = ['index.html', 'style.css', 'app.js', 'settings-backup.js', 'connections.js', 'kick.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'local-speech.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'app-config.js', 'speech-background.svg', 'server.js', 'package.json', 'LICENSE', 'PRIVACY.md'];
+  const files = ['index.html', 'style.css', 'app.js', 'settings-backup.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'local-speech.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'app-config.js', 'speech-background.svg', 'server.js', 'package.json', 'LICENSE', 'PRIVACY.md'];
   const extra = ['node.exe', 'node-LICENSE.txt', 'Start.cmd', 'Start.ps1', 'Readme.txt'];
   await mkdir(destination, { recursive: true });
-  if ((await readdir(destination)).some(file => ![...files, ...extra].includes(file))) throw new Error('空の出力先を使用してください。');
+  if ((await readdir(destination)).some(file => ![...files, ...extra, 'kick.js'].includes(file))) throw new Error('空の出力先を使用してください。');
   for (const file of files) await copyFile(new URL(file, import.meta.url), new URL(file, destination));
+  await unlink(new URL('kick.js', destination)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  await writeFile(new URL('app-config.js', destination), "export const enabledPlatforms = Object.freeze(['twitch']);\nexport const publication = 'local';\n");
+  const html = await readFile(new URL('index.html', destination), 'utf8');
+  await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden'));
   const runtime = await readFile(process.execPath);
   const runtimePath = new URL('node.exe', destination);
   let unchanged = false;
