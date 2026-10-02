@@ -57,7 +57,7 @@ test('appearance reset replaces loading immediately and stale success, skips and
   }
 });
 
-test('older CSS or image completion cannot clear a newer loading or completed status', async () => {
+test('older same-channel completion cannot clear a newer loading or completed status', async () => {
   for (const result of [true, null, false, new Error('old failure')]) {
     for (const newerFinishesFirst of [true, false]) {
       const { status, current } = statusFixture();
@@ -74,7 +74,7 @@ test('older CSS or image completion cannot clear a newer loading or completed st
   }
 });
 
-test('refresh owns the shared status and a later application also supersedes an older refresh', async () => {
+test('default-channel owners supersede older operations while explicit channels remain independent', async () => {
   const { status, current } = statusFixture();
   const input = deferred();
   const operation = runCustomizationApply(status, applyOptions(() => input.promise, () => null));
@@ -94,4 +94,29 @@ test('CSS storage failure and current request failure both replace loading with 
   assert.equal(current(), 'applied without saving');
   await runCustomizationApply(status, applyOptions(async () => { throw new Error('missing file'); }, () => true));
   assert.equal(current(), '適用できませんでした：missing file');
+});
+
+test('independent CSS and image outcomes survive either completion order, but reset invalidates both', async () => {
+  for (const cssFinishesFirst of [true, false]) {
+    const messages = new Map();
+    const status = createCustomizationStatus((message, channel) => {
+      if (channel === null) messages.clear();
+      messages.set(channel, message);
+    });
+    const css = deferred(), image = deferred();
+    const cssOperation = runCustomizationApply(status, { ...applyOptions(() => css.promise, () => true, 'css'), channel: 'css' });
+    const imageOperation = runCustomizationApply(status, { ...applyOptions(() => image.promise, () => true, 'image'), channel: 'image' });
+    if (cssFinishesFirst) { css.reject(new Error('deleted CSS')); await cssOperation; }
+    image.resolve('image'); await imageOperation;
+    if (!cssFinishesFirst) { css.reject(new Error('deleted CSS')); await cssOperation; }
+    assert.match(messages.get('css'), /deleted CSS/);
+    assert.equal(messages.get('image'), 'image: saved');
+    const pendingCSS = deferred(), pendingImage = deferred();
+    const oldCSS = runCustomizationApply(status, { ...applyOptions(() => pendingCSS.promise, () => true), channel: 'css' });
+    const oldImage = runCustomizationApply(status, { ...applyOptions(() => pendingImage.promise, () => true), channel: 'image' });
+    status.clear('restored defaults');
+    pendingCSS.reject(new Error('stale CSS failure')); pendingImage.resolve('old image');
+    await Promise.all([oldCSS, oldImage]);
+    assert.deepEqual([...messages], [[null, 'restored defaults']]);
+  }
 });

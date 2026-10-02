@@ -126,7 +126,6 @@ test('short and resized speech panels keep readable text and visible credits for
       await page.locator('#enter-talk').click();
       for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
         await page.setViewportSize(viewport);
-        await page.locator('#stage-speech-credit').scrollIntoViewIfNeeded();
         const geometry = await page.locator('.stage-speech').evaluate(panel => {
           const bounds = panel.getBoundingClientRect();
           const credit = panel.querySelector('#stage-speech-credit');
@@ -137,7 +136,9 @@ test('short and resized speech panels keep readable text and visible credits for
           const css = getComputedStyle(content);
           const readableHeight = content.clientHeight - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
           return {
-            visible: !credit.hidden && attribution.top >= 0 && attribution.bottom <= innerHeight,
+            visible: !credit.hidden && attribution.top >= 0 && attribution.bottom <= innerHeight && attribution.left >= 0 && attribution.right <= innerWidth,
+            unscrolled: document.querySelector('#talk-stage').scrollTop === 0,
+            exposed: document.elementFromPoint(attribution.left + attribution.width / 2, attribution.top + attribution.height / 2)?.closest('#stage-speech-credit') === credit,
             contained: attribution.left >= bounds.left && attribution.right <= bounds.right + 1 && attribution.top >= bounds.top && attribution.bottom <= bounds.bottom + 1,
             separate: attribution.top >= box.bottom,
             readable: readableHeight >= parseFloat(getComputedStyle(speech).lineHeight),
@@ -146,10 +147,23 @@ test('short and resized speech panels keep readable text and visible credits for
         });
         const label = `${engine}/${style}/${viewport.width}x${viewport.height}`;
         assert.equal(geometry.visible, true, label + ' visible attribution');
+        assert.equal(geometry.unscrolled, true, label + ' no canvas scrolling');
+        assert.equal(geometry.exposed, true, label + ' unobscured attribution');
         assert.equal(geometry.contained, true, label + ' contained attribution');
         assert.equal(geometry.separate, true, label + ' attribution outside text');
         assert.equal(geometry.readable, true, label + ' at least one readable text line');
         assert.equal(geometry.fontSize, '22px', label + ' preserves speech typography');
+        await page.locator('#stage-speech-text').evaluate(text => { text.textContent = 'Long speech remains readable without moving the credit. '.repeat(100); });
+        const longSpeech = await page.locator('#stage-speech-credit').evaluate(credit => {
+          const c = credit.getBoundingClientRect();
+          const body = document.querySelector('.stage-speech-content');
+          return { visible: !credit.hidden && c.top >= 0 && c.bottom <= innerHeight,
+            unscrolled: document.querySelector('#talk-stage').scrollTop === 0,
+            overflow: body.scrollHeight > body.clientHeight && getComputedStyle(body).overflowY === 'auto' };
+        });
+        assert.equal(longSpeech.visible, true, label + ' long speech keeps credit in viewport');
+        assert.equal(longSpeech.unscrolled, true, label + ' long speech does not scroll canvas');
+        assert.equal(longSpeech.overflow, true, label + ' long speech scrolls independently');
       }
       await page.setViewportSize({ width: 1440, height: 1000 });
       await page.locator('#leave-talk').click();
@@ -171,13 +185,75 @@ test('short and resized speech panels keep readable text and visible credits for
   await page.locator('#enter-talk').click();
   for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
     await page.setViewportSize(viewport);
-    await page.locator('#stage-speech-credit').scrollIntoViewIfNeeded();
     const contained = await page.locator('#stage-speech-credit').evaluate(credit => {
       const c = credit.getBoundingClientRect(), p = credit.closest('.stage-speech').getBoundingClientRect();
-      return p.height >= 220 && c.top >= p.top && c.bottom <= p.bottom + 1 && c.left >= p.left && c.right <= p.right + 1;
+      return p.height >= 220 && c.top >= p.top && c.bottom <= p.bottom + 1 && c.left >= p.left && c.right <= p.right + 1 && c.top >= 0 && c.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
     });
     assert.equal(contained, true, `drag-resized speech/${viewport.width}x${viewport.height}`);
   }
+  assert.deepEqual(errors, []);
+});
+
+test('saved bottom-aligned speech stays in the unscrolled viewport after reload and resize', { skip: !browserAvailable }, async t => {
+  const { base } = await local(t);
+  const panels = {
+    header: { x: 0, y: 0, w: 100, h: 15, hidden: false, z: 1 },
+    chat: { x: 0, y: 20, w: 45, h: 70, hidden: false, z: 1 },
+    speech: { x: 50, y: 75, w: 50, h: 25, hidden: false, z: 2 },
+    actor: { x: 50, y: 20, w: 50, h: 40, hidden: false, z: 1 },
+    footer: { x: 0, y: 95, w: 45, h: 5, hidden: false, z: 1 },
+  };
+  const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
+  for (const engine of ['voicevox', 'coeiroink']) {
+    await choose(page, engine);
+    await page.reload();
+    await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+    await page.locator('#enter-talk').click();
+    for (const viewport of [{ width: 1280, height: 720 }, { width: 640, height: 360 }, { width: 960, height: 540 }]) {
+      await page.setViewportSize(viewport);
+      const geometry = await page.locator('#stage-speech-credit').evaluate(credit => {
+        const c = credit.getBoundingClientRect(), p = credit.closest('.stage-speech').getBoundingClientRect();
+        return { visible: !credit.hidden && c.top >= 0 && c.bottom <= innerHeight && c.left >= 0 && c.right <= innerWidth,
+          contained: c.top >= p.top && c.bottom <= p.bottom + 1,
+          unscrolled: document.querySelector('#talk-stage').scrollTop === 0 };
+      });
+      assert.deepEqual(geometry, { visible: true, contained: true, unscrolled: true }, `${engine}/${viewport.width}x${viewport.height}`);
+    }
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech), panels.speech);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.locator('#leave-talk').click();
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('compact chat stays bounded and follows new demo messages while credit remains initially visible', { skip: !browserAvailable }, async t => {
+  const { base } = await local(t);
+  const { page, errors } = await open(t, base);
+  await choose(page, 'voicevox');
+  for (let i = 0; i < 20; i++) await page.locator('#demo').click();
+  await page.setViewportSize({ width: 960, height: 540 });
+  await page.locator('#enter-talk').click();
+  const measure = () => page.locator('#stage-chat-list').evaluate(list => {
+    const last = list.lastElementChild.getBoundingClientRect(), bounds = list.getBoundingClientRect();
+    const credit = document.querySelector('#stage-speech-credit').getBoundingClientRect();
+    return { count: list.children.length,
+      gridBounded: document.querySelector('.stage-grid').getBoundingClientRect().height <= innerHeight,
+      innerScroll: list.scrollHeight > list.clientHeight,
+      atBottom: list.scrollHeight - list.scrollTop - list.clientHeight < 2,
+      newestVisible: last.top >= bounds.top && last.bottom <= Math.min(innerHeight, bounds.bottom),
+      creditVisible: credit.top >= 0 && credit.bottom <= innerHeight,
+      unscrolled: document.querySelector('#talk-stage').scrollTop === 0 };
+  });
+  const initial = await measure();
+  assert.equal(initial.count, 32);
+  for (const field of ['gridBounded', 'innerScroll', 'atBottom', 'newestVisible', 'creditVisible', 'unscrolled']) assert.equal(initial[field], true, field);
+  // Deliver another demo message through the application's normal click handler
+  // while talk mode is active, without leaving and re-entering (which scrolls).
+  await page.locator('#demo').evaluate(button => button.click());
+  await page.waitForFunction(() => document.querySelector('#stage-chat-list').children.length === 33);
+  const updated = await measure();
+  assert.equal(updated.count, 33);
+  for (const field of ['gridBounded', 'innerScroll', 'atBottom', 'newestVisible', 'creditVisible', 'unscrolled']) assert.equal(updated[field], true, field + ' after new message');
   assert.deepEqual(errors, []);
 });
 

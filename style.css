@@ -187,11 +187,17 @@ footer{color:var(--muted);font-size:12px}
 .stage-speech[data-style=image] #stage-speech-credit{margin:8px 8px 0;max-width:calc(100% - 16px)}
 @media(max-width:800px){#stage-speech-credit{margin-left:16px;margin-right:16px;max-width:calc(100% - 32px)}}
 
-/* Keep heading, readable speech and attribution together on short canvases.
-   Scroll the canvas rather than squeezing the presenter below its contents. */
-@media(max-height:600px){
-  #talk-stage{overflow-y:auto}
-  #talk-stage .stage-grid{flex:none;min-height:440px}
+/* Compact controls leave the speech and credit visible before any scrolling.
+   Extra presenter content can scroll; long speech scrolls inside its own body. */
+@media(min-width:541px) and (max-height:600px){
+  #talk-stage{padding:12px;gap:12px;overflow-y:auto}
+  #talk-stage .stage-header{gap:12px}
+  #talk-stage .stage-header h1{font-size:22px}
+  #talk-stage .stage-header p{font-size:12px;margin:6px 0 0}
+  #talk-stage .stage-actions{max-width:55%;gap:8px}
+  #talk-stage .stage-controls{display:grid;grid-template-columns:auto auto;gap:4px 8px}
+  #talk-stage .stage-exit-hint{grid-column:1 / -1;text-align:right}
+  #talk-stage .stage-grid{min-height:320px}
   #talk-stage .stage-speech{max-height:none}
-  #talk-stage .stage-actor{min-height:200px}
+  #talk-stage .stage-actor{min-height:80px}
 }

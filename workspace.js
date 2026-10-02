@@ -48,6 +48,14 @@ export function initializeWorkspace(storage) {
     if (layouts[mode]) {
       if (mode === 'home') { root.style.position = 'relative'; root.style.display = 'block'; root.style.height = 'max(700px, 80vh)'; }
       for (const element of panels[mode]) { const p = layouts[mode].panels[element.dataset.panelType]; element.style.setProperty('position', 'absolute'); for (const [property, value] of Object.entries({ left: p.x, top: p.y, width: p.w, height: p.h })) element.style.setProperty(property, `${value}%`); element.style.zIndex = p.z; element.style.maxHeight = 'none'; element.style.margin = '0'; element.style.display = p.hidden && !editing ? 'none' : ''; element.style.opacity = p.hidden && editing ? '.45' : ''; }
+      // The speech minimum can exceed a saved percentage height. Clamp its
+      // rendered position using both dimensions, without rewriting saved data.
+      if (mode === 'talk') {
+        const speech = panels.talk.find(element => element.dataset.panelType === 'speech');
+        const p = layouts.talk.panels.speech;
+        const minimum = parseFloat(getComputedStyle(speech).minHeight) || 0;
+        speech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
+      }
     } else { if (mode === 'home') { root.style.removeProperty('position'); root.style.removeProperty('display'); root.style.removeProperty('height'); } for (const element of panels[mode]) { const original = originals.get(element); original == null ? element.removeAttribute('style') : element.setAttribute('style', original); } }
     for (const element of panels[mode]) element.querySelector('[data-layout-handle]').hidden = !editing || mode !== currentMode();
   }

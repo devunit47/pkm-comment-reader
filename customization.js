@@ -9,19 +9,27 @@ export function editionInfo(publication, platforms) {
   };
 }
 
-// Refresh, CSS and both image targets share one visible status. Only its latest
-// owner may finish it, even when an older operation is skipped or fails.
+// Independent operations retain their own outcome. A newer operation in the
+// same channel or a full appearance reset invalidates only stale completions.
 export function createCustomizationStatus(write) {
-  let generation = 0;
+  let epoch = 0;
+  const generations = new Map();
   return {
-    begin(message) { const request = ++generation; write(message); return request; },
-    finish(request, message) { if (request !== generation) return false; write(message); return true; },
-    clear(message = '') { generation++; write(message); },
+    begin(message, channel = 'shared') {
+      const generation = (generations.get(channel) || 0) + 1;
+      generations.set(channel, generation); write(message, channel);
+      return { epoch, channel, generation };
+    },
+    finish(request, message) {
+      if (request.epoch !== epoch || generations.get(request.channel) !== request.generation) return false;
+      write(message, request.channel); return true;
+    },
+    clear(message = '') { epoch++; generations.clear(); write(message, null); },
   };
 }
 
-export async function runCustomizationApply(status, { loading, read, apply, success, cancelled, unsaved = cancelled }) {
-  const request = status.begin(loading);
+export async function runCustomizationApply(status, { loading, read, apply, success, cancelled, unsaved = cancelled, channel = 'shared' }) {
+  const request = status.begin(loading, channel);
   try {
     const result = await apply(await read());
     status.finish(request, result === null ? cancelled : result ? success : unsaved);
@@ -92,10 +100,21 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
     <label>スタイル（CSS）<select id="customization-style" disabled></select></label><button id="apply-customization-style" class="button" type="button" disabled>選んだスタイルを適用</button>
     <label>画像<select id="customization-image" disabled></select></label><label>画像を使う場所<select id="customization-image-target"><option value="image">立ち絵</option><option value="speechImage">名前・コメントの背景</option></select></label><button id="apply-customization-image" class="button" type="button" disabled>選んだ画像を適用</button>
     <p>標準のデザインと背景画像はアプリ本体に含まれ、このフォルダーには置きません。「見た目を標準に戻す」でいつでも復元できます。</p>
-    <p id="customization-status" role="status" aria-live="polite"></p></div>`;
+    <div id="customization-status" role="status" aria-live="polite"></div></div>`;
   document.getElementById('studio-page').prepend(panel);
   const $ = id => panel.querySelector(`#${id}`);
-  localStatus = createCustomizationStatus(message => { $('customization-status').textContent = message; });
+  localStatus = createCustomizationStatus((message, channel) => {
+    const container = $('customization-status');
+    if (channel === null) { container.textContent = message; return; }
+    let result = container.querySelector(`[data-status-channel="${channel}"]`);
+    if (!result) {
+      // Remove the plain reset notification when the next operation begins.
+      if (!container.children.length) container.textContent = '';
+      result = document.createElement('p'); result.dataset.statusChannel = channel;
+      container.append(result);
+    }
+    result.textContent = message;
+  });
   let refreshGeneration = 0;
   async function request(path) {
     const response = await fetch(`./api/customizations${path}`, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
@@ -120,7 +139,7 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
   }
   async function refresh() {
     const expected = ++refreshGeneration;
-    const statusRequest = localStatus.begin('一覧を取得しています…');
+    const statusRequest = localStatus.begin('一覧を取得しています…', 'listing');
     try {
       const listing = await (await request('')).json();
       if (expected !== refreshGeneration) return;
@@ -143,6 +162,7 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
     const name = $('customization-style').value; if (!name) return;
     const expected = themeEditor.beginChange();
     return runCustomizationApply(localStatus, {
+      channel: 'css',
       loading: 'スタイルを読み込んでいます…',
       read: async () => (await request(`/styles/${encodeURIComponent(name)}`)).text(),
       apply: css => themeEditor.applyTheme(css, expected),
@@ -155,6 +175,7 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
     const name = $('customization-image').value, target = $('customization-image-target').value; if (!name) return;
     const expected = beginImageChange(target);
     return runCustomizationApply(localStatus, {
+      channel: target,
       loading: '画像を読み込んでいます…',
       read: async () => (await request(`/images/${encodeURIComponent(name)}`)).blob(),
       apply: blob => applyImageFile(blob, target, expected),

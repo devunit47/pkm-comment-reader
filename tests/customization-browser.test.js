@@ -83,13 +83,13 @@ const currentCSS = page => page.locator('#pokome-user-theme').textContent();
 async function applyCSS(page, name, expected = name) {
   await page.locator('#customization-style').selectOption(name);
   await page.locator('#apply-customization-style').click();
-  await page.waitForFunction(value => document.querySelector('#customization-status').textContent.includes(value), expected);
+  await page.waitForFunction(value => document.querySelector('#customization-status [data-status-channel=css]')?.textContent.includes(value), expected);
 }
 async function applyImage(page, name, target = 'image', expected = name) {
   await page.locator('#customization-image').selectOption(name);
   await page.locator('#customization-image-target').selectOption(target);
   await page.locator('#apply-customization-image').click();
-  await page.waitForFunction(value => document.querySelector('#customization-status').textContent.includes(value), expected);
+  await page.waitForFunction(([value, target]) => document.querySelector('#customization-status [data-status-channel="' + target + '"]')?.textContent.includes(value), [expected, target]);
 }
 async function resetAppearance(page, confirm = true) {
   const recovery = page.locator('#appearance-recovery');
@@ -244,7 +244,7 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
   await page.locator('#apply-customization-style').click(); await held.started;
   await applyCSS(page, 'second.css'); await held.finish();
   assert.match(await currentCSS(page), /border-radius: 11px/);
-  assert.equal(await page.locator('#customization-status').textContent(), 'second.css を適用・保存しました。');
+  assert.equal(await page.locator('#customization-status [data-status-channel=css]').textContent(), 'second.css を適用・保存しました。');
   held = await holdResponse(page, '**/api/customizations/styles/first.css', { status: 200, contentType: 'text/css', body: cssOne });
   await page.locator('#customization-style').selectOption('first.css'); await page.locator('#apply-customization-style').click(); await held.started;
   await page.locator('#theme-import').setInputFiles({ name: 'manual.css', mimeType: 'text/css', buffer: Buffer.from(cssTwo) });
@@ -264,7 +264,7 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
     await page.locator('#apply-customization-image').click(); await held.started;
     await applyImage(page, 'second.png', target); await held.finish();
     assert.equal((await savedStudio(page))[target], blueURL);
-    assert.match(await page.locator('#customization-status').textContent(), /^second.png を/);
+    assert.match(await page.locator('#customization-status [data-status-channel=' + target + ']').textContent(), /^second.png を/);
     held = await holdResponse(page, '**/api/customizations/images/first.png', { status: 200, contentType: 'image/png', body: redPNG });
     await page.locator('#customization-image').selectOption('first.png'); await page.locator('#apply-customization-image').click(); await held.started;
     const manualInput = target === 'image' ? '#studio-image' : '#studio-speech-image';
@@ -274,6 +274,26 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
     assert.match(await page.locator('#customization-status').textContent(), /画像の読み込みを中止/);
     assert.equal((await savedStudio(page))[target], blueURL);
   }
+  assert.deepEqual(errors, []);
+});
+
+test('image success does not hide an independent CSS failure and reset clears both outcomes', { skip: !browserAvailable }, async t => {
+  const directory = await fixture(t, { 'styles/first.css': cssOne, 'images/first.png': redPNG });
+  const base = await serve(t, createServer({ customizationDirectory: directory }));
+  const { page, errors } = await openBrowser(t, base);
+  await studio(page);
+  const held = await holdResponse(page, '**/api/customizations/styles/first.css', { status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'CSS deleted after listing' }) });
+  await page.locator('#customization-style').selectOption('first.css');
+  await page.locator('#apply-customization-style').click(); await held.started;
+  await applyImage(page, 'first.png');
+  await held.finish();
+  await page.waitForFunction(() => document.querySelector('[data-status-channel=css]').textContent.includes('CSS deleted after listing'));
+  assert.equal(await currentCSS(page), '');
+  assert.equal((await savedStudio(page)).image, redURL);
+  assert.match(await page.locator('[data-status-channel=image]').textContent(), /first.png/);
+  assert.match(await page.locator('[data-status-channel=css]').textContent(), /CSS deleted after listing/);
+  await resetAppearance(page);
+  assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
   assert.deepEqual(errors, []);
 });
 
