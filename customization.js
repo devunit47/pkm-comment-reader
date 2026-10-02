@@ -9,9 +9,30 @@ export function editionInfo(publication, platforms) {
   };
 }
 
+// Refresh, CSS and both image targets share one visible status. Only its latest
+// owner may finish it, even when an older operation is skipped or fails.
+export function createCustomizationStatus(write) {
+  let generation = 0;
+  return {
+    begin(message) { const request = ++generation; write(message); return request; },
+    finish(request, message) { if (request !== generation) return false; write(message); return true; },
+    clear(message = '') { generation++; write(message); },
+  };
+}
+
+export async function runCustomizationApply(status, { loading, read, apply, success, cancelled, unsaved = cancelled }) {
+  const request = status.begin(loading);
+  try {
+    const result = await apply(await read());
+    status.finish(request, result === null ? cancelled : result ? success : unsaved);
+  } catch (error) {
+    status.finish(request, `適用できませんでした：${error.message}`);
+  }
+}
+
 export function initializeCustomization({ publication, platforms, themeEditor, beginImageChange, applyImageFile, resetAppearance }) {
   const edition = editionInfo(publication, platforms);
-  let styleRequest = 0, imageRequest = 0;
+  let localStatus;
   const capabilities = document.createElement('section');
   capabilities.className = 'panel studio-form';
   capabilities.id = 'edition-capabilities';
@@ -44,10 +65,11 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
   shadow.getElementById('open-reset').onclick = () => { if (!dialog.open) dialog.showModal(); };
   shadow.getElementById('cancel-reset').onclick = () => dialog.close();
   shadow.getElementById('confirm-reset').onclick = () => {
-    styleRequest++; imageRequest++;
     const saved = resetAppearance();
     dialog.close();
-    shadow.getElementById('result').textContent = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。再起動前にブラウザの保存設定を確認してください。';
+    const message = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。再起動前にブラウザの保存設定を確認してください。';
+    shadow.getElementById('result').textContent = message;
+    localStatus?.clear(message);
     shadow.getElementById('open-reset').focus();
   };
   const updateRecovery = () => { recovery.style.display = document.body.classList.contains('talk-mode') ? 'none' : 'block'; };
@@ -73,6 +95,7 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
     <p id="customization-status" role="status" aria-live="polite"></p></div>`;
   document.getElementById('studio-page').prepend(panel);
   const $ = id => panel.querySelector(`#${id}`);
+  localStatus = createCustomizationStatus(message => { $('customization-status').textContent = message; });
   let refreshGeneration = 0;
   async function request(path) {
     const response = await fetch(`./api/customizations${path}`, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
@@ -97,7 +120,7 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
   }
   async function refresh() {
     const expected = ++refreshGeneration;
-    $('customization-status').textContent = '一覧を取得しています…';
+    const statusRequest = localStatus.begin('一覧を取得しています…');
     try {
       const listing = await (await request('')).json();
       if (expected !== refreshGeneration) return;
@@ -105,37 +128,39 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
       populate('customization-style', listing.styles, 'CSSファイルがありません');
       populate('customization-image', listing.images, '画像ファイルがありません');
       updateButtons();
-      $('customization-status').textContent = `スタイル${listing.styles.length}件、画像${listing.images.length}件。${listing.skipped ? '対象外・読み込めないファイルは除外しました。' : ''}${listing.warnings?.join(' ') || ''}`;
+      localStatus.finish(statusRequest, `スタイル${listing.styles.length}件、画像${listing.images.length}件。${listing.skipped ? '対象外・読み込めないファイルは除外しました。' : ''}${listing.warnings?.join(' ') || ''}`);
     } catch (error) {
       if (expected !== refreshGeneration) return;
       $('customization-directory').textContent = '取得できませんでした';
       populate('customization-style', [], '一覧を取得できません'); populate('customization-image', [], '一覧を取得できません'); updateButtons();
-      $('customization-status').textContent = `${error.message} ローカルサーバーから開いているか確認して「一覧を更新」で再試行してください。`;
+      localStatus.finish(statusRequest, `${error.message} ローカルサーバーから開いているか確認して「一覧を更新」で再試行してください。`);
     }
   }
   $('refresh-customizations').onclick = refresh;
   $('customization-style').onchange = updateButtons;
   $('customization-image').onchange = updateButtons;
-  $('apply-customization-style').onclick = async () => {
+  $('apply-customization-style').onclick = () => {
     const name = $('customization-style').value; if (!name) return;
-    const expected = themeEditor.beginChange(), requestId = ++styleRequest;
-    $('customization-status').textContent = 'スタイルを読み込んでいます…';
-    try {
-      const css = await (await request(`/styles/${encodeURIComponent(name)}`)).text();
-      const saved = themeEditor.applyTheme(css, expected);
-      if (saved === null) return;
-      $('customization-status').textContent = saved ? `${name} を適用・保存しました。` : 'スタイルを適用しましたが、保存できません。ブラウザの保存設定を確認してください。';
-    } catch (error) { if (requestId === styleRequest) $('customization-status').textContent = `適用できませんでした：${error.message}`; }
+    const expected = themeEditor.beginChange();
+    return runCustomizationApply(localStatus, {
+      loading: 'スタイルを読み込んでいます…',
+      read: async () => (await request(`/styles/${encodeURIComponent(name)}`)).text(),
+      apply: css => themeEditor.applyTheme(css, expected),
+      success: `${name} を適用・保存しました。`,
+      cancelled: '別の操作が優先されたため、スタイルの読み込みを中止しました。',
+      unsaved: 'スタイルを適用しましたが、保存できません。ブラウザの保存設定を確認してください。',
+    });
   };
-  $('apply-customization-image').onclick = async () => {
+  $('apply-customization-image').onclick = () => {
     const name = $('customization-image').value, target = $('customization-image-target').value; if (!name) return;
-    const expected = beginImageChange(target), requestId = ++imageRequest;
-    $('customization-status').textContent = '画像を読み込んでいます…';
-    try {
-      const blob = await (await request(`/images/${encodeURIComponent(name)}`)).blob();
-      if (!await applyImageFile(blob, target, expected)) return;
-      $('customization-status').textContent = `${name} を${target === 'image' ? '立ち絵' : '名前・コメントの背景'}に適用・保存しました。`;
-    } catch (error) { if (requestId === imageRequest) $('customization-status').textContent = `適用できませんでした：${error.message}`; }
+    const expected = beginImageChange(target);
+    return runCustomizationApply(localStatus, {
+      loading: '画像を読み込んでいます…',
+      read: async () => (await request(`/images/${encodeURIComponent(name)}`)).blob(),
+      apply: blob => applyImageFile(blob, target, expected),
+      success: `${name} を${target === 'image' ? '立ち絵' : '名前・コメントの背景'}に適用・保存しました。`,
+      cancelled: '別の操作が優先されたため、画像の読み込みを中止しました。',
+    });
   };
   refresh();
 }

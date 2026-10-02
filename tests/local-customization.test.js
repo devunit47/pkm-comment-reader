@@ -10,6 +10,8 @@ import { createServer } from '../server.js';
 import { DEFAULT_CUSTOMIZATION_DIRECTORY, MAX_CUSTOM_CSS_BYTES, MAX_CUSTOM_IMAGE_BYTES, ensureCustomizationDirectories } from '../local-customization.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
+// Real 1×1 RGB JPEG, generated with Pillow; no image-library dependency is needed to run these tests.
+const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64');
 const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 const webp = Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA', 'base64');
 
@@ -61,6 +63,54 @@ test('lists and serves only supported flat CSS and image files, including encode
     assert.equal(response.status, 200, name);
     assert.equal(response.headers.get('content-type'), type);
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), content);
+  }
+});
+
+test('lists and serves JPEGs with padding or trailing data after the end marker', async t => {
+  const { directory, list, file } = await serve(t);
+  await list();
+  const images = [
+    ['plain.jpg', jpeg],
+    ['padded.JPG', Buffer.concat([jpeg, Buffer.alloc(16)])],
+    ['trailing.jpeg', Buffer.concat([jpeg, Buffer.from('appended metadata')])],
+    ['boundary.jpeg', Buffer.concat([jpeg, Buffer.alloc(MAX_CUSTOM_IMAGE_BYTES - jpeg.length)])],
+  ];
+  assert.deepEqual(jpeg.subarray(-2), Buffer.from([0xff, 0xd9]));
+  for (const [name, content] of images) await writeFile(join(directory, 'images', name), content);
+  const data = await (await list()).json();
+  assert.deepEqual(data.images, images.map(([name, content]) => ({ name, size: content.length })).sort((a, b) => a.name.localeCompare(b.name, 'ja')));
+  assert.equal(data.skipped, 0);
+  for (const [name, content] of images) {
+    const response = await file('images', name);
+    assert.equal(response.status, 200, name);
+    assert.equal(response.headers.get('content-type'), 'image/jpeg', name);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff', name);
+    assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin', name);
+    assert.equal(response.headers.get('cache-control'), 'no-store', name);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), content, name);
+  }
+});
+
+test('rejects invalid JPEG signatures, mismatched extensions, and oversized padded JPEGs', async t => {
+  const { directory, list, file } = await serve(t);
+  await list();
+  const invalidImages = [
+    ['wrong-first-byte.jpg', Buffer.concat([Buffer.from([0x00]), jpeg.subarray(1)])],
+    ['wrong-second-byte.jpeg', Buffer.concat([Buffer.from([0xff, 0x00]), jpeg.subarray(2)])],
+    ['wrong-third-byte.jpg', Buffer.concat([Buffer.from([0xff, 0xd8, 0x00]), jpeg.subarray(3)])],
+    ['short.jpg', jpeg.subarray(0, 2)],
+    ['disguised-png.jpg', png],
+    ['disguised-jpeg.png', jpeg],
+    ['oversized.jpeg', Buffer.concat([jpeg, Buffer.alloc(MAX_CUSTOM_IMAGE_BYTES - jpeg.length + 1)])],
+  ];
+  for (const [name, content] of invalidImages) await writeFile(join(directory, 'images', name), content);
+  const data = await (await list()).json();
+  assert.deepEqual(data.images, []);
+  assert.equal(data.skipped, invalidImages.length);
+  for (const [name] of invalidImages) {
+    const response = await file('images', name);
+    assert.equal(response.status, 422, name);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff', name);
   }
 });
 

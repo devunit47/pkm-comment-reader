@@ -39,7 +39,9 @@ function allowedName(kind, name) {
 function imageSignatureMatches(extension, bytes) {
   if (extension === '.png') return bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
     bytes.readUInt32BE(8) === 13 && bytes.toString('ascii', 12, 16) === 'IHDR' && bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0;
-  if (extension === '.jpg' || extension === '.jpeg') return bytes.length >= 4 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255 && bytes[bytes.length - 2] === 255 && bytes[bytes.length - 1] === 217;
+  // JPEGs may include padding or metadata after the end marker. Check their leading
+  // signature here; the browser must successfully decode the image before applying it.
+  if (extension === '.jpg' || extension === '.jpeg') return bytes.length >= 3 && bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
   if (extension === '.gif') return bytes.length >= 14 && /^(?:GIF87a|GIF89a)$/.test(bytes.toString('ascii', 0, 6)) && bytes.readUInt16LE(6) > 0 && bytes.readUInt16LE(8) > 0;
   return extension === '.webp' && bytes.length >= 20 && bytes.toString('ascii', 0, 4) === 'RIFF' &&
     bytes.readUInt32LE(4) + 8 === bytes.length && bytes.toString('ascii', 8, 12) === 'WEBP' &&

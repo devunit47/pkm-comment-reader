@@ -37,6 +37,7 @@ function png(red, green, blue) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 const redPNG = png(229, 80, 98), bluePNG = png(70, 100, 220);
+const paddedJPEG = Buffer.concat([Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64'), Buffer.from('\0\0trailing metadata')]);
 const redURL = `data:image/png;base64,${redPNG.toString('base64')}`;
 const blueURL = `data:image/png;base64,${bluePNG.toString('base64')}`;
 
@@ -122,7 +123,7 @@ test('local picker applies CSS and both image targets, rejects invalid files and
   const directory = await fixture(t, {
     'styles/first.css': cssOne, 'styles/invalid.css': 'body { display: none; }',
     'styles/broken.css': 'this is not CSS', 'images/actor.png': redPNG,
-    'images/background.png': bluePNG, 'images/broken.png': redPNG.subarray(0, 33),
+    'images/background.png': bluePNG, 'images/broken.png': redPNG.subarray(0, 33), 'images/padded.jpg': paddedJPEG,
     'images/ignored.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>',
   });
   const base = await serve(t, createServer({ customizationDirectory: directory }));
@@ -134,6 +135,9 @@ test('local picker applies CSS and both image targets, rejects invalid files and
   assert.equal(await page.locator('#apply-customization-style').isDisabled(), true);
   await applyCSS(page, 'first.css');
   assert.match(await currentCSS(page), /border-radius: 7px/);
+  await applyImage(page, 'padded.jpg');
+  assert.equal((await savedStudio(page)).image, `data:image/jpeg;base64,${paddedJPEG.toString('base64')}`);
+  assert.equal(await page.locator('#actor-image').evaluate(image => image.complete && image.naturalWidth), 1);
   await applyImage(page, 'actor.png'); await applyImage(page, 'background.png', 'speechImage');
   assert.equal((await savedStudio(page)).image, redURL);
   assert.equal((await savedStudio(page)).speechImage, blueURL);
@@ -231,21 +235,43 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
   await studio(page);
   let held = await holdResponse(page, '**/api/customizations/styles/first.css', { status: 200, contentType: 'text/css', body: cssOne });
   await page.locator('#customization-style').selectOption('first.css'); await page.locator('#apply-customization-style').click(); await held.started;
-  await resetAppearance(page); await held.finish();
+  await resetAppearance(page);
+  assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
+  await held.finish();
+  assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
   assert.equal(await currentCSS(page), '');
   held = await holdResponse(page, '**/api/customizations/styles/first.css', { status: 200, contentType: 'text/css', body: cssOne });
   await page.locator('#apply-customization-style').click(); await held.started;
   await applyCSS(page, 'second.css'); await held.finish();
   assert.match(await currentCSS(page), /border-radius: 11px/);
+  assert.equal(await page.locator('#customization-status').textContent(), 'second.css を適用・保存しました。');
+  held = await holdResponse(page, '**/api/customizations/styles/first.css', { status: 200, contentType: 'text/css', body: cssOne });
+  await page.locator('#customization-style').selectOption('first.css'); await page.locator('#apply-customization-style').click(); await held.started;
+  await page.locator('#theme-import').setInputFiles({ name: 'manual.css', mimeType: 'text/css', buffer: Buffer.from(cssTwo) });
+  await page.waitForFunction(() => document.querySelector('#theme-import').value === '');
+  await held.finish();
+  assert.match(await page.locator('#customization-status').textContent(), /スタイルの読み込みを中止/);
   for (const target of ['image', 'speechImage']) {
     held = await holdResponse(page, '**/api/customizations/images/first.png', { status: 200, contentType: 'image/png', body: redPNG });
     await page.locator('#customization-image').selectOption('first.png'); await page.locator('#customization-image-target').selectOption(target);
     await page.locator('#apply-customization-image').click(); await held.started;
-    await resetAppearance(page); await held.finish();
+    await resetAppearance(page);
+    assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
+    await held.finish();
+    assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
     assert.equal((await savedStudio(page))[target], undefined);
     held = await holdResponse(page, '**/api/customizations/images/first.png', { status: 200, contentType: 'image/png', body: redPNG });
     await page.locator('#apply-customization-image').click(); await held.started;
     await applyImage(page, 'second.png', target); await held.finish();
+    assert.equal((await savedStudio(page))[target], blueURL);
+    assert.match(await page.locator('#customization-status').textContent(), /^second.png を/);
+    held = await holdResponse(page, '**/api/customizations/images/first.png', { status: 200, contentType: 'image/png', body: redPNG });
+    await page.locator('#customization-image').selectOption('first.png'); await page.locator('#apply-customization-image').click(); await held.started;
+    const manualInput = target === 'image' ? '#studio-image' : '#studio-speech-image';
+    await page.locator(manualInput).setInputFiles({ name: 'manual.png', mimeType: 'image/png', buffer: bluePNG });
+    await page.waitForFunction(id => document.querySelector(id).value === '', manualInput);
+    await held.finish();
+    assert.match(await page.locator('#customization-status').textContent(), /画像の読み込みを中止/);
     assert.equal((await savedStudio(page))[target], blueURL);
   }
   assert.deepEqual(errors, []);
