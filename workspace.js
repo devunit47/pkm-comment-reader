@@ -50,13 +50,16 @@ export function initializeWorkspace(storage) {
     const minimum = parseFloat(getComputedStyle(talkSpeech).minHeight) || 0;
     talkSpeech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
   }
-  function interactionStart(mode, element, resize) {
+  function interactionStart(mode, element, resize, axes = [1, 1]) {
     const p = { ...layouts[mode].panels[element.dataset.panelType] };
     if (mode !== 'talk' || element !== talkSpeech) return p;
     const root = roots[mode], canvas = root.getBoundingClientRect(), visible = element.getBoundingClientRect();
     // Reconcile only the dimensions the user is editing. A viewport resize or
     // a click without movement must not rewrite the saved desktop percentages.
-    if (resize) { p.w = visible.width / canvas.width * 100; p.h = visible.height / canvas.height * 100; }
+    if (resize) {
+      if (axes[0]) p.w = visible.width / canvas.width * 100;
+      if (axes[1]) p.h = visible.height / canvas.height * 100;
+    }
     else { p.x = (visible.left - canvas.left + root.scrollLeft) / canvas.width * 100; p.y = (visible.top - canvas.top + root.scrollTop) / canvas.height * 100; }
     return p;
   }
@@ -86,11 +89,11 @@ export function initializeWorkspace(storage) {
     for (const [index, button] of [...handleShadow.querySelectorAll('button')].entries()) {
       button.addEventListener('pointerdown', event => {
         if (event.button !== 0 || !editing || !available()) return; ensure(mode); selected = element.dataset.panelType; fields(); const original = { ...layouts[mode].panels[selected] }, start = interactionStart(mode, element, index), rect = roots[mode].getBoundingClientRect(); button.setPointerCapture(event.pointerId);
-        const move = e => { const dx = (e.clientX - event.clientX) / rect.width * 100, dy = (e.clientY - event.clientY) / rect.height * 100; const p = { ...start }; for (const [field, delta] of index ? [['w', dx], ['h', dy]] : [['x', dx], ['y', dy]]) p[field] = snap ? Math.round((start[field] + delta) / 2) * 2 : start[field] + delta; layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); };
+        const move = e => { const dx = (e.clientX - event.clientX) / rect.width * 100, dy = (e.clientY - event.clientY) / rect.height * 100; const p = { ...(index ? original : start) }; for (const [field, delta] of index ? [['w', dx], ['h', dy]] : [['x', dx], ['y', dy]]) { if (index && delta === 0) continue; p[field] = snap ? Math.round((start[field] + delta) / 2) * 2 : start[field] + delta; } layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); };
         const finish = e => { button.removeEventListener('pointermove', move); button.removeEventListener('pointerup', finish); button.removeEventListener('pointercancel', finish); if (e.type === 'pointercancel') { layouts[mode].panels[selected] = original; apply(mode); fields(); } else save(); };
         button.addEventListener('pointermove', move); button.addEventListener('pointerup', finish); button.addEventListener('pointercancel', finish);
       });
-      button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const resize = index || event.shiftKey, p = interactionStart(mode, element, resize); p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
+      button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const resize = index || event.shiftKey, p = interactionStart(mode, element, resize, delta); p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
     }
   }
   function finish() {

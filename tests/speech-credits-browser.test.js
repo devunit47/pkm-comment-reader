@@ -282,6 +282,61 @@ for (const action of ['drag', 'keyboard']) {
   });
 }
 
+test('one-axis resize preserves untouched saved dimensions and desktop intent', { skip: !browserAvailable }, async t => {
+  const { base } = await local(t);
+  const panels = bottomAlignedPanels();
+  const layout = { version: 1, home: null, talk: { panels } };
+  const { page, errors } = await open(t, base, { 'pokome-workspace-v1': layout });
+  await choose(page, 'voicevox');
+  const scenarios = [
+    { key: 'ArrowLeft', axis: 'w' }, { key: 'ArrowRight', axis: 'w' },
+    { key: 'ArrowUp', axis: 'h' }, { key: 'ArrowDown', axis: 'h' },
+    { pointer: [-40, 0], axis: 'w' }, { pointer: [0, 40], axis: 'h' },
+  ];
+  for (const scenario of scenarios) {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.locator('[data-page="studio"]').click();
+    await page.locator('#workspace-editor #import').setInputFiles({ name: 'axis-layout.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(layout)) });
+    await page.waitForFunction(() => {
+      const p = JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech;
+      return p.y === 75 && p.w === 50 && p.h === 25;
+    });
+    await page.locator('#workspace-editor #mode').selectOption('talk');
+    await page.locator('#workspace-editor #edit').click();
+    const desktop = await page.locator('.stage-speech').boundingBox();
+    await page.setViewportSize({ width: 640, height: 360 });
+    const resize = page.locator('.stage-speech [data-layout-handle] button').nth(1);
+    if (scenario.key) await resize.press(scenario.key);
+    else {
+      const handle = await resize.boundingBox();
+      const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+      await page.mouse.move(x, y); await page.mouse.down();
+      await page.mouse.move(x + scenario.pointer[0], y + scenario.pointer[1], { steps: 6 });
+      await page.mouse.up();
+    }
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const returned = await page.locator('.stage-speech').boundingBox();
+    const label = scenario.key || `pointer-${scenario.axis}`;
+    t.diagnostic(JSON.stringify({ label, stored, desktopBefore: desktop, desktopAfter: returned }));
+    if (scenario.axis === 'w') {
+      assert.equal(stored.h, panels.speech.h, label + ' preserves saved height');
+      assert.equal(stored.y, panels.speech.y, label + ' preserves vertical intent');
+      assert.equal(returned.height, desktop.height, label + ' preserves desktop height');
+      assert.equal(returned.y, desktop.y, label + ' preserves desktop vertical position');
+    } else {
+      assert.equal(stored.w, panels.speech.w, label + ' preserves saved width');
+      assert.equal(stored.x, panels.speech.x, label + ' preserves horizontal intent');
+      assert.equal(returned.width, desktop.width, label + ' preserves desktop width');
+      assert.equal(returned.x, desktop.x, label + ' preserves desktop horizontal position');
+    }
+    assert.notEqual(stored[scenario.axis], panels.speech[scenario.axis], label + ' edits the requested dimension');
+    await editorScreenshot(page, `speech-one-axis-${label}-desktop-1280x720`);
+    await page.locator('#layout-session #finish').click();
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('custom CSS minimum height updates saved speech bounds on apply, clear and appearance reset', { skip: !browserAvailable }, async t => {
   const { base } = await local(t);
   const panels = bottomAlignedPanels();
