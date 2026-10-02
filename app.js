@@ -345,12 +345,15 @@ $('hide-comment').onclick = () => {
 };
 $('read-selected').onclick = () => states[active].selected ? speak(states[active].selected) : notify('コメントを選択してください。');
 $('stop-speech').onclick = stop;
-$('auto-speech').onchange = () => {
-  states[active].autoSpeech = $('auto-speech').checked;
+function setAutoSpeech(enabled) {
+  states[active].autoSpeech = enabled;
+  $('auto-speech').checked = enabled;
   save('pokome-auto-speech', { twitch: states.twitch.autoSpeech, kick: states.kick.autoSpeech });
   renderSpeechSettings();
   if (!states[active].autoSpeech) stop();
-};
+}
+$('auto-speech').onchange = () => setAutoSpeech($('auto-speech').checked);
+$('stage-auto-speech').onclick = () => setAutoSpeech(!states[active].autoSpeech);
 $('read-name').onchange = () => { states[active].readName = $('read-name').checked; };
 $('voice').onchange = () => {
   stop();
@@ -373,6 +376,8 @@ if (publication === 'pages') for (const option of $('speech-engine').options) op
 function renderSpeechSettings() {
   const state = states[active];
   $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
+  $('stage-auto-speech').textContent = `自動読み上げ ${state.autoSpeech ? 'ON' : 'OFF'}`;
+  $('stage-auto-speech').setAttribute('aria-checked', String(state.autoSpeech));
   $('volume-value').textContent = `${Math.round(state.volume * 100)}%`;
   $('stage-volume').value = state.volume;
   $('stage-volume-value').textContent = `${Math.round(state.volume * 100)}%`;
