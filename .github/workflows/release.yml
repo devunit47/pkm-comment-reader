@@ -1,0 +1,61 @@
+name: Release Windows local version
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Keep this version paired with NODE-LICENSE.txt.
+          node-version: '24.19.0'
+          architecture: x64
+      - name: Validate release tag
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+            throw 'Use a version tag such as v1.0.0 or v1.0.0-beta.1.'
+          }
+      - run: npm run check
+      - run: npm test
+      - run: npm run build:local
+      - name: Package Windows distribution
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if (Test-Path -LiteralPath 'dist-local/kick.js') { throw 'Kick must not be distributed.' }
+          Compress-Archive -Path 'dist-local/*' -DestinationPath "pokome-reader-$env:RELEASE_TAG-windows-x64.zip"
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $readerArchive = "pokome-reader-$env:RELEASE_TAG-windows-x64.zip"
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG $readerArchive --clobber
+          } else {
+            $readerOptions = @('release', 'create', $env:RELEASE_TAG, $readerArchive, '--verify-tag', '--title', "ぽこめ Reader $env:RELEASE_TAG", '--generate-notes')
+            if ($env:RELEASE_TAG.Contains('-')) { $readerOptions += '--prerelease' }
+            gh @readerOptions
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed.' }
