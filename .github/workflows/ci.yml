@@ -30,9 +30,3 @@ jobs:
           if (Test-Path -LiteralPath 'dist-local/kick.js') { throw 'Kick must not be distributed.' }
           & ./dist-local/node.exe --version
           if ($LASTEXITCODE -ne 0) { throw 'Bundled Node.js failed to start.' }
-      - name: Verify the Windows distribution
-        shell: pwsh
-        run: |
-          if (Test-Path -LiteralPath 'dist-local/kick.js') { throw 'Kick must not be distributed.' }
-          & 'dist-local/node.exe' --version
-          if ($LASTEXITCODE -ne 0) { throw 'The bundled node.exe does not start.' }
