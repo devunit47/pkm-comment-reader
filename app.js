@@ -887,6 +887,13 @@ window.addEventListener('beforeunload', () => {
 $('open-setup').onclick = () => $('setup-dialog').showModal();
 $('close-setup').onclick = () => $('setup-dialog').close();
 $('setup-connect').onclick = () => { $('setup-dialog').close(); page('settings'); $(active + '-channel').focus(); };
+$('setup-test-voice').onclick = () => {
+  $('setup-dialog').close();
+  page('home');
+  $('test-voice').scrollIntoView({ block: 'center' });
+  $('test-voice').focus();
+  $('test-voice').click();
+};
 $('setup-voice').onclick = () => { $('setup-dialog').close(); page('home'); document.querySelector('.reading').scrollIntoView({ block: 'center' }); $('voice').focus(); };
 $('complete-setup').onclick = () => { save('pokome-setup-complete', true); $('setup-welcome').hidden = true; $('setup-dialog').close(); };
 $('setup-welcome').hidden = !!storage?.getItem('pokome-setup-complete') || !!storage?.getItem('pokome-connections');
