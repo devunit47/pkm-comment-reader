@@ -43,6 +43,23 @@ export function initializeWorkspace(storage) {
     if (!rect.width || !rect.height) return;
     layouts[mode] = normalizeLayout({ panels: Object.fromEntries(panels[mode].map(element => { const p = element.getBoundingClientRect(); return [element.dataset.panelType, { x: (p.left - rect.left) / rect.width * 100, y: (p.top - rect.top) / rect.height * 100, w: p.width / rect.width * 100, h: p.height / rect.height * 100, z: 1, hidden: false }]; })) }, PANEL_IDS[mode]);
   }
+  const talkSpeech = panels.talk.find(element => element.dataset.panelType === 'speech');
+  function clampTalkSpeech() {
+    if (!layouts.talk) return;
+    const p = layouts.talk.panels.speech;
+    const minimum = parseFloat(getComputedStyle(talkSpeech).minHeight) || 0;
+    talkSpeech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
+  }
+  function interactionStart(mode, element, resize) {
+    const p = { ...layouts[mode].panels[element.dataset.panelType] };
+    if (mode !== 'talk' || element !== talkSpeech) return p;
+    const root = roots[mode], canvas = root.getBoundingClientRect(), visible = element.getBoundingClientRect();
+    // Reconcile only the dimensions the user is editing. A viewport resize or
+    // a click without movement must not rewrite the saved desktop percentages.
+    if (resize) { p.w = visible.width / canvas.width * 100; p.h = visible.height / canvas.height * 100; }
+    else { p.x = (visible.left - canvas.left + root.scrollLeft) / canvas.width * 100; p.y = (visible.top - canvas.top + root.scrollTop) / canvas.height * 100; }
+    return p;
+  }
   function apply(mode) {
     const root = roots[mode];
     if (layouts[mode]) {
@@ -50,12 +67,7 @@ export function initializeWorkspace(storage) {
       for (const element of panels[mode]) { const p = layouts[mode].panels[element.dataset.panelType]; element.style.setProperty('position', 'absolute'); for (const [property, value] of Object.entries({ left: p.x, top: p.y, width: p.w, height: p.h })) element.style.setProperty(property, `${value}%`); element.style.zIndex = p.z; element.style.maxHeight = 'none'; element.style.margin = '0'; element.style.display = p.hidden && !editing ? 'none' : ''; element.style.opacity = p.hidden && editing ? '.45' : ''; }
       // The speech minimum can exceed a saved percentage height. Clamp its
       // rendered position using both dimensions, without rewriting saved data.
-      if (mode === 'talk') {
-        const speech = panels.talk.find(element => element.dataset.panelType === 'speech');
-        const p = layouts.talk.panels.speech;
-        const minimum = parseFloat(getComputedStyle(speech).minHeight) || 0;
-        speech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
-      }
+      if (mode === 'talk') clampTalkSpeech();
     } else { if (mode === 'home') { root.style.removeProperty('position'); root.style.removeProperty('display'); root.style.removeProperty('height'); } for (const element of panels[mode]) { const original = originals.get(element); original == null ? element.removeAttribute('style') : element.setAttribute('style', original); } }
     for (const element of panels[mode]) element.querySelector('[data-layout-handle]').hidden = !editing || mode !== currentMode();
   }
@@ -73,12 +85,12 @@ export function initializeWorkspace(storage) {
     const handleShadow = handleHost.attachShadow({ mode: 'open' }); handleShadow.innerHTML = `<style>button{font:12px system-ui;background:#fff;color:#172b25;border:2px solid #3b7965;padding:5px;cursor:move;touch-action:none}button:last-child{cursor:nwse-resize}</style><button aria-label="${panelName} を移動">↔ 移動：${panelName}</button><button aria-label="${panelName} のサイズ変更">↘ 大きさ</button>`; element.append(handleHost);
     for (const [index, button] of [...handleShadow.querySelectorAll('button')].entries()) {
       button.addEventListener('pointerdown', event => {
-        if (event.button !== 0 || !editing || !available()) return; ensure(mode); selected = element.dataset.panelType; fields(); const start = { ...layouts[mode].panels[selected] }, rect = roots[mode].getBoundingClientRect(); button.setPointerCapture(event.pointerId);
+        if (event.button !== 0 || !editing || !available()) return; ensure(mode); selected = element.dataset.panelType; fields(); const original = { ...layouts[mode].panels[selected] }, start = interactionStart(mode, element, index), rect = roots[mode].getBoundingClientRect(); button.setPointerCapture(event.pointerId);
         const move = e => { const dx = (e.clientX - event.clientX) / rect.width * 100, dy = (e.clientY - event.clientY) / rect.height * 100; const p = { ...start }; for (const [field, delta] of index ? [['w', dx], ['h', dy]] : [['x', dx], ['y', dy]]) p[field] = snap ? Math.round((start[field] + delta) / 2) * 2 : start[field] + delta; layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); };
-        const finish = e => { button.removeEventListener('pointermove', move); button.removeEventListener('pointerup', finish); button.removeEventListener('pointercancel', finish); if (e.type === 'pointercancel') { layouts[mode].panels[selected] = start; apply(mode); fields(); } else save(); };
+        const finish = e => { button.removeEventListener('pointermove', move); button.removeEventListener('pointerup', finish); button.removeEventListener('pointercancel', finish); if (e.type === 'pointercancel') { layouts[mode].panels[selected] = original; apply(mode); fields(); } else save(); };
         button.addEventListener('pointermove', move); button.addEventListener('pointerup', finish); button.addEventListener('pointercancel', finish);
       });
-      button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const p = layouts[mode].panels[selected], resize = index || event.shiftKey; p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
+      button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const resize = index || event.shiftKey, p = interactionStart(mode, element, resize); p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
     }
   }
   function finish() {
@@ -120,6 +132,9 @@ export function initializeWorkspace(storage) {
   });
   observer.observe(roots.talk, { attributes: true, attributeFilter: ['hidden'] });
   observer.observe(document.getElementById('home-page'), { attributes: true, attributeFilter: ['hidden'] });
+  // CSS application/removal and responsive minimums can change the rendered
+  // size without reapplying a layout. Updating top does not change panel size.
+  new ResizeObserver(clampTalkSpeech).observe(talkSpeech);
   for (const mode of Object.keys(roots)) apply(mode); fields();
   return { getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); } };
 }

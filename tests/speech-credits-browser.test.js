@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,6 +10,12 @@ import { createPreviewServer } from '../preview-pages.js';
 import { chromium, executablePath, browserAvailable } from './browser-support.js';
 
 const uuid = '3c37646f-3881-5374-2a83-149267990abc';
+async function editorScreenshot(page, name) {
+  const directory = process.env.EDITOR_QA_DIRECTORY;
+  if (!directory) return;
+  await mkdir(directory, { recursive: true });
+  await page.screenshot({ path: join(directory, name + '.png') });
+}
 const voicevoxSpeakers = () => [
   { name: 'ずんだもん', styles: [{ id: 3, name: 'ノーマル' }, { id: 1, name: 'あまあま' }] },
   { name: '四国めたん', styles: [{ id: 2, name: 'ノーマル' }] },
@@ -194,15 +200,19 @@ test('short and resized speech panels keep readable text and visible credits for
   assert.deepEqual(errors, []);
 });
 
-test('saved bottom-aligned speech stays in the unscrolled viewport after reload and resize', { skip: !browserAvailable }, async t => {
-  const { base } = await local(t);
-  const panels = {
+function bottomAlignedPanels() {
+  return {
     header: { x: 0, y: 0, w: 100, h: 15, hidden: false, z: 1 },
     chat: { x: 0, y: 20, w: 45, h: 70, hidden: false, z: 1 },
     speech: { x: 50, y: 75, w: 50, h: 25, hidden: false, z: 2 },
     actor: { x: 50, y: 20, w: 50, h: 40, hidden: false, z: 1 },
     footer: { x: 0, y: 95, w: 45, h: 5, hidden: false, z: 1 },
   };
+}
+
+test('saved bottom-aligned speech stays in the unscrolled viewport after reload and resize', { skip: !browserAvailable }, async t => {
+  const { base } = await local(t);
+  const panels = bottomAlignedPanels();
   const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
   for (const engine of ['voicevox', 'coeiroink']) {
     await choose(page, engine);
@@ -223,6 +233,93 @@ test('saved bottom-aligned speech stays in the unscrolled viewport after reload 
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('#leave-talk').click();
   }
+  assert.deepEqual(errors, []);
+});
+
+for (const action of ['drag', 'keyboard']) {
+  test(`clamped saved speech responds to the first upward ${action} and retains desktop sizing`, { skip: !browserAvailable }, async t => {
+    const { base } = await local(t);
+    const panels = bottomAlignedPanels();
+    const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
+    await choose(page, 'voicevox');
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.locator('[data-page="studio"]').click();
+    await page.locator('#workspace-editor #mode').selectOption('talk');
+    await page.locator('#workspace-editor #edit').click();
+    const desktop = await page.locator('.stage-speech').boundingBox();
+    await page.setViewportSize({ width: 640, height: 360 });
+    const compact = await page.locator('.stage-speech').boundingBox();
+    assert.equal(compact.y, 140);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    assert.deepEqual(await page.locator('.stage-speech').boundingBox(), desktop, 'resize alone restores desktop geometry');
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech), panels.speech, 'resize alone preserves saved percentages');
+    await page.setViewportSize({ width: 640, height: 360 });
+    const move = page.locator('.stage-speech [data-layout-handle] button').first();
+    await editorScreenshot(page, `speech-editor-${action}-before-640x360`);
+    if (action === 'drag') {
+      const handle = await move.boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 - 50, { steps: 6 });
+      await page.mouse.up();
+    } else {
+      await move.press('ArrowUp');
+    }
+    const changed = await page.locator('.stage-speech').boundingBox();
+    const distance = compact.y - changed.y;
+    assert.ok(action === 'drag' ? distance >= 40 && distance <= 60 : Math.abs(distance - 7.2) < 1, `first ${action} moves from visible position; observed ${distance}px`);
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech);
+    assert.equal(stored.h, panels.speech.h, 'moving does not rewrite saved height');
+    assert.equal(stored.w, panels.speech.w, 'moving does not rewrite saved width');
+    t.diagnostic(JSON.stringify({ action, initialY: compact.y, changedY: changed.y, distance, storedY: stored.y }));
+    await editorScreenshot(page, `speech-editor-${action}-after-640x360`);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const returned = await page.locator('.stage-speech').boundingBox();
+    assert.ok(Math.abs(returned.y - stored.y / 100 * 720) < 1, 'desktop position follows the explicit edit');
+    assert.equal(returned.height, desktop.height, 'desktop speech sizing is preserved');
+    await editorScreenshot(page, `speech-editor-${action}-desktop-1280x720`);
+    assert.deepEqual(errors, []);
+  });
+}
+
+test('custom CSS minimum height updates saved speech bounds on apply, clear and appearance reset', { skip: !browserAvailable }, async t => {
+  const { base } = await local(t);
+  const panels = bottomAlignedPanels();
+  const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
+  await choose(page, 'voicevox');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.locator('[data-page="studio"]').click();
+  await page.locator('#theme-css').locator('xpath=ancestor::details').locator('summary').click();
+  const check = async height => {
+    await page.locator('#enter-talk').click();
+    await page.waitForFunction(expected => {
+      const panel = document.querySelector('.stage-speech').getBoundingClientRect();
+      const credit = document.querySelector('#stage-speech-credit').getBoundingClientRect();
+      return panel.height === expected && panel.bottom <= innerHeight && credit.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
+    }, height);
+    await editorScreenshot(page, `speech-custom-css-${height}px-1280x720`);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech), panels.speech, 'CSS does not rewrite saved layout');
+    await page.locator('#leave-talk').click();
+    await page.locator('[data-page="studio"]').click();
+  };
+  await page.locator('#theme-css').fill('.pokome-workspace .stage-speech { min-height: 300px; }');
+  await page.locator('#theme-apply').click();
+  await check(300);
+  await page.locator('#theme-reset').click();
+  await check(220);
+  await page.locator('#theme-css').fill('.pokome-workspace .stage-speech { min-height: 300px; }');
+  await page.locator('#theme-apply').click();
+  await check(300);
+  await page.locator('#appearance-recovery #open-reset').click();
+  await page.locator('#appearance-recovery #confirm-reset').click();
+  assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
+  assert.equal(await page.locator('#pokome-user-theme').textContent(), '');
+  await page.locator('#enter-talk').click();
+  await page.waitForFunction(() => {
+    const panel = document.querySelector('.stage-speech');
+    const bounds = panel.getBoundingClientRect(), credit = document.querySelector('#stage-speech-credit').getBoundingClientRect();
+    return panel.style.top === '' && bounds.bottom <= innerHeight && credit.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
+  });
   assert.deepEqual(errors, []);
 });
 
