@@ -18,8 +18,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Keep this version paired with NODE-LICENSE.txt.
           node-version: '24.19.0'
@@ -50,11 +50,13 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $readerArchive = "pokome-reader-$env:RELEASE_TAG-windows-x64.zip"
+          $readerHash = (Get-FileHash -LiteralPath $readerArchive -Algorithm SHA256).Hash.ToLower()
+          Set-Content -LiteralPath "$readerArchive.sha256" -Value "$readerHash  $readerArchive" -Encoding ascii
           gh release view $env:RELEASE_TAG *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:RELEASE_TAG $readerArchive --clobber
+            throw 'This release already exists. Use a new version tag; published assets are immutable.'
           } else {
-            $readerOptions = @('release', 'create', $env:RELEASE_TAG, $readerArchive, '--verify-tag', '--title', "ぽこめ Reader $env:RELEASE_TAG", '--generate-notes')
+            $readerOptions = @('release', 'create', $env:RELEASE_TAG, $readerArchive, "$readerArchive.sha256", '--verify-tag', '--title', "ぽこめ Reader $env:RELEASE_TAG", '--generate-notes')
             if ($env:RELEASE_TAG.Contains('-')) { $readerOptions += '--prerelease' }
             gh @readerOptions
           }
