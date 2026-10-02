@@ -55,5 +55,7 @@ export function createServer({ fetchImpl = globalThis.fetch } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
- createServer().listen(5173,'127.0.0.1',()=>console.log('Open http://localhost:5173'));
+ const port = Number(process.env.PORT ?? 5173);
+ if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer from 1 to 65535');
+ createServer().listen(port,'127.0.0.1',()=>console.log(`Open http://localhost:${port}`));
 }

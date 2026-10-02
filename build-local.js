@@ -14,26 +14,27 @@ export async function buildLocal(destination = new URL('./dist-local/', import.m
   await writeFile(new URL('Start.ps1', destination), `﻿$ErrorActionPreference = 'Stop'
 Write-Host 'ぽこめ Reader の起動を確認しています…'
 try {
-  $readerResponse = Invoke-WebRequest 'http://localhost:5173/' -UseBasicParsing -TimeoutSec 2
-  if ($readerResponse.Content -notmatch 'ぽこめ') { throw 'ポート5173は別のアプリが使用しています。' }
+  $readerResponse = Invoke-WebRequest 'http://localhost:5174/' -UseBasicParsing -TimeoutSec 2
+  if ($readerResponse.Content -notmatch 'ぽこめ') { throw 'ポート5174は別のアプリが使用しています。' }
   Write-Host '起動済みのぽこめ Reader を開きます。'
 } catch {
   if ($_.Exception.Message -like '*別のアプリ*') { Write-Host $_.Exception.Message; Read-Host 'Enterで閉じる'; exit 1 }
   Write-Host 'ローカルサーバーを起動しています…'
+  $env:PORT = '5174'
   Start-Process -FilePath (Join-Path $PSScriptRoot 'node.exe') -ArgumentList 'server.js' -WorkingDirectory $PSScriptRoot -WindowStyle Hidden
   $readerReady = $false
   for ($readerAttempt = 0; $readerAttempt -lt 20; $readerAttempt++) {
     Start-Sleep -Milliseconds 250
-    try { $readerResponse = Invoke-WebRequest 'http://localhost:5173/' -UseBasicParsing -TimeoutSec 1; $readerReady = $readerResponse.Content -match 'ぽこめ'; if ($readerReady) { break } } catch {}
+    try { $readerResponse = Invoke-WebRequest 'http://localhost:5174/' -UseBasicParsing -TimeoutSec 1; $readerReady = $readerResponse.Content -match 'ぽこめ'; if ($readerReady) { break } } catch {}
   }
-  if (!$readerReady) { Write-Host '起動できませんでした。ポート5173を確認してください。'; Read-Host 'Enterで閉じる'; exit 1 }
+  if (!$readerReady) { Write-Host '起動できませんでした。ポート5174を確認してください。'; Read-Host 'Enterで閉じる'; exit 1 }
 }
-Start-Process 'http://localhost:5173/'
-Write-Host 'ブラウザで http://localhost:5173/ を開きました。'
+Start-Process 'http://localhost:5174/'
+Write-Host 'ブラウザで http://localhost:5174/ を開きました。'
 Write-Host 'このウィンドウを閉じてもアプリは動作します。'
 Read-Host 'Enterでこのウィンドウを閉じる' | Out-Null
 `, 'utf8');
-  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n設定バックアップには接続先・ユーザー名・画像が含まれるため、共有先にご注意ください。\r\n', 'utf8');
+  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n設定バックアップには接続先・ユーザー名・画像が含まれるため、共有先にご注意ください。\r\n', 'utf8');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await buildLocal(); console.log('Windows local package: dist-local/');
