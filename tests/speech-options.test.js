@@ -85,3 +85,11 @@ test('Nightbot and broadcaster exclusions use exact account names and independen
   assert.equal(isSpeechUserExcluded(owner, 'owner', disabled), false);
   assert.deepEqual(normalizeSpeechOptions(JSON.parse(JSON.stringify(disabled))), disabled);
 });
+
+test('Kick emote tokens are skipped in speech without changing other platforms', () => {
+  const text = 'こんにちは [emote:123:wave] またね[emote:456]';
+  assert.equal(prepareSpeechText(text, DEFAULT_SPEECH_OPTIONS, 'kick'), 'こんにちは またね');
+  assert.equal(prepareSpeechText('[emote:123:wave] [emote:456]', DEFAULT_SPEECH_OPTIONS, 'kick'), '');
+  assert.equal(prepareSpeechText(text, DEFAULT_SPEECH_OPTIONS, 'twitch'), text);
+  assert.equal(prepareSpeechText('[emote:未完了', DEFAULT_SPEECH_OPTIONS, 'kick'), '[emote:未完了');
+});

@@ -32,8 +32,9 @@ export function readSavedAutoSpeech(storage) {
 }
 
 const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
-export function prepareSpeechText(text, options) {
+export function prepareSpeechText(text, options, platform) {
   if (typeof text !== 'string') return '';
+  if (platform === 'kick') text = text.replace(/\[emote:[^\]\r\n]*\]/giu, ' ');
   if (options.skipCommands && /^[!/]/u.test(text.trimStart())) return '';
   if (options.skipUrls) {
     text = text.replace(/(?:https?:\/\/|www\.)[^\s<>「」『』（）、。！？]+/giu,

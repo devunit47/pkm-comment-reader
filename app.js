@@ -117,7 +117,7 @@ function renderSelection() {
   const message = state.selected;
   $('preview-user').textContent = message?.user || 'ぽこめ Reader';
   $('preview-text').textContent = message
-    ? (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions)) || 'このコメントは読み上げ対象外です。'
+    ? (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions, active)) || 'このコメントは読み上げ対象外です。'
     : `${names[active]}のコメントを待っています。`;
   $('selected-user').textContent = message?.user || 'コメントを選択してください';
   $('hide-user').disabled = !message;
@@ -196,7 +196,7 @@ function speak(message, automatic = false) {
     if (!automatic) notify('このユーザーは設定により読み上げ対象外です。');
     return;
   }
-  const text = prepareSpeechText(message.text, state.speechOptions);
+  const text = prepareSpeechText(message.text, state.speechOptions, active);
   if (!text) { if (!automatic) notify('URLのみ・コマンドなど、設定により読み上げ対象外です。'); return; }
   if (automatic && !shouldAutoRead(state.speechHistory, message.user, text, state.speechOptions)) return;
   const platform = active;
