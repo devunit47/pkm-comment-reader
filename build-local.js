@@ -8,7 +8,11 @@ export async function buildLocal(destination = new URL('./dist-local/', import.m
   await mkdir(destination, { recursive: true });
   if ((await readdir(destination)).some(file => ![...files, ...extra].includes(file))) throw new Error('空の出力先を使用してください。');
   for (const file of files) await copyFile(new URL(file, import.meta.url), new URL(file, destination));
-  await copyFile(process.execPath, new URL('node.exe', destination));
+  const runtime = await readFile(process.execPath);
+  const runtimePath = new URL('node.exe', destination);
+  let unchanged = false;
+  try { unchanged = runtime.equals(await readFile(runtimePath)); } catch { /* First build. */ }
+  if (!unchanged) await writeFile(runtimePath, runtime);
   await writeFile(new URL('node-LICENSE.txt', destination), await readFile(new URL('./NODE-LICENSE.txt', import.meta.url)));
   await writeFile(new URL('Start.cmd', destination), '@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start.ps1"\r\n');
   await writeFile(new URL('Start.ps1', destination), `﻿$ErrorActionPreference = 'Stop'
