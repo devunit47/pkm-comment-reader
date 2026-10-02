@@ -20,9 +20,15 @@ test('oversized streaming request returns 413 and closes its connection', async 
     request.on('response', response => {
       assert.equal(response.statusCode, 413);
       assert.equal(response.headers.connection, 'close');
-      response.resume();
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', chunk => { body += chunk; });
       response.on('error', reject);
       response.on('end', () => {
+        try {
+          assert.match(response.headers['content-type'], /^application\/json/);
+          assert.deepEqual(JSON.parse(body), { error: '読み上げ本文が長すぎます。' });
+        } catch (error) { reject(error); return; }
         if (request.socket.destroyed) resolve();
         else request.socket.once('close', resolve);
       });
@@ -67,7 +73,9 @@ test('speech proxy rejects untrusted origins, destinations and invalid inputs wi
   assert.equal((await fetch(base + '/api/speech/other/voices')).status, 404);
   assert.equal((await fetch(base + '/api/speech/voicevox/synthesis')).status, 405);
   for (const input of [{ text: 'x', voice: 'http://evil', rate: 1 }, { text: 'x', voice: '1', rate: 0 }, { text: '', voice: '1', rate: 1 }]) assert.equal((await fetch(base + '/api/speech/voicevox/synthesis', post(input))).status, 400);
-  assert.equal((await fetch(base + '/api/speech/voicevox/synthesis', post({ text: 'x'.repeat(13000) }))).status, 413);
+  const oversized = await fetch(base + '/api/speech/voicevox/synthesis', post({ text: 'x'.repeat(13000) }));
+  assert.equal(oversized.status, 413);
+  assert.deepEqual(await oversized.json(), { error: '読み上げ本文が長すぎます。' });
   assert.equal(calls, 0);
 });
 test('engine failures do not expose upstream errors or treat non-audio as WAV', async t => {
