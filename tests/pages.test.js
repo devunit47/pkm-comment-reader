@@ -19,7 +19,7 @@ test('Pages output is Twitch-only, works below a repository path, and excludes l
   await buildPages(destination);
   assert.deepEqual(enabledPlatforms, ['twitch', 'kick']);
   const files = await readdir(folder);
-  assert.deepEqual(files.sort(), ['.nojekyll', 'app-config.js', 'app.js', 'chat-state.js', 'connections.js', 'index.html', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'style.css', 'settings-backup.js', 'speech-background.svg'].sort());
+  assert.deepEqual(files.sort(), ['.nojekyll', 'app-config.js', 'app.js', 'chat-state.js', 'connections.js', 'customization.js', 'index.html', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'style.css', 'settings-backup.js', 'speech-background.svg'].sort());
   const config = await import(new URL('app-config.js', destination));
   assert.deepEqual(config.enabledPlatforms, ['twitch']);
   assert.equal(config.publication, 'pages');
@@ -47,7 +47,7 @@ test('Pages output is Twitch-only, works below a repository path, and excludes l
   for (const file of files.filter(file => !file.startsWith('.'))) {
     assert.equal((await fetch(`${base}/preview/${file}`)).status, 200, file);
   }
-  for (const path of ['/api/kick/channel/test', '/preview/kick.js', '/preview/server.js', '/app.js']) {
+  for (const path of ['/api/kick/channel/test', '/preview/kick.js', '/preview/server.js', '/preview/local-customization.js', '/preview/api/customizations', '/api/customizations', '/preview/customization/styles/private.css', '/app.js']) {
     assert.equal((await fetch(`${base}${path}`)).status, 404, path);
   }
   await buildPages(destination); // Rebuilding its own output is supported.

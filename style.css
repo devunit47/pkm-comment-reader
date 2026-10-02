@@ -57,7 +57,7 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 .stage-speech[data-style=bubble] .stage-panel-label,.stage-speech[data-style=bubble] .stage-panel-label h2,.stage-speech[data-style=bubble] .stage-speaker,.stage-speech[data-style=bubble] .stage-wave,.stage-speech[data-style=bubble] #stage-speech-user{color:var(--speech-ink)}
 .stage-speech[data-style=bubble] #stage-speech-text{max-height:none;overflow:visible}
 .stage-speech[data-style=bubble] .stage-panel-label{padding-top:14px;padding-bottom:12px}
-.stage-speech{display:flex;flex-direction:column}
+.stage-speech{display:flex;flex-direction:column;min-height:220px}
 .stage-speech-content{flex:1;min-height:0;overflow:auto;scrollbar-width:thin}
 .stage-speech[data-style=image]{height:clamp(180px,30dvh,240px);max-height:48%;background:transparent;border-color:transparent;padding-bottom:0;overflow:visible}
 .stage-speech[data-style=image] .stage-panel-label{padding:0 8px 12px}
@@ -179,4 +179,25 @@ footer{color:var(--muted);font-size:12px}
   #talk-stage .stage-panel-label h2{font-size:14px}
   #talk-stage .stage-actor{min-height:240px}
   #talk-stage .stage-footer{margin-top:20px;font-size:12px}
+}
+
+/* Voice attribution stays outside the scrolling speech text, including image mode. */
+.speech-credit{flex-shrink:0;align-self:flex-start;width:fit-content;max-width:calc(100% - 48px);margin:10px 24px 0;padding:4px 8px;border-radius:6px;background:#13251f;color:#fff;font-size:12px;font-weight:500;line-height:1.5;letter-spacing:normal;overflow-wrap:anywhere}
+#stage-speech-credit{font-size:13px}
+.stage-speech[data-style=image] #stage-speech-credit{margin:8px 8px 0;max-width:calc(100% - 16px)}
+@media(max-width:800px){#stage-speech-credit{margin-left:16px;margin-right:16px;max-width:calc(100% - 32px)}}
+
+/* Compact controls leave the speech and credit visible before any scrolling.
+   Extra presenter content can scroll; long speech scrolls inside its own body. */
+@media(min-width:541px) and (max-height:600px){
+  #talk-stage{padding:12px;gap:12px;overflow-y:auto}
+  #talk-stage .stage-header{gap:12px}
+  #talk-stage .stage-header h1{font-size:22px}
+  #talk-stage .stage-header p{font-size:12px;margin:6px 0 0}
+  #talk-stage .stage-actions{max-width:55%;gap:8px}
+  #talk-stage .stage-controls{display:grid;grid-template-columns:auto auto;gap:4px 8px}
+  #talk-stage .stage-exit-hint{grid-column:1 / -1;text-align:right}
+  #talk-stage .stage-grid{min-height:320px}
+  #talk-stage .stage-speech{max-height:none}
+  #talk-stage .stage-actor{min-height:80px}
 }
