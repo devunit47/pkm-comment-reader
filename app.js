@@ -1,7 +1,8 @@
+import { initializeCustomization } from './customization.js';
 import { normalizeWorkspace } from './workspace-model.js';
 import { exportSettings, parseSettings, restoreSettings } from './settings-backup.js';
 import { compileTheme } from './theme.js';
-import { readSpeechEngines, LocalSpeechPlayer } from './speech-engine.js';
+import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from './speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
@@ -37,6 +38,8 @@ for (const platform of Object.keys(states)) states[platform].voice = savedVoices
 let studio = readStudio(storage);
 for (const state of Object.values(states)) state.historyLimit = studio.listCount;
 let currentSpeech = null;
+// null means the preview shows a selection; a string snapshots played audio.
+let previewSpeechCredit = null;
 let speechDisplayTimer;
 let imageGeneration = 0;
 let speechImageGeneration = 0;
@@ -113,6 +116,8 @@ function renderConnection() {
 }
 
 function renderSelection() {
+  previewSpeechCredit = null;
+  renderSpeechCredits();
   const state = states[active];
   const message = state.selected;
   $('preview-user').textContent = message?.user || 'ぽこめ Reader';
@@ -202,6 +207,8 @@ function speak(message, automatic = false) {
   if (!text) { if (!automatic) notify('URLのみ・コマンドなど、設定により読み上げ対象外です。'); return; }
   if (automatic && !shouldAutoRead(state.speechHistory, message.user, text, state.speechOptions)) return;
   const platform = active;
+  // Capture provenance now, before queued synthesis or a later metadata refresh.
+  const credit = speechCredit(preference.engine, preference[preference.engine], engineVoices[preference.engine]);
   const generation = speechGeneration;
   const spokenText = (state.readName ? `${message.user}さん。` : '') + text;
   const utterance = preference.engine === 'browser' ? new SpeechSynthesisUtterance(spokenText) : { text: spokenText };
@@ -216,7 +223,8 @@ function speak(message, automatic = false) {
     $('preview-user').textContent = message.user;
     $('preview-text').textContent = text;
     clearTimeout(speechDisplayTimer);
-    currentSpeech = { user: message.user, text, utterance, speaking: true };
+    previewSpeechCredit = credit;
+    currentSpeech = { user: message.user, text, utterance, credit, speaking: true };
     renderStageSpeech();
   };
   const done = () => {
@@ -228,6 +236,7 @@ function speak(message, automatic = false) {
       speechDisplayTimer = setTimeout(() => {
         if (currentSpeech?.utterance !== utterance) return;
         currentSpeech = null;
+        if (previewSpeechCredit !== null) renderSelection();
         renderStageSpeech();
       }, 5000);
     }
@@ -247,6 +256,7 @@ function stop() {
   if (supported) window.speechSynthesis.cancel();
   pendingSpeech = 0;
   currentSpeech = null;
+  renderSelection();
   renderStageSpeech();
   $('speech-status').textContent = supported || enginePreferences[active].engine !== 'browser' ? '待機中' : 'ブラウザ非対応';
 }
@@ -365,6 +375,7 @@ $('voice').onchange = () => {
     states[active].voice = $('voice').value;
     save('pokome-voices', { twitch: states.twitch.voice, kick: states.kick.voice });
   } else { preference[preference.engine] = $('voice').value; save('pokome-speech-engines', enginePreferences); }
+  renderSpeechCredits();
 };
 $('speech-engine').onchange = () => {
   stop();
@@ -480,16 +491,19 @@ async function loadVoices(refresh = false) {
   $('refresh-voices').hidden = engine === 'browser';
   $('voice').disabled = engine !== 'browser';
   const status = $('engine-status');
-  if (engine === 'browser') { status.textContent = ''; loadBrowserVoices(); return; }
+  if (engine === 'browser') { status.textContent = ''; loadBrowserVoices(); renderSpeechCredits(); return; }
+  if (refresh) engineVoices[engine] = null;
+  renderSpeechCredits();
   $('voice').replaceChildren(make('option', '', '声を取得中…'));
   status.textContent = '音声ソフトへ接続中…';
   try {
     if (refresh || !engineVoices[engine]) {
       const response = await fetch('./api/speech/' + engine + '/voices', { signal: AbortSignal.timeout(10000) });
       const data = await response.json();
-      if (!response.ok || !Array.isArray(data.voices) || !data.voices.length) throw new Error(data.error || '利用できる声がありません。');
+      const list = normalizeLocalVoices(engine, data?.voices);
+      if (!response.ok || !list.length) throw new Error(data?.error || '利用できる声がありません。');
       if (generation !== voiceLoadGeneration) return;
-      engineVoices[engine] = data.voices;
+      engineVoices[engine] = list;
     }
     if (generation !== voiceLoadGeneration || active !== platform) return;
     const list = engineVoices[engine];
@@ -498,9 +512,12 @@ async function loadVoices(refresh = false) {
     $('voice').value = preference[engine];
     $('voice').disabled = false;
     save('pokome-speech-engines', enginePreferences);
-    status.textContent = list.length + '種類の声を取得しました。';
+    renderSpeechCredits();
+    status.textContent = list.length + '種類の声を取得しました。' + (list.find(voice => voice.id === preference[engine])?.speakerName ? '' : ' 音声名を取得できないため、クレジットと各音声の利用規約を確認してください。');
   } catch (error) {
     if (generation !== voiceLoadGeneration || active !== platform) return;
+    engineVoices[engine] = null;
+    renderSpeechCredits();
     $('voice').replaceChildren(make('option', '', '声を取得できません'));
     status.textContent = error.message === 'The operation was aborted due to timeout' ? '接続がタイムアウトしました。音声ソフトを起動して再取得してください。' : error.message + ' 音声ソフトを起動し、読み上げ方式が合っているか確認して「声を再取得」を押してください。';
   }
@@ -551,7 +568,20 @@ function updateStageCommentVisibility() {
 $('stage-chat-list').addEventListener('scroll', updateStageCommentVisibility, { passive: true });
 new ResizeObserver(updateStageCommentVisibility).observe($('stage-chat-list'));
 
+function renderSpeechCredits() {
+  const preference = enginePreferences[active];
+  const credits = speechDisplayCredits(preference, engineVoices[preference.engine], currentSpeech, previewSpeechCredit);
+  for (const [id, credit] of [
+    ['preview-speech-credit', credits.preview],
+    ['stage-speech-credit', credits.stage],
+  ]) {
+    $(id).textContent = credit;
+    $(id).hidden = !credit;
+  }
+}
+
 function renderStageSpeech() {
+  renderSpeechCredits();
   $('stage-speech-status').textContent = currentSpeech?.speaking ? '読み上げ中' : '待機中';
   $('stage-speech-user').textContent = currentSpeech?.user || '';
   $('stage-speech-text').textContent = currentSpeech?.text || '次のコメントを待っています。';
@@ -764,34 +794,38 @@ for (const [id, key, label, limit] of [
     dialog.showModal(); input.focus(); input.select();
   };
 }
+function beginImageChange(target) {
+  return target === 'speechImage' ? ++speechImageGeneration : ++imageGeneration;
+}
+async function applyImageFile(file, target, generation = beginImageChange(target)) {
+  const isSpeech = target === 'speechImage';
+  const isCurrent = () => generation === (isSpeech ? speechImageGeneration : imageGeneration);
+  if (!isCurrent()) return false;
+  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 512 * 1024) {
+    throw new Error('PNG・JPEG・WebP・GIFの512KB以下の画像を選んでください。');
+  }
+  const image = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('画像を読み込めませんでした。'));
+    reader.readAsDataURL(file);
+  });
+  const probe = new Image(); probe.src = image;
+  try { await probe.decode(); } catch { throw new Error('画像が壊れているか、対応しない画像形式です。'); }
+  if (!isCurrent()) return false;
+  const next = normalizeStudio({ ...studio, ...(isSpeech ? { speechStyle: 'image', speechImage: image } : { source: 'image', image }) });
+  // Commit only after decoding and persistent storage both succeed.
+  if (!storage) throw new Error('ブラウザに画像を保存できません。');
+  try { storage.setItem('pokome-studio', JSON.stringify(next)); }
+  catch { throw new Error('画像を保存できません。小さい画像やブラウザの保存設定を確認してください。'); }
+  studio = next; renderStudio();
+  return true;
+}
 async function uploadStudioImage(input, target) {
   const file = input.files[0];
-  const isSpeech = target === 'speechImage';
-  const generation = isSpeech ? ++speechImageGeneration : ++imageGeneration;
   if (!file) return;
-  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 512 * 1024) {
-    notify('PNG・JPEG・WebP・GIFの512KB以下の画像を選んでください。');
-    input.value = '';
-    return;
-  }
-  try {
-    const image = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error('画像を読み込めませんでした。'));
-      reader.readAsDataURL(file);
-    });
-    const probe = new Image();
-    probe.src = image;
-    await probe.decode();
-    if (generation !== (isSpeech ? speechImageGeneration : imageGeneration)) return;
-    const next = normalizeStudio({ ...studio, ...(isSpeech ? { speechStyle: 'image', speechImage: image } : { source: 'image', image }) });
-    // Only replace the previous image once saving the new one succeeds.
-    if (!storage) throw new Error('ブラウザに画像を保存できません。');
-    storage.setItem('pokome-studio', JSON.stringify(next));
-    studio = next;
-    renderStudio();
-  } catch { notify('画像を読み込み・保存できませんでした。小さい画像やブラウザの保存設定を確認してください。'); }
+  try { await applyImageFile(file, target); }
+  catch (error) { notify(error.message); }
   input.value = '';
 }
 $('studio-image').onchange = () => uploadStudioImage($('studio-image'), 'image');
@@ -879,7 +913,22 @@ renderSpeechSettings();
 renderSpeechOptions();
 render();
 const themeEditor = initializeTheme(storage);
-themeEditor.connectWorkspace(initializeWorkspace(storage));
+const workspaceEditor = initializeWorkspace(storage);
+themeEditor.connectWorkspace(workspaceEditor);
+initializeCustomization({ publication, platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
+  resetAppearance() {
+    imageGeneration++; speechImageGeneration++;
+    themeEditor.resetTheme(); workspaceEditor.reset();
+    studio = normalizeStudio();
+    for (const state of Object.values(states)) state.historyLimit = studio.listCount;
+    renderStudio(); render();
+    try {
+      if (!storage) return false;
+      for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-workspace-v1']) storage.removeItem(key);
+      return true;
+    } catch { return false; }
+  },
+});
 window.addEventListener('beforeunload', () => {
   stop();
   for (const connection of Object.values(connections)) connection.disconnect(false);

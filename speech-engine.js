@@ -1,3 +1,43 @@
+const ENGINE_NAMES = Object.freeze({ voicevox: 'VOICEVOX', coeiroink: 'COEIROINK' });
+
+export function validLocalVoiceId(engine, id) {
+  if (typeof id !== 'string') return false;
+  if (engine === 'voicevox') return /^\d{1,9}$/.test(id);
+  return engine === 'coeiroink' && /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}:\d{1,9}$/i.test(id);
+}
+
+function voiceMetadataText(value) {
+  return typeof value === 'string' && value.trim() && value.length <= 200 && !/[\u0000-\u001f\u007f-\u009f]/.test(value) ? value.trim() : '';
+}
+
+// Keep character and style separate. Display labels may contain slashes and are
+// never parsed as identity or trusted as HTML. Metadata is refreshed per session.
+export function normalizeLocalVoices(engine, voices) {
+  if (!Array.isArray(voices)) return [];
+  const seen = new Set();
+  return voices.flatMap(voice => {
+    if (!validLocalVoiceId(engine, voice?.id) || seen.has(voice.id)) return [];
+    seen.add(voice.id);
+    const speakerName = voiceMetadataText(voice.speakerName);
+    const styleName = voiceMetadataText(voice.styleName);
+    const name = (speakerName || '音声名未取得') + (styleName ? ' / ' + styleName : '') + (!speakerName ? ` (ID: ${voice.id})` : '');
+    return [{ id: voice.id, name, speakerName, styleName }];
+  });
+}
+
+export function speechCredit(engine, voiceId, voices) {
+  if (!Object.hasOwn(ENGINE_NAMES, engine)) return '';
+  const voice = normalizeLocalVoices(engine, voices).find(item => item.id === voiceId);
+  return ENGINE_NAMES[engine] + ':' + (voice?.speakerName || '音声名未取得');
+}
+
+// Played text retains its captured credit until it is cleared. Empty browser
+// credits must also win over a later local-engine selection.
+export function speechDisplayCredits(preference, voices, currentSpeech = null, previewCredit = null) {
+  const selected = speechCredit(preference.engine, preference[preference.engine], voices);
+  return { preview: previewCredit ?? selected, stage: currentSpeech?.credit ?? selected };
+}
+
 export function readSpeechEngines(storage, local = true) {
   const result = { twitch: { engine: 'browser', voicevox: '', coeiroink: '' }, kick: { engine: 'browser', voicevox: '', coeiroink: '' } };
   try {
@@ -6,7 +46,7 @@ export function readSpeechEngines(storage, local = true) {
       if (local && ['browser', 'voicevox', 'coeiroink'].includes(saved?.[platform]?.engine)) result[platform].engine = saved[platform].engine;
       for (const engine of ['voicevox', 'coeiroink']) {
         const voice = saved?.[platform]?.[engine];
-        if (typeof voice === 'string' && (engine === 'voicevox' ? /^\d{1,9}$/ : /^[a-f\d-]{36}:\d{1,9}$/i).test(voice)) result[platform][engine] = voice;
+        if (validLocalVoiceId(engine, voice)) result[platform][engine] = voice;
       }
     }
   } catch { /* Ignore unavailable storage and malformed preferences. */ }
@@ -50,7 +90,7 @@ export class LocalSpeechPlayer {
           });
           if (generation === this.generation) utterance.onend?.();
         } catch (error) {
-          if (generation === this.generation) { utterance.onerror?.(); this.onError(error.message); }
+          if (generation === this.generation) { utterance.onerror?.({ error: 'local-speech' }); this.onError(error.message); }
         } finally {
           if (audioUrl) this.urls.revokeObjectURL(audioUrl);
           if (this.audio) { this.audio.onplaying = this.audio.onended = this.audio.onerror = null; this.audio.pause(); this.audio.removeAttribute('src'); }

@@ -1,18 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
 import { createServer } from '../server.js';
 
-const runtime = 'C:/Users/<user>/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright';
-const executablePath = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
-const require = createRequire(import.meta.url);
+import { chromium, executablePath, browserAvailable } from './browser-support.js';
 
-test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { chromium } = require(runtime);
-  const browser = await chromium.launch({ headless: true, executablePath });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
@@ -215,11 +210,10 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
 });
 
 
-test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer();
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { chromium } = require(runtime);
-  const browser = await chromium.launch({ headless: true, executablePath });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     const errors = [];
@@ -269,7 +263,8 @@ test('platform buttons toggle saved connections independently and open settings 
 });
 
 
-test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
   const uuid = '3c37646f-3881-5374-2a83-149267990abc';
   const server = createServer({ fetchImpl: async url => {
     if (url.endsWith('/speakers') && url.includes(':50021')) return Response.json([{ name: 'ボイステスト', styles: [{ id: 3, name: 'ノーマル' }] }]);
@@ -278,8 +273,6 @@ test('local engines select voices, play synchronized previews, stop and persist 
     return new Response(Buffer.from('RIFF0000WAVEdata'));
   } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { chromium } = require(runtime);
-  const browser = await chromium.launch({ headless: true, executablePath });
   try {
     const page = await browser.newPage(); const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -326,9 +319,9 @@ test('local engines select voices, play synchronized previews, stop and persist 
 });
 
 
-test('fixed home side panels keep all controls reachable by scrolling', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+test('fixed home side panels keep all controls reachable by scrolling', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { chromium } = require(runtime); const browser = await chromium.launch({ headless: true, executablePath });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.addInitScript(() => {
@@ -382,9 +375,9 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });
 
-test('first setup guide and full settings backup restore work through the UI', { skip: !existsSync(runtime) || !existsSync(executablePath) }, async () => {
+test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { chromium } = require(runtime); const browser = await chromium.launch({ headless: true, executablePath });
   try {
     const page = await browser.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));

@@ -1,3 +1,5 @@
+import { normalizeLocalVoices, validLocalVoiceId } from './speech-engine.js';
+
 // JSON envelope limit includes escaped text and voice metadata; text has its own limit.
 const MAX_REQUEST_BYTES = 12000;
 const MAX_TEXT_LENGTH = 1000;
@@ -26,10 +28,11 @@ export async function handleLocalSpeech(req, res, url, fetchImpl) {
     if (action === 'voices') {
       const speakers = await (await request(engines[engine].speakers)).json();
       if (!Array.isArray(speakers)) throw new Error('voices');
-      const voices = speakers.flatMap(speaker => (speaker.styles || []).filter(style => Number.isSafeInteger(engine === 'voicevox' ? style.id : style.styleId)).map(style => ({
+      const voices = normalizeLocalVoices(engine, speakers.flatMap(speaker => (Array.isArray(speaker?.styles) ? speaker.styles : []).filter(style => Number.isSafeInteger(engine === 'voicevox' ? style?.id : style?.styleId)).map(style => ({
         id: engine === 'voicevox' ? String(style.id) : speaker.speakerUuid + ':' + style.styleId,
-        name: (engine === 'voicevox' ? speaker.name : speaker.speakerName) + ' / ' + (engine === 'voicevox' ? style.name : style.styleName),
-      })));
+        speakerName: engine === 'voicevox' ? speaker.name : speaker.speakerName,
+        styleName: engine === 'voicevox' ? style.name : style.styleName,
+      }))));
       json(200, { voices }); return;
     }
     const chunks = [];
@@ -47,7 +50,7 @@ export async function handleLocalSpeech(req, res, url, fetchImpl) {
     let input;
     try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { json(400, { error: '入力が不正です。' }); return; }
     const { text, voice, rate } = input || {};
-    if (typeof text !== 'string' || !text.trim() || text.length > MAX_TEXT_LENGTH || typeof voice !== 'string' || !Number.isFinite(rate) || rate < .5 || rate > 2 || !(engine === 'voicevox' ? /^\d{1,9}$/ : /^[a-f\d-]{36}:\d{1,9}$/i).test(voice)) { json(400, { error: '本文・声・速さを確認してください。' }); return; }
+    if (typeof text !== 'string' || !text.trim() || text.length > MAX_TEXT_LENGTH || typeof voice !== 'string' || !Number.isFinite(rate) || rate < .5 || rate > 2 || !validLocalVoiceId(engine, voice)) { json(400, { error: '本文・声・速さを確認してください。' }); return; }
     let response;
     if (engine === 'voicevox') {
       const queryResponse = await fetchImpl(base + '/audio_query?text=' + encodeURIComponent(text) + '&speaker=' + voice, { method: 'POST', redirect: 'error', signal: controller.signal });

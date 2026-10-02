@@ -180,3 +180,9 @@ footer{color:var(--muted);font-size:12px}
   #talk-stage .stage-actor{min-height:240px}
   #talk-stage .stage-footer{margin-top:20px;font-size:12px}
 }
+
+/* Voice attribution stays outside the scrolling speech text, including image mode. */
+.speech-credit{flex-shrink:0;align-self:flex-start;width:fit-content;max-width:calc(100% - 48px);margin:10px 24px 0;padding:4px 8px;border-radius:6px;background:#13251f;color:#fff;font-size:12px;font-weight:500;line-height:1.5;letter-spacing:normal;overflow-wrap:anywhere}
+#stage-speech-credit{font-size:13px}
+.stage-speech[data-style=image] #stage-speech-credit{margin:8px 8px 0;max-width:calc(100% - 16px)}
+@media(max-width:800px){#stage-speech-credit{margin-left:16px;margin-right:16px;max-width:calc(100% - 32px)}}

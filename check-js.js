@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 
 async function check(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (['.git', 'node_modules', 'dist', 'dist-local'].includes(entry.name) || entry.isSymbolicLink()) continue;
+    if (['.git', 'node_modules', 'dist', 'dist-local', 'customization'].includes(entry.name) || entry.isSymbolicLink()) continue;
     const path = join(directory, entry.name);
     if (entry.isDirectory()) await check(path);
     else if (entry.name.endsWith('.js')) {

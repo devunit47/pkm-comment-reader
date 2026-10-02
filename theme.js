@@ -68,17 +68,22 @@ export function initializeTheme(storage) {
   const input = section.querySelector('textarea');
   const status = section.querySelector('#theme-status');
   let current = '';
+  let generation = 0;
   let workspace;
   const persist = css => {
     try { storage?.setItem('pokome-theme-v1', css); return !!storage; }
     catch { return false; }
   };
-  const apply = css => {
+  const beginChange = () => ++generation;
+  const apply = (css, expected = beginChange()) => {
+    if (expected !== generation) return null;
     const compiled = compileTheme(css);
     style.textContent = compiled;
     current = css;
     input.value = css || DEFAULT_THEME_CSS;
-    status.textContent = persist(css) ? '見た目を反映・保存しました。' : '見た目を反映しました。保存できないため、再読み込みすると元に戻ります。';
+    const saved = persist(css);
+    status.textContent = saved ? '見た目を反映・保存しました。' : '見た目を反映しました。保存できないため、再読み込みすると元に戻ります。';
+    return saved;
   };
   const resetTheme = () => apply('');
   const run = action => { try { action(); } catch (error) { status.textContent = error.message; } };
@@ -97,19 +102,21 @@ export function initializeTheme(storage) {
   section.querySelector('#theme-import').onchange = async event => {
     const file = event.target.files[0];
     if (!file) return;
+    const expected = beginChange();
     try {
       if (file.size > 200000) throw new Error('ファイルは200KB以内にしてください。');
       const content = await file.text();
-      if (file.name.toLowerCase().endsWith('.css')) apply(content);
+      if (expected !== generation) return;
+      if (file.name.toLowerCase().endsWith('.css')) apply(content, expected);
       else {
         const design = JSON.parse(content);
         if (design.manifest?.format !== 'pokome-design' || design.manifest.version !== 1 || design.manifest.themeApi !== 1) throw new Error('対応しないデザイン形式です。');
         compileTheme(design.theme);
         workspace.applyLayouts(design.layout);
-        apply(design.theme);
+        apply(design.theme, expected);
       }
     } catch (error) { status.textContent = `読み込み失敗: ${error.message}`; }
     event.target.value = '';
   };
-  return { resetTheme, connectWorkspace(value) { workspace = value; } };
+  return { resetTheme, applyTheme: apply, beginChange, connectWorkspace(value) { workspace = value; } };
 }

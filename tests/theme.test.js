@@ -1,16 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
-import { existsSync } from 'node:fs';
 import { compileTheme } from '../theme.js';
 
-const require = createRequire(import.meta.url);
-const bundledPlaywright = 'C:/Users/<user>/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright';
-const browserPath = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+import { chromium, executablePath, browserAvailable } from './browser-support.js';
 
-test('theme validation with browser CSSOM', { skip: !existsSync(bundledPlaywright) || !existsSync(browserPath) }, async () => {
-  const { chromium } = require(bundledPlaywright);
-  const browser = await chromium.launch({ headless: true, executablePath: browserPath });
+test('theme validation with browser CSSOM', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
   try {
     const page = await browser.newPage();
     const cases = [

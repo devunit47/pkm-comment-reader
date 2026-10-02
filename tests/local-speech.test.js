@@ -46,7 +46,7 @@ test('VOICEVOX voices and two-step synthesis preserve text and apply speed', asy
     if (url.includes('/audio_query?')) return Response.json({ accent_phrases: [], speedScale: 1 });
     return new Response(wav);
   });
-  assert.deepEqual(await (await fetch(base + '/api/speech/voicevox/voices')).json(), { voices: [{ id: '3', name: 'テスト / ノーマル' }] });
+  assert.deepEqual(await (await fetch(base + '/api/speech/voicevox/voices')).json(), { voices: [{ id: '3', name: 'テスト / ノーマル', speakerName: 'テスト', styleName: 'ノーマル' }] });
   const response = await fetch(base + '/api/speech/voicevox/synthesis', post({ text: 'こんにちは & !', voice: '3', rate: 1.5 }));
   assert.equal(response.status, 200); assert.equal(response.headers.get('content-type'), 'audio/wav');
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), wav);
@@ -63,7 +63,7 @@ test('COEIROINK v2 uses UUID and style together and returns generated WAV', asyn
     body = JSON.parse(options.body); return new Response(wav);
   });
   const voices = await (await fetch(base + '/api/speech/coeiroink/voices')).json();
-  assert.equal(voices.voices[0].id, uuid + ':0');
+  assert.deepEqual(voices.voices[0], { id: uuid + ':0', name: '話者 / れいせい', speakerName: '話者', styleName: 'れいせい' });
   const response = await fetch(base + '/api/speech/coeiroink/synthesis', post({ text: '音声', voice: uuid + ':0', rate: .8 }));
   assert.equal(response.status, 200); assert.equal(body.speakerUuid, uuid); assert.equal(body.styleId, 0); assert.equal(body.speedScale, .8); assert.deepEqual(body.prosodyDetail, []);
 });
@@ -108,4 +108,48 @@ test('cancel during synthesis suppresses stale playback and queued jobs', async 
   const player = new LocalSpeechPlayer({ fetchImpl: () => new Promise(resolve => { finish = resolve; }), createAudio: () => { plays++; } });
   player.speak({ text: 'x', rate: 1 }, 'voicevox', '1'); player.speak({ text: 'y', rate: 1 }, 'voicevox', '1');
   player.cancel(); finish(new Response(wav)); await new Promise(resolve => setTimeout(resolve, 10)); assert.equal(plays, 0);
+});
+
+test('voice proxy preserves separate names and styles and tolerates malformed optional metadata', async t => {
+  const base = await serve(t, async () => Response.json([
+    null, { styles: 'invalid' },
+    { name: '作者 / 音声', styles: [null, { id: -1 }, { id: 1000000000 }, { id: 3, name: '通常 / 特別' }, { id: 4, name: '別スタイル' }] },
+    { name: { invalid: true }, styles: [{ id: 5, name: '通常' }] },
+  ]));
+  assert.deepEqual(await (await fetch(base + '/api/speech/voicevox/voices')).json(), { voices: [
+    { id: '3', name: '作者 / 音声 / 通常 / 特別', speakerName: '作者 / 音声', styleName: '通常 / 特別' },
+    { id: '4', name: '作者 / 音声 / 別スタイル', speakerName: '作者 / 音声', styleName: '別スタイル' },
+    { id: '5', name: '音声名未取得 / 通常 (ID: 5)', speakerName: '', styleName: '通常' },
+  ] });
+});
+
+test('COEIROINK voices keep UUID plus style identity and filter invalid UUIDs', async t => {
+  const uuid = '3c37646f-3881-5374-2a83-149267990abc';
+  const base = await serve(t, async () => Response.json([
+    { speakerName: '音声A', speakerUuid: uuid, styles: [{ styleId: 0, styleName: '通常' }, { styleId: 1, styleName: '別スタイル' }] },
+    { speakerName: 'invalid', speakerUuid: '-'.repeat(36), styles: [{ styleId: 0 }] },
+  ]));
+  const { voices } = await (await fetch(base + '/api/speech/coeiroink/voices')).json();
+  assert.deepEqual(voices.map(voice => [voice.id, voice.speakerName, voice.styleName]), [[uuid + ':0', '音声A', '通常'], [uuid + ':1', '音声A', '別スタイル']]);
+});
+
+test('synthesis and playback failures report an error event before notification and cancellation', async () => {
+  for (const synthesisFails of [true, false]) {
+    const events = [], revoked = [];
+    let reported;
+    const finished = new Promise(resolve => { reported = resolve; });
+    const player = new LocalSpeechPlayer({
+      fetchImpl: async () => synthesisFails ? Response.json({ error: '接続できません' }, { status: 502 }) : new Response(wav),
+      urls: { createObjectURL: () => 'blob:error-test', revokeObjectURL: value => revoked.push(value) },
+      createAudio: () => ({ play: () => Promise.reject(new Error('blocked')), pause() {}, removeAttribute() {} }),
+      onError: message => { events.push(message); player.cancel(); reported(); },
+    });
+    player.speak({ text: 'x', rate: 1, volume: .4, onerror: event => events.push(event.error) }, 'voicevox', '3');
+    player.speak({ text: 'queued', rate: 1, volume: .4 }, 'voicevox', '3');
+    await finished;
+    assert.equal(events[0], 'local-speech');
+    assert.match(events[1], synthesisFails ? /接続できません/ : /再生できません/);
+    assert.equal(player.queue.length, 0);
+    assert.equal(revoked.length, synthesisFails ? 0 : 1);
+  }
 });

@@ -5,6 +5,7 @@ export function initializeWorkspace(storage) {
   const roots = { home: document.querySelector('.workspace'), talk: document.querySelector('#talk-stage') };
   const selectors = { home: ['.comments', '.now', '.reading'], talk: ['.stage-header', '.stage-chat', '.stage-speech', '.stage-actor', '.stage-footer'] };
   let layouts = { version: 1, home: null, talk: null }, editing = false, snap = true, selected = 'comments', lastMode = '', target = 'home';
+  let layoutGeneration = 0;
   const names = { comments: 'コメント一覧', now: '読み上げプレビュー', reading: '読み上げ設定', header: 'タイトル・接続状態', chat: '配信用コメント一覧', speech: '読み上げ中のコメント', actor: '立ち絵・映像のスペース', footer: '画面下のひとこと' };
   try { const saved = storage.getItem(WORKSPACE_KEY); if (saved) layouts = normalizeWorkspace(JSON.parse(saved)); } catch { /* Keep the original layout when saved data is unusable. */ }
   const panels = {}, originals = new Map();
@@ -35,7 +36,7 @@ export function initializeWorkspace(storage) {
   }
   function currentMode() { return target; }
   function available() { return !roots.talk.hidden || !document.getElementById('home-page').hidden; }
-  function save() { try { storage.setItem(WORKSPACE_KEY, JSON.stringify(layouts)); $('status').textContent = '配置を保存しました。'; } catch { $('status').textContent = '保存できません。配置を書き出して保管してください。'; } }
+  function save() { layoutGeneration++; try { storage.setItem(WORKSPACE_KEY, JSON.stringify(layouts)); $('status').textContent = '配置を保存しました。'; } catch { $('status').textContent = '保存できません。配置を書き出して保管してください。'; } }
   function ensure(mode) {
     if (layouts[mode]) return;
     const rect = roots[mode].getBoundingClientRect();
@@ -92,7 +93,17 @@ export function initializeWorkspace(storage) {
   $('hidden').onchange = () => { layouts[currentMode()].panels[selected].hidden = $('hidden').checked; apply(currentMode()); save(); };
   $('export').onclick = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(layouts, null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'layout.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   function applyLayouts(value) { layouts = normalizeWorkspace(value); for (const mode of Object.keys(roots)) apply(mode); fields(); save(); }
-  $('import').onchange = async () => { try { const file = $('import').files[0]; if (!file) return; if (file.size > 100000) throw new Error('配置ファイルは100KBまでです。'); applyLayouts(JSON.parse(await file.text())); } catch (error) { $('status').textContent = error.message; } finally { $('import').value = ''; } };
+  $('import').onchange = async () => {
+    const expected = ++layoutGeneration;
+    try {
+      const file = $('import').files[0]; if (!file) return;
+      if (file.size > 100000) throw new Error('配置ファイルは100KBまでです。');
+      const content = await file.text();
+      if (expected !== layoutGeneration) return;
+      applyLayouts(JSON.parse(content));
+    } catch (error) { if (expected === layoutGeneration) $('status').textContent = error.message; }
+    finally { $('import').value = ''; }
+  };
   const observer = new MutationObserver(() => {
     if (editing && (target === 'talk' ? roots.talk.hidden : document.getElementById('home-page').hidden)) {
       editing = false; for (const mode of Object.keys(roots)) apply(mode);
@@ -102,5 +113,5 @@ export function initializeWorkspace(storage) {
   observer.observe(roots.talk, { attributes: true, attributeFilter: ['hidden'] });
   observer.observe(document.getElementById('home-page'), { attributes: true, attributeFilter: ['hidden'] });
   for (const mode of Object.keys(roots)) apply(mode); fields();
-  return { getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => applyLayouts({ version: 1, home: null, talk: null }) };
+  return { getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); } };
 }
