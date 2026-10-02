@@ -14,7 +14,7 @@ export async function buildLocal(destination = new URL('./dist-local/', import.m
   await writeFile(new URL('Start.ps1', destination), `﻿$ErrorActionPreference = 'Stop'
 Write-Host 'ぽこめ Reader の起動を確認しています…'
 try {
-  $readerResponse = Invoke-WebRequest 'http://localhost:5174/' -UseBasicParsing -TimeoutSec 2
+  $readerResponse = Invoke-WebRequest 'http://127.0.0.1:5174/' -UseBasicParsing -TimeoutSec 2
   if ($readerResponse.Content -notmatch 'ぽこめ') { throw 'ポート5174は別のアプリが使用しています。' }
   Write-Host '起動済みのぽこめ Reader を開きます。'
 } catch {
@@ -25,7 +25,7 @@ try {
   $readerReady = $false
   for ($readerAttempt = 0; $readerAttempt -lt 20; $readerAttempt++) {
     Start-Sleep -Milliseconds 250
-    try { $readerResponse = Invoke-WebRequest 'http://localhost:5174/' -UseBasicParsing -TimeoutSec 1; $readerReady = $readerResponse.Content -match 'ぽこめ'; if ($readerReady) { break } } catch {}
+    try { $readerResponse = Invoke-WebRequest 'http://127.0.0.1:5174/' -UseBasicParsing -TimeoutSec 1; $readerReady = $readerResponse.Content -match 'ぽこめ'; if ($readerReady) { break } } catch {}
   }
   if (!$readerReady) { Write-Host '起動できませんでした。ポート5174を確認してください。'; Read-Host 'Enterで閉じる'; exit 1 }
 }
