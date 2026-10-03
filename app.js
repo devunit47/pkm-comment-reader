@@ -2,16 +2,16 @@ import { renderStageAppearance, renderStageComments, markClippedComments } from 
 import { OutputPublisher } from './output-protocol.js';
 import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
-import { OVERLAYS_KEY, normalizeOverlays } from './overlay-model.js';
 import { initializeCustomization } from './customization.js';
-import { normalizeWorkspace } from './workspace-model.js';
-import { exportSettings, parseSettings, restoreSettings } from './settings-backup.js';
+import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
 import { compileTheme } from './theme.js';
+import { createDesignStore, checkImageFile, ACTIVE_RATIO } from './design-client.js';
+import { defaultDesign, resolveStudioImages, studioOptions } from './design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from './speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { readStudio, normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset } from './studio.js';
+import { normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from './studio.js';
 import { enabledPlatforms } from './app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from './theme.js';
@@ -39,8 +39,15 @@ let voiceLoadGeneration = 0;
 const localSpeech = new LocalSpeechPlayer({ onError: message => { $('engine-status').textContent = message + ' 音声ソフトを起動して「声を再取得」を押し、音声テストを試してください。'; notify(message); stop(); } });
 const savedVoices = readSavedVoices(storage);
 for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
-let studio = readStudio(storage);
-for (const state of Object.values(states)) state.historyLimit = studio.listCount;
+// The appearance lives in customization/current, served by the local server.
+const designStore = await createDesignStore();
+const keepImages = () => studioOptions(designStore.images);
+let studio = designStore.design.studio;
+let historyLimit = readHistoryLimit(storage);
+for (const state of Object.values(states)) state.historyLimit = historyLimit;
+function saveStudio() {
+  return designStore.save({ ...designStore.design, studio }).catch(error => { notify(error.message); throw error; });
+}
 let currentSpeech = null;
 let stageCredit = '';
 let outputPanel;
@@ -585,7 +592,7 @@ function renderStageSpeech() {
 
 function renderStudio() {
   const stage = $('talk-stage');
-  renderStageAppearance(stage, studio);
+  renderStageAppearance(stage, resolveStudioImages(studio));
   $('stage-comment-style').value = studio.commentStyle;
   const preview = document.querySelector('.speech-bubble');
   preview.dataset.style = studio.speechStyle;
@@ -614,11 +621,11 @@ function renderStudio() {
   $('studio-accent').disabled = studio.accentMode === 'theme';
   $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
   $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
-  $('studio-list-count').value = studio.listCount;
+  $('studio-list-count').value = historyLimit;
   $('studio-max-visible').value = studio.maxVisible;
   $('studio-hold-seconds').value = studio.holdSeconds;
   $('studio-newest-position').value = studio.newestPosition;
-  $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · ユーザー名・コメントから操作`;
+  $('history-limit-label').textContent = `サービスごとに直近${historyLimit}件 · ユーザー名・コメントから操作`;
   $('studio-decoration').checked = studio.decoration;
   $('studio-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
   $('remove-actor-image').disabled = !studio.image;
@@ -712,7 +719,6 @@ function updateStudio() {
     speechTextColor: $('studio-speech-text-color').value,
     maxVisible: Number($('studio-max-visible').value), holdSeconds: Number($('studio-hold-seconds').value),
     newestPosition: $('studio-newest-position').value,
-    listCount: Number($('studio-list-count').value),
     decoration: $('studio-decoration').checked, source,
     commentPanel: $('studio-comment-panel').value, commentPanelOpacity: commentOpacityInput(),
     commentTextColor: $('studio-comment-text-mode').value === 'custom' ? $('studio-comment-text').value : '',
@@ -721,23 +727,31 @@ function updateStudio() {
     commentLineHeight: $('studio-comment-line-height').value === '' ? null : Number($('studio-comment-line-height').value),
     commentGap: $('studio-comment-gap').value === '' ? null : Number($('studio-comment-gap').value),
     commentDivider: $('studio-comment-divider').checked, commentLabel: $('studio-comment-label').checked,
-  });
-  save('pokome-studio', studio);
+  }, keepImages());
+  saveStudio().catch(() => {});
+  renderStudio();
+  render();
+}
+// The history limit is an operating setting kept in this browser, not in the design.
+function applyHistoryLimit(value) {
+  historyLimit = normalizeHistoryLimit(value);
+  save(HISTORY_LIMIT_KEY, historyLimit);
   for (const state of Object.values(states)) {
-    state.historyLimit = studio.listCount;
-    if (state.messages.length > studio.listCount) state.messages.splice(0, state.messages.length - studio.listCount);
+    state.historyLimit = historyLimit;
+    if (state.messages.length > historyLimit) state.messages.splice(0, state.messages.length - historyLimit);
   }
   renderStudio();
   render();
 }
-for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'max-visible', 'hold-seconds', 'newest-position', 'decoration', 'source',
+$('studio-list-count').onchange = () => applyHistoryLimit(Number($('studio-list-count').value));
+for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'max-visible', 'hold-seconds', 'newest-position', 'decoration', 'source',
   'comment-panel', 'comment-panel-opacity', 'comment-text-mode', 'comment-text', 'comment-author-mode', 'comment-author',
   'comment-outline', 'comment-outline-color', 'comment-line-height', 'comment-gap', 'comment-divider', 'comment-label']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
 $('studio-comment-preset').onchange = () => {
-  studio = applyCommentPreset(studio, $('studio-comment-preset').value);
-  save('pokome-studio', studio);
+  studio = applyCommentPreset(studio, $('studio-comment-preset').value, keepImages());
+  saveStudio().catch(() => {});
   renderStudio();
   render();
 };
@@ -745,8 +759,8 @@ $('studio-accent-mode').onchange = updateStudio;
 $('stage-comment-style').onchange = () => {
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-  studio = normalizeStudio({ ...studio, commentStyle: $('stage-comment-style').value });
-  save('pokome-studio', studio); renderStudio();
+  studio = normalizeStudio({ ...studio, commentStyle: $('stage-comment-style').value }, keepImages());
+  saveStudio().catch(() => {}); renderStudio();
   if (bottom) list.scrollTop = list.scrollHeight;
   updateStageCommentVisibility();
 };
@@ -758,8 +772,8 @@ for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
   $(id).onclick = () => {
     const list = $('stage-chat-list');
     const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-    studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(28, studio.fontSize + step)) });
-    save('pokome-studio', studio); renderStudio();
+    studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(28, studio.fontSize + step)) }, keepImages());
+    saveStudio().catch(() => {}); renderStudio();
     if (bottom) list.scrollTop = list.scrollHeight;
     updateStageCommentVisibility();
   };
@@ -796,8 +810,8 @@ for (const [id, key, label, limit] of [
     dialog.oncancel = event => { event.preventDefault(); close(); };
     form.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } };
     form.onsubmit = event => {
-      event.preventDefault(); studio = normalizeStudio({ ...studio, [key]: input.value });
-      save('pokome-studio', studio); renderStudio(); close();
+      event.preventDefault(); studio = normalizeStudio({ ...studio, [key]: input.value }, keepImages());
+      saveStudio().catch(() => {}); renderStudio(); close();
     };
     dialog.showModal(); input.focus(); input.select();
   };
@@ -809,23 +823,14 @@ async function applyImageFile(file, target, generation = beginImageChange(target
   const isSpeech = target === 'speechImage';
   const isCurrent = () => generation === (isSpeech ? speechImageGeneration : imageGeneration);
   if (!isCurrent()) return false;
-  if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) || file.size > 512 * 1024) {
-    throw new Error('PNG・JPEG・WebP・GIFの512KB以下の画像を選んでください。');
-  }
-  const image = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error('画像を読み込めませんでした。'));
-    reader.readAsDataURL(file);
-  });
-  const probe = new Image(); probe.src = image;
-  try { await probe.decode(); } catch { throw new Error('画像が壊れているか、対応しない画像形式です。'); }
+  await checkImageFile(file);
   if (!isCurrent()) return false;
-  const next = normalizeStudio({ ...studio, ...(isSpeech ? { speechStyle: 'image', speechImage: image } : { source: 'image', image }) });
-  // Commit only after decoding and persistent storage both succeed.
-  if (!storage) throw new Error('ブラウザに画像を保存できません。');
-  try { storage.setItem('pokome-studio', JSON.stringify(next)); }
-  catch { throw new Error('画像を保存できません。小さい画像やブラウザの保存設定を確認してください。'); }
+  const { ref } = await designStore.uploadImage(file);
+  if (!isCurrent()) return false;
+  const next = normalizeStudio({ ...studio, ...(isSpeech ? { speechStyle: 'image', speechImage: ref } : { source: 'image', image: ref }) }, keepImages());
+  // Commit only after decoding and saving the design both succeed.
+  await designStore.save({ ...designStore.design, studio: next });
+  if (!isCurrent()) return false;
   studio = next; renderStudio();
   return true;
 }
@@ -841,13 +846,13 @@ $('studio-speech-image').onchange = () => uploadStudioImage($('studio-speech-ima
 $('reset-speech-image').onclick = () => {
   speechImageGeneration++;
   studio = { ...studio, speechImage: '', speechStyle: 'image' };
-  save('pokome-studio', studio);
+  saveStudio().catch(() => {});
   renderStudio();
 };
 $('remove-actor-image').onclick = () => {
   imageGeneration++;
   studio = { ...studio, image: '' };
-  save('pokome-studio', studio);
+  saveStudio().catch(() => {});
   renderStudio();
 };
 
@@ -920,30 +925,36 @@ $('auto-speech').checked = states[active].autoSpeech;
 renderSpeechSettings();
 renderSpeechOptions();
 render();
-const themeEditor = initializeTheme(storage);
-const workspaceEditor = initializeWorkspace(storage);
-themeEditor.connectWorkspace(workspaceEditor);
-const designPreview = initializeDesignPreview({ storage, themeEditor,
+const themeEditor = initializeTheme(designStore);
+const workspaceEditor = initializeWorkspace(storage, designStore);
+const designPreview = initializeDesignPreview({ designStore, themeEditor,
   beginDraft() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
   getStudio: () => studio, getLayouts: () => workspaceEditor.getLayouts(),
   commitStudio(next) { imageGeneration++; speechImageGeneration++; studio = next; renderStudio(); },
 });
 initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
-  resetAppearance() {
+  async resetAppearance() {
     designPreview.reset();
     imageGeneration++; speechImageGeneration++;
-    themeEditor.resetTheme(); workspaceEditor.reset();
-    studio = normalizeStudio();
-    for (const state of Object.values(states)) state.historyLimit = studio.listCount;
+    const design = defaultDesign();
+    studio = design.studio;
+    themeEditor.reflectTheme(design.theme); workspaceEditor.reset();
     renderStudio(); render();
-    try {
-      if (!storage) return false;
-      for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-workspace-v1', OVERLAYS_KEY]) storage.removeItem(key);
-      return true;
-    } catch { return false; }
+    try { await designStore.save(design); return true; } catch { return false; }
   },
 });
-outputPanel = initializeOutputPanel({ storage, publisher: outputPublisher, getStudio: () => studio });
+outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio });
+// Another page changed the design, or a failed save was undone: show the saved design.
+designStore.subscribe(detail => {
+  imageGeneration++; speechImageGeneration++;
+  studio = designStore.design.studio;
+  themeEditor.reflectTheme(designStore.design.theme);
+  workspaceEditor.reload();
+  designPreview.reload(detail);
+  outputPanel.reload();
+  renderStudio(); render();
+});
+if (designStore.warning) notify(designStore.warning);
 window.addEventListener('beforeunload', () => {
   outputPublisher.close();
   stop();
@@ -975,17 +986,39 @@ $('restore-settings').onchange = async event => {
   pendingSettings = null; $('confirm-restore').disabled = true;
   try {
     const file = event.target.files[0]; if (!file) return;
-    if (file.size > 12 * 1024 * 1024) throw new Error('設定ファイルは12MB以下にしてください。');
+    if (file.size > MAX_SETTINGS_FILE_BYTES) throw new Error('設定ファイルは12MB以下にしてください。');
     const settings = parseSettings(await file.text());
-    if (settings['pokome-theme-v1']) compileTheme(settings['pokome-theme-v1']);
-    if (settings['pokome-workspace-v1']) normalizeWorkspace(JSON.parse(settings['pokome-workspace-v1']));
-    if (settings[OVERLAYS_KEY]) normalizeOverlays(JSON.parse(settings[OVERLAYS_KEY]));
+    const legacy = extractLegacyAppearance(settings);
+    if (legacy?.theme) compileTheme(legacy.theme);
     pendingSettings = settings;
-    $('backup-status').textContent = '現在の接続先・音声・ユーザー設定・見た目を置き換えます。「復元する」で適用します。';
+    $('backup-status').textContent = legacy
+      ? '現在の接続先・音声・ユーザー設定を置き換え、バックアップに入っている見た目と画像をcustomizationフォルダーへ取り込みます。「復元する」で適用します。'
+      : '現在の接続先・音声・ユーザー設定を置き換えます。見た目はcustomizationフォルダーのまま変わりません。「復元する」で適用します。';
     $('confirm-restore').disabled = false;
   } catch (error) { $('backup-status').textContent = '読み込めませんでした。' + error.message; }
 };
-$('confirm-restore').onclick = () => {
-  try { if (!pendingSettings) return; stop(); restoreSettings(storage, pendingSettings); location.reload(); }
-  catch (error) { $('backup-status').textContent = error instanceof AggregateError ? error.message : '復元できませんでした。ブラウザの保存容量・保存設定を確認してください。'; }
+// Backups from the browser-only era carry the appearance as data URLs. Their
+// images become files and the appearance becomes the applied design.
+async function importLegacyAppearance(legacy) {
+  const upload = async dataURL => dataURL ? (await designStore.uploadImage(dataUrlToBlob(dataURL))).ref : '';
+  const assets = {};
+  for (const [id, dataURL] of Object.entries(legacy.overlays.assets)) assets[id] = await upload(dataURL);
+  const base = defaultDesign();
+  await designStore.save({ ...base, theme: legacy.theme,
+    studio: { ...legacy.studio, image: await upload(legacy.studio.image), speechImage: await upload(legacy.studio.speechImage) },
+    ratios: { ...base.ratios, [ACTIVE_RATIO]: { layout: legacy.talk, overlays: { ...legacy.overlays, assets } } } });
+}
+$('confirm-restore').onclick = async () => {
+  if (!pendingSettings) return;
+  const settings = pendingSettings;
+  $('confirm-restore').disabled = true;
+  try {
+    stop();
+    const legacy = extractLegacyAppearance(settings);
+    if (legacy) await importLegacyAppearance(legacy);
+    restoreSettings(storage, settings); location.reload();
+  } catch (error) {
+    $('confirm-restore').disabled = false;
+    $('backup-status').textContent = error instanceof AggregateError ? error.message : `復元できませんでした。${error.message}`;
+  }
 };

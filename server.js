@@ -1,7 +1,10 @@
 import { DEVELOPMENT_ASSETS } from './asset-manifest.js';
 import { enabledPlatforms } from './app-config.js';
 import { handleLocalSpeech } from './local-speech.js';
-import { createLocalCustomizationHandler } from './local-customization.js';
+import { createLocalCustomizationHandler, DEFAULT_CUSTOMIZATION_DIRECTORY } from './local-customization.js';
+import { createDesignStorage } from './design-storage.js';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
@@ -9,13 +12,15 @@ import { validChannel } from './connections.js';
 const files = Object.fromEntries(DEVELOPMENT_ASSETS.map(file => [file === 'index.html' ? '/' : '/' + file, file]));
 const types = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 
-export function createServer({ fetchImpl = globalThis.fetch, customizationDirectory } = {}) {
+export function createServer({ fetchImpl = globalThis.fetch, customizationDirectory = DEFAULT_CUSTOMIZATION_DIRECTORY } = {}) {
   const handleLocalCustomization = createLocalCustomizationHandler(customizationDirectory);
-  return http.createServer(async (req, res) => {
+  const design = createDesignStorage(resolve(customizationDirectory instanceof URL ? fileURLToPath(customizationDirectory) : customizationDirectory));
+  const server = http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end('Bad request'); return; }
     if (url.pathname === '/api/customizations' || url.pathname.startsWith('/api/customizations/')) { await handleLocalCustomization(req, res, url); return; }
+    if (url.pathname.startsWith('/api/design/')) { await design.handle(req, res, url); return; }
     if (!enabledPlatforms.includes('kick') && (url.pathname === '/kick.js' || url.pathname.startsWith('/api/kick/'))) { res.writeHead(404); res.end('Not found'); return; }
     if (url.pathname.startsWith('/api/speech/')) { await handleLocalSpeech(req, res, url, fetchImpl); return; }
     if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); res.end(); return; }
@@ -68,6 +73,10 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
       res.end(error.code === 'ENOENT' ? 'Not found' : 'Unable to load file');
     }
   });
+  // Open event streams would otherwise keep close() waiting forever.
+  const close = server.close.bind(server);
+  server.close = callback => { design.closeEvents(); return close(callback); };
+  return server;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

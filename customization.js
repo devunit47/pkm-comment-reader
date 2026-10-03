@@ -47,7 +47,7 @@ export function initializeCustomization({ platforms, themeEditor, beginImageChan
   const heading = document.createElement('h2'); heading.textContent = `この版でできること：${edition.title}`;
   const list = document.createElement('ul');
   for (const text of [edition.services, edition.speech, edition.files,
-    '配色・画像・CSS・配置の変更、設定の保存／復元ができます。設定はこのブラウザ内に保存されます',
+    '配色・画像・CSS・配置の変更ができます。見た目はアプリのcustomizationフォルダーに保存され、接続先・音声などの設定はこのブラウザに保存されます',
     'コメントの送信・配信サービス側のBAN、カメラ／マイクの取得はできません。チャット接続にはインターネットが必要です']) {
     const item = document.createElement('li'); item.textContent = text; list.append(item);
   }
@@ -63,15 +63,17 @@ export function initializeCustomization({ platforms, themeEditor, beginImageChan
   const shadow = recovery.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>:host{font:14px system-ui}button{font:inherit;cursor:pointer;border:1px solid #ace5cd;border-radius:8px;background:#172b25;color:#f2fff8;padding:10px 14px}button:focus-visible{outline:3px solid #ace5cd;outline-offset:3px}dialog{font:15px system-ui;background:#1a2325;color:#edf4e9;border:1px solid #ace5cd;border-radius:12px;width:min(460px,80vw);line-height:1.7}dialog::backdrop{background:#0009}.actions{display:flex;flex-wrap:wrap;gap:12px}#result{max-width:320px;background:#172b25;color:#f2fff8;font:13px system-ui;line-height:1.6}#result:empty{display:none}</style>
     <button id="open-reset" type="button">見た目を標準に戻す</button><p id="result" role="status"></p>
-    <dialog aria-labelledby="reset-title"><h2 id="reset-title">見た目を標準に戻しますか？</h2><p>配色・文章・画像・追加CSS・ホームと雑談画面の配置を組み込みの標準に戻します。接続先・音声・ユーザー管理設定と、フォルダー内のファイルは残ります。</p><div class="actions"><button id="confirm-reset" type="button">標準に戻す</button><button id="cancel-reset" type="button">キャンセル</button></div></dialog>`;
+    <dialog aria-labelledby="reset-title"><h2 id="reset-title">見た目を標準に戻しますか？</h2><p>配色・文章・画像・追加CSS・ホームと雑談画面の配置を組み込みの標準に戻します。接続先・音声・ユーザー管理設定と、customizationフォルダーの素材（styles・images）は残ります。</p><div class="actions"><button id="confirm-reset" type="button">標準に戻す</button><button id="cancel-reset" type="button">キャンセル</button></div></dialog>`;
   document.body.append(recovery);
   const dialog = shadow.querySelector('dialog');
   shadow.getElementById('open-reset').onclick = () => { if (!dialog.open) dialog.showModal(); };
   shadow.getElementById('cancel-reset').onclick = () => dialog.close();
-  shadow.getElementById('confirm-reset').onclick = () => {
-    const saved = resetAppearance();
+  shadow.getElementById('confirm-reset').onclick = async () => {
     dialog.close();
-    const message = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。再起動前にブラウザの保存設定を確認してください。';
+    // Cleared first, so the message always describes this reset once it is saved.
+    shadow.getElementById('result').textContent = '';
+    const saved = await resetAppearance();
+    const message = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。ローカルサーバーが動いているか、customizationフォルダーを確認してください。';
     shadow.getElementById('result').textContent = message;
     localStatus?.clear(message);
     shadow.getElementById('open-reset').focus();
@@ -84,7 +86,7 @@ export function initializeCustomization({ platforms, themeEditor, beginImageChan
   panel.innerHTML = `<div class="studio-fields"><h2>ローカルのカスタマイズファイル</h2>
     <p>保存場所：<span id="customization-directory">取得中…</span></p>
     <p>CSSを customization/styles、画像を customization/images に置いて「一覧を更新」を押してください。フォルダー直下のファイルが対象です。ファイルはエクスプローラーなどで追加します。</p>
-    <p>CSSは100KB、PNG・JPEG・WebP・GIFは512KBまで。適用した内容はこのブラウザにコピーして保存します。元ファイルを変更したら、もう一度適用してください。削除・移動しても適用済みの見た目は残ります。</p>
+    <p>CSSは1MB、PNG・JPEG・WebP・GIFは20MB・1600万画素まで。適用した内容は customization/current にコピーして保存します。元ファイルを変更したら、もう一度適用してください。削除・移動しても適用済みの見た目は残ります。</p>
     <button id="refresh-customizations" class="button" type="button">一覧を更新</button>
     <label>スタイル（CSS）<select id="customization-style" disabled></select></label><button id="apply-customization-style" class="button" type="button" disabled>選んだスタイルを適用</button>
     <label>画像<select id="customization-image" disabled></select></label><label>画像を使う場所<select id="customization-image-target"><option value="image">立ち絵</option><option value="speechImage">名前・コメントの背景</option></select></label><button id="apply-customization-image" class="button" type="button" disabled>選んだ画像を適用</button>
@@ -157,7 +159,7 @@ export function initializeCustomization({ platforms, themeEditor, beginImageChan
       apply: css => themeEditor.applyTheme(css, expected),
       success: `${name} を適用・保存しました。`,
       cancelled: '別の操作が優先されたため、スタイルの読み込みを中止しました。',
-      unsaved: 'スタイルを適用しましたが、保存できません。ブラウザの保存設定を確認してください。',
+      unsaved: 'スタイルを適用しましたが、保存できません。ローカルサーバーとcustomizationフォルダーを確認してください。',
     });
   };
   $('apply-customization-image').onclick = () => {

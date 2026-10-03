@@ -1,19 +1,18 @@
-import { readStudio } from './studio.js';
 import { compileTheme } from './theme.js';
-import { readOverlays, OVERLAYS_KEY } from './overlay-model.js';
-import { WORKSPACE_KEY, normalizeWorkspace } from './workspace-model.js';
+import { createDesignStore, ACTIVE_RATIO } from './design-client.js';
+import { resolveStudioImages, resolveOverlayAssets } from './design-model.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from './output-protocol.js';
 
 // The stream output only renders. It has no chat connection, no audio and no
 // controls: the control page publishes live state over a BroadcastChannel and
-// appearance arrives through the shared browser storage.
+// appearance comes from the local server, which announces every change. That
+// also reaches an OBS browser source, whose browser storage is separate.
 const options = parseOutputOptions(location.search, typeof window.obsstudio === 'object' && window.obsstudio !== null);
 document.body.dataset.background = options.background;
 document.body.style.setProperty('--output-key', options.key);
-let storage, studio;
-try { storage = window.localStorage; } catch { /* Appearance falls back to defaults. */ }
-const APPEARANCE_KEYS = ['pokome-studio', 'pokome-theme-v1', WORKSPACE_KEY, OVERLAYS_KEY];
+let studio;
+const designStore = await createDesignStore();
 const id = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 
 // The stage markup lives in index.html; share it instead of duplicating it.
@@ -33,13 +32,12 @@ document.head.append(theme);
 const $ = elementId => stage.querySelector(`#${elementId}`);
 
 function renderAppearance() {
-  studio = readStudio(storage);
-  renderStageAppearance(stage, studio);
-  renderOverlays(stage, readOverlays(storage));
-  try { theme.textContent = compileTheme(storage?.getItem('pokome-theme-v1') || ''); } catch { theme.textContent = ''; }
-  let layout = null;
-  try { const saved = storage?.getItem(WORKSPACE_KEY); if (saved) layout = normalizeWorkspace(JSON.parse(saved)).talk; } catch { /* Keep the default layout. */ }
-  applyTalkLayout(stage, layout);
+  const design = designStore.design, ratio = design.ratios[ACTIVE_RATIO];
+  studio = design.studio;
+  renderStageAppearance(stage, resolveStudioImages(studio));
+  renderOverlays(stage, resolveOverlayAssets(ratio?.overlays ?? { version: 1, items: [], assets: {} }));
+  try { theme.textContent = compileTheme(design.theme); } catch { theme.textContent = ''; }
+  applyTalkLayout(stage, ratio?.layout ?? null);
   renderChat();
 }
 
@@ -80,7 +78,7 @@ function scheduleAppearance() {
   clearTimeout(appearanceTimer);
   appearanceTimer = setTimeout(renderAppearance, 50);
 }
-window.addEventListener('storage', event => { if (event.key === null || APPEARANCE_KEYS.includes(event.key)) scheduleAppearance(); });
+designStore.subscribe(scheduleAppearance);
 // Nobody can scroll the output, so a resize must keep the newest comment in view.
 new ResizeObserver(() => {
   alignNewest();

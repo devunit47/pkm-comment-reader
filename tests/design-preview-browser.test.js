@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../studio.js';
-import { OVERLAYS_KEY, createOverlay } from '../overlay-model.js';
-import { chromium, executablePath, browserAvailable } from './browser-support.js';
+import { createOverlay } from '../overlay-model.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -34,10 +35,13 @@ function png(red, green, blue) {
 }
 const redPNG = png(240, 30, 50), bluePNG = png(40, 80, 230);
 const imageFile = (name, buffer = redPNG) => ({ name, mimeType: 'image/png', buffer });
-const setFile = (text, name = 'overlays.json') => ({ name, mimeType: 'application/json', buffer: Buffer.from(text) });
-const overlaySet = text => JSON.stringify({ version: 1, items: [createOverlay('text', { id: 'imported-text', text })], assets: {} });
+// Uploaded images are stored in customization/current under their SHA-256.
+const servedImage = bytes => `/api/design/current/images/${createHash('sha256').update(bytes).digest('hex')}.png`;
+const overlays = items => ({ version: 1, items, assets: {} });
 
-async function fixture(t, initial = {}) {
+// `design` seeds customization/current through the API before the page opens;
+// `storage` seeds this browser's operating settings.
+async function fixture(t, { design, storage = {} } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   let server, directory;
   t.after(async () => {
@@ -49,6 +53,7 @@ async function fixture(t, initial = {}) {
   server = createServer({ customizationDirectory: directory });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
+  if (design) await saveDesign(url, design);
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
@@ -77,7 +82,7 @@ async function fixture(t, initial = {}) {
     window.WebSocket = class extends NativeWebSocket {
       constructor(...args) { super(...args); probe.sockets++; }
     };
-  }, initial);
+  }, storage);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(url);
@@ -107,8 +112,13 @@ async function number(editor, key, value) {
   await editor.locator(`#overlay-${key}`).fill(String(value));
   await editor.locator(`#overlay-${key}`).dispatchEvent('change');
 }
+async function applyDesign(editor) {
+  await editor.locator('#apply-design').click();
+  await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+}
 async function appearance(page) {
-  return page.evaluate(() => ({
+  const design = await readDesign(new URL(page.url()).origin);
+  return { design, ...await page.evaluate(() => ({
     storage: Object.fromEntries(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)])),
     stage: document.getElementById('talk-stage').outerHTML,
     comments: document.getElementById('comment-list').innerHTML,
@@ -116,9 +126,9 @@ async function appearance(page) {
     writes: window.__previewProbe.writes.length,
     speech: window.__previewProbe.speech,
     sockets: window.__previewProbe.sockets,
-  }));
+  })) };
 }
-async function savedOverlays(page) { return page.evaluate(key => JSON.parse(localStorage.getItem(key)), OVERLAYS_KEY); }
+async function savedOverlays(page) { return (await readDesign(new URL(page.url()).origin)).ratios['16:9']?.overlays ?? null; }
 async function settledFrame(page) { await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve))); }
 async function beginImageGate(page, firstOnly = false) {
   await page.evaluate(firstOnly => {
@@ -135,26 +145,6 @@ async function releaseImageGate(page) {
   await page.evaluate(() => window.__imageGate.release());
   await settledFrame(page);
 }
-async function beginFileGate(page, name = 'delayed.json') {
-  await page.evaluate(name => {
-    const native = window.__nativeFileText ||= File.prototype.text;
-    const state = window.__fileGate = { entered: 0, completed: 0, release: null };
-    const gate = new Promise(resolve => { state.release = resolve; });
-    File.prototype.text = async function () {
-      if (this.name !== name) return native.call(this);
-      state.entered++; await gate;
-      const text = await native.call(this); state.completed++; return text;
-    };
-  }, name);
-}
-async function releaseFileGate(page) {
-  await page.evaluate(() => window.__fileGate.release());
-  // Native File.text() can complete in a later task; wait for the actual
-  // intercepted read rather than relying on elapsed time or a second file.
-  await page.waitForFunction(() => window.__fileGate.entered > 0 && window.__fileGate.completed === window.__fileGate.entered);
-  await settledFrame(page);
-}
-
 browserTest('design preview edits multiple text/image items independently, applies and restores persistence', async t => {
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page), before = await appearance(page);
@@ -209,13 +199,13 @@ browserTest('design preview edits multiple text/image items independently, appli
   await editor.locator('#overlay-select').selectOption(blue); await editor.locator('#delete-overlay').click();
   await countItems(page, 2);
   assert.deepEqual(await appearance(page), before, 'all edits remain isolated before Apply');
-  await editor.locator('#apply-design').click();
-  assert.equal(await editor.locator('#design-dialog').isVisible(), false);
+  await applyDesign(editor);
   const saved = await savedOverlays(page);
   assert.deepEqual(saved.items.map(item => item.id), [first, red]);
-  assert.equal(Object.keys(saved.assets).length, 1, 'deleting an image prunes its unreferenced bytes');
+  assert.equal(Object.keys(saved.assets).length, 1, 'deleting an image drops its unreferenced reference');
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay img').getAttribute('src'), servedImage(redPNG));
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 2);
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
   assert.deepEqual(await savedOverlays(page), saved);
   assert.equal(await page.locator(`#talk-stage .pokome-overlay[data-overlay-id="${first}"]`).textContent(), text);
@@ -225,7 +215,7 @@ browserTest('design preview edits multiple text/image items independently, appli
 
 browserTest('numeric resizing keeps anchors and displays clamped dimensions through reload', async t => {
   const item = createOverlay('text', { id: 'numeric-edge', x: 80, y: 80, w: 10, h: 10 });
-  const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify({ version: 1, items: [item], assets: {} }) });
+  const { page, editor, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: overlays([item]) } } }) });
   await openPreview(page);
   const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator(`#overlay-${key}`).inputValue())])));
   await number(editor, 'w', 30); await number(editor, 'h', 30);
@@ -238,7 +228,7 @@ browserTest('numeric resizing keeps anchors and displays clamped dimensions thro
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
   await number(editor, 'w', 30); await number(editor, 'h', 30);
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
-  await editor.locator('#apply-design').click(); await page.reload();
+  await applyDesign(editor); await page.reload(); await appReady(page);
   assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 88, y: 85, w: 12, h: 15 });
   await openPreview(page);
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
@@ -247,7 +237,7 @@ browserTest('numeric resizing keeps anchors and displays clamped dimensions thro
 
 browserTest('keyboard resizing keeps its position at canvas edges and minimum sizes', async t => {
   const item = createOverlay('text', { id: 'edge', x: 90, y: 90, w: 10, h: 10 });
-  const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify({ version: 1, items: [item], assets: {} }) });
+  const { page, editor, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: overlays([item]) } } }) });
   const frame = await openPreview(page);
   const move = frame.locator('.overlay-hit button[data-resize="false"]');
   const resize = frame.locator('.overlay-hit button[data-resize="true"]');
@@ -261,7 +251,7 @@ browserTest('keyboard resizing keeps its position at canvas edges and minimum si
   assert.deepEqual(await geometry(), { x: 0, y: 0, w: 2, h: 2 });
   await resize.press('ArrowRight'); await move.press('Shift+ArrowDown');
   assert.deepEqual(await geometry(), { x: 0, y: 0, w: 3, h: 3 });
-  await editor.locator('#apply-design').click(); await page.reload();
+  await applyDesign(editor); await page.reload(); await appReady(page);
   assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 0, y: 0, w: 3, h: 3 });
   assert.deepEqual(errors, []);
 });
@@ -286,75 +276,65 @@ browserTest('pointer resizing clamps size without moving the anchor at both prev
     for (const key of ['x','y']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 80);
     for (const key of ['w','h']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 2);
   }
-  await editor.locator('#apply-design').click(); await page.reload();
+  await applyDesign(editor); await page.reload(); await appReady(page);
   const saved = (await savedOverlays(page)).items[0];
   assert.deepEqual({ x: saved.x, y: saved.y, w: saved.w, h: saved.h }, { x: 80, y: 80, w: 2, h: 2 });
   assert.deepEqual(errors, []);
 });
 
-browserTest('importing reordered equal-z overlays keeps preview, Apply and reload stacking consistent', async t => {
+browserTest('reordered equal-z overlays saved elsewhere keep live, preview and reload stacking consistent', async t => {
   const first = createOverlay('text', { id: 'first', text: 'First', z: 3 });
   const second = createOverlay('text', { id: 'second', text: 'Second', z: 3 });
-  const initial = { version: 1, items: [first, second], assets: {} };
-  const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify(initial) });
-  const frame = await openPreview(page);
+  const { page, editor, url, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: overlays([first, second]) } } }) });
   const order = root => root.locator('.pokome-overlay').evaluateAll(nodes => nodes.map(node => node.dataset.overlayId));
-  assert.deepEqual(await order(frame), ['first', 'second']);
-  await editor.locator('details').last().locator('summary').click();
-  await editor.locator('#import-overlays').setInputFiles(setFile(JSON.stringify({ ...initial, items: [second, first] })));
-  await page.waitForFunction(root => {
-    const doc = document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentDocument;
-    return doc.querySelector('.pokome-overlay')?.dataset.overlayId === 'second';
-  }, ROOT);
-  assert.deepEqual(await order(frame), ['second', 'first']);
-  await editor.locator('#apply-design').click();
+  assert.deepEqual(await order(page.locator('#talk-stage')), ['first', 'second']);
+  await saveTalk(url, { overlays: overlays([second, first]) });
+  await page.waitForFunction(() => document.querySelector('#talk-stage > .pokome-overlay')?.dataset.overlayId === 'second');
   assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
-  await page.reload();
+  const frame = await openPreview(page);
+  assert.deepEqual(await order(frame), ['second', 'first']);
+  await applyDesign(editor);
+  assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
+  await page.reload(); await appReady(page);
+  // The design arrives from the server after the page script starts.
+  await page.locator('#talk-stage > .pokome-overlay').nth(1).waitFor({ state: 'attached' });
   assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
   assert.deepEqual(errors, []);
 });
 
-browserTest('overlay UI enforces the item limit and roundtrips image assets through set exports and settings backup', async t => {
+browserTest('overlay UI enforces the item limit and stores images as files that survive reload but not backups', async t => {
   const { page, editor, errors } = await fixture(t);
   await openPreview(page);
+  assert.equal(await editor.locator('#export-overlays').count(), 0, 'the overlay-set file export is gone');
+  assert.equal(await editor.locator('#import-overlays').count(), 0);
   await editor.locator('#add-text').click();
-  await editor.locator('#overlay-text').fill('Backup text');
+  await editor.locator('#overlay-text').fill('Saved text');
   await editor.locator('#overlay-image').setInputFiles(imageFile('asset.png'));
   await countItems(page, 2); await ready(page);
-  await editor.locator('details').last().locator('summary').click();
-  const exportEvent = page.waitForEvent('download');
-  await editor.locator('#export-overlays').click();
-  const exported = await readFile(await (await exportEvent).path());
-  const set = JSON.parse(exported);
-  assert.equal(set.items.length, 2);
-  assert.equal(Object.keys(set.assets).length, 1);
   for (let index = 2; index < 20; index++) await editor.locator('#add-text').click();
   assert.equal(await editor.locator('#add-text').isDisabled(), true);
   assert.equal(await editor.locator('#overlay-image').isDisabled(), true);
   await countItems(page, 20);
-  await editor.locator('#import-overlays').setInputFiles({ name: 'exported.json', mimeType: 'application/json', buffer: exported });
-  await countItems(page, 2); await ready(page);
-  await editor.locator('#apply-design').click();
-  assert.deepEqual(await savedOverlays(page), set);
+  await applyDesign(editor);
+  const saved = await savedOverlays(page);
+  assert.equal(saved.items.length, 20);
+  assert.deepEqual(Object.values(saved.assets), [`images/${createHash('sha256').update(redPNG).digest('hex')}.png`]);
+  await page.reload(); await appReady(page);
+  // The design arrives from the server after the page script starts.
+  await page.locator('#talk-stage > .pokome-overlay').nth(19).waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 20);
+  await page.waitForFunction(() => document.querySelector('#talk-stage > .pokome-overlay img')?.complete);
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay img').evaluate(image => image.naturalWidth), 1);
   await page.locator('[data-page="settings"]').click();
   const backupEvent = page.waitForEvent('download');
   await page.locator('#backup-settings').click();
   const backup = await readFile(await (await backupEvent).path());
-  assert.deepEqual(JSON.parse(JSON.parse(backup).settings[OVERLAYS_KEY]), set);
-  await page.evaluate(key => localStorage.removeItem(key), OVERLAYS_KEY);
-  await page.reload();
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
-  await page.locator('[data-page="settings"]').click();
-  await page.locator('#restore-settings').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: backup });
-  assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
-  await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
-  assert.deepEqual(await savedOverlays(page), set);
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay img').count(), 1);
+  assert.doesNotMatch(backup.toString(), /pokome-overlays|Saved text|data:image/);
   assert.deepEqual(errors, []);
 });
 
 browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape and history discard drafts', async t => {
-  const { page, editor, errors } = await fixture(t, { 'pokome-studio': JSON.stringify({ ...DEFAULT_STUDIO, listCount: 3 }) });
+  const { page, editor, errors } = await fixture(t, { storage: { 'pokome-history-limit': '3' } });
   const before = await appearance(page), previewRequests = [];
   page.on('request', request => { if (request.frame() !== page.mainFrame()) previewRequests.push(request.url()); });
   let frame = await openPreview(page);
@@ -388,6 +368,29 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   assert.deepEqual(errors, []);
 });
 
+// Regression (PR #9 review): the failed draft stayed in the save state and was
+// stored with the next ordinary setting change.
+browserTest('a draft whose save failed and was cancelled is never saved by a later change', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  await openPreview(page);
+  await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('キャンセルした文字');
+  await page.route('**/api/design/current', route => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'customizationフォルダーに書き込めません。' }) })
+    : route.continue(), { times: 1 });
+  await editor.locator('#apply-design').click();
+  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('書き込めません'), ROOT);
+  assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
+  await editor.locator('#cancel-design').click();
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
+  await page.locator('#studio-theme').selectOption('rose');
+  const saved = await waitForDesign(url, design => design.studio.theme === 'rose');
+  assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');
+  await page.reload(); await appReady(page);
+  await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('invalid CSS and quota failure preserve the live design and leave an editable draft', async t => {
   const { page, editor, errors } = await fixture(t);
   await openPreview(page); const before = await appearance(page);
@@ -398,28 +401,23 @@ browserTest('invalid CSS and quota failure preserve the live design and leave an
   assert.match(await editor.locator('#design-status').textContent(), /適用できませんでした/);
   assert.deepEqual(await appearance(page), before);
   await editor.locator('#draft-css').fill('.pokome-workspace .pokome-comment__author { color:#abcdef; }');
-  await page.evaluate(key => {
-    const set = Storage.prototype.setItem;
-    let fail = true;
-    Storage.prototype.setItem = function (name, value) {
-      if (this === localStorage && name === key && fail) { fail = false; throw new DOMException('Quota exceeded', 'QuotaExceededError'); }
-      return set.call(this, name, value);
-    };
-  }, OVERLAYS_KEY);
+  await page.route('**/api/design/current', route => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'customizationフォルダーに書き込めません。' }) })
+    : route.continue(), { times: 1 });
   await editor.locator('#apply-design').click();
-  assert.match(await editor.locator('#design-status').textContent(), /保存できません/);
+  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('書き込めません'), ROOT);
   const after = await appearance(page);
+  assert.deepEqual(after.design, before.design);
   assert.deepEqual(after.storage, before.storage);
   assert.equal(after.stage, before.stage); assert.equal(after.theme, before.theme); assert.equal(after.comments, before.comments);
   assert.equal(await editor.locator('#design-dialog').isVisible(), true);
   await countItems(page, 1);
-  await editor.locator('#apply-design').click();
-  assert.equal(await editor.locator('#design-dialog').isVisible(), false);
+  await applyDesign(editor);
   assert.equal((await savedOverlays(page)).items[0].text, '保存待ち');
   assert.deepEqual(errors, []);
 });
 
-browserTest('preview preparation disables reset/import and cancellation does not poison a later session', async t => {
+browserTest('preview preparation disables reset and cancellation does not poison a later session', async t => {
   const { page, editor, errors } = await fixture(t);
   let release, started;
   const gate = new Promise(resolve => { release = resolve; });
@@ -430,18 +428,16 @@ browserTest('preview preparation disables reset/import and cancellation does not
   await editor.locator('#open-design-preview').click(); await requested;
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   assert.equal(await editor.locator('#draft-reset').isDisabled(), true);
-  assert.equal(await editor.locator('#import-overlays').isDisabled(), true);
   await editor.locator('#cancel-design').click(); release();
   await openPreview(page);
   assert.equal(await editor.locator('#draft-reset').isEnabled(), true);
-  assert.equal(await editor.locator('#import-overlays').isEnabled(), true);
   await editor.locator('#add-text').click(); await countItems(page, 1);
   await editor.locator('#cancel-design').click();
   assert.equal(await savedOverlays(page), null);
   assert.deepEqual(errors, []);
 });
 
-browserTest('pending image decode cannot resurrect items after reset, cancel, or a newer set import', async t => {
+browserTest('pending image decode cannot resurrect items after reset or cancel', async t => {
   const { page, editor, errors } = await fixture(t);
   await beginImageGate(page); await openPreview(page); const before = await appearance(page);
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
@@ -457,18 +453,7 @@ browserTest('pending image decode cannot resurrect items after reset, cancel, or
   await page.waitForFunction(() => window.__imageGate.entered === 1);
   await editor.locator('#cancel-design').click();
   await releaseImageGate(page); await openPreview(page); await countItems(page, 0);
-
-  await beginImageGate(page);
-  await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
-  await page.waitForFunction(() => window.__imageGate.entered === 1);
-  await editor.locator('#import-overlays').setInputFiles(setFile(overlaySet('新しいセット')));
-  await countItems(page, 1); await ready(page);
-  await releaseImageGate(page);
-  assert.equal(await page.frameLocator(frameSelector).locator('.pokome-overlay').textContent(), '新しいセット');
-  assert.equal(await page.frameLocator(frameSelector).locator('.pokome-overlay img').count(), 0);
   assert.deepEqual(await appearance(page), before);
-  await editor.locator('#apply-design').click();
-  assert.equal((await savedOverlays(page)).items[0].text, '新しいセット');
   assert.deepEqual(errors, []);
 });
 
@@ -482,71 +467,40 @@ browserTest('latest image wins without waiting for superseded decode, and deleti
   await page.waitForFunction(() => window.__imageGate.entered === 2);
   await countItems(page, 1); await ready(page);
   const frame = page.frameLocator(frameSelector);
-  assert.equal(await frame.locator('.pokome-overlay img').getAttribute('src'), `data:image/png;base64,${bluePNG.toString('base64')}`);
+  assert.equal(await frame.locator('.pokome-overlay img').getAttribute('src'), servedImage(bluePNG));
   await releaseImageGate(page); await ready(page); await countItems(page, 1);
-  assert.equal(await frame.locator('.pokome-overlay img').getAttribute('src'), `data:image/png;base64,${bluePNG.toString('base64')}`);
+  assert.equal(await frame.locator('.pokome-overlay img').getAttribute('src'), servedImage(bluePNG));
+  assert.equal(await frame.locator('.pokome-overlay img').evaluate(image => image.complete && image.naturalWidth), 1, 'the preview loads folder images under its CSP');
   await editor.locator('#draft-reset').click();
-  const imported = { version: 1, items: [createOverlay('text', { id: 'add-image', text: '削除する文字' })], assets: {} };
-  await editor.locator('#import-overlays').setInputFiles(setFile(JSON.stringify(imported)));
+  await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('削除する文字');
+  const textId = await editor.locator('#overlay-select').inputValue();
   await countItems(page, 1); await ready(page);
   await beginImageGate(page);
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
   await page.waitForFunction(() => window.__imageGate.entered === 1);
-  await editor.locator('#overlay-select').selectOption('add-image');
+  await editor.locator('#overlay-select').selectOption(textId);
   await editor.locator('#delete-overlay').click(); await countItems(page, 0);
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   await releaseImageGate(page); await countItems(page, 1); await ready(page);
-  assert.equal(await frame.locator('.pokome-overlay[data-overlay-id="add-image"]').count(), 0);
+  assert.equal(await frame.locator(`.pokome-overlay[data-overlay-id="${textId}"]`).count(), 0);
   assert.equal(await frame.locator('.pokome-overlay img').count(), 1);
   assert.deepEqual(await appearance(page), before);
   assert.deepEqual(errors, []);
 });
 
-browserTest('pending set imports yield to newer edits, reset, and newer imports without partial replacement', async t => {
-  const { page, editor, errors } = await fixture(t);
-  await openPreview(page); const before = await appearance(page);
-  await beginFileGate(page);
-  await editor.locator('#import-overlays').setInputFiles(setFile(overlaySet('古いセット'), 'delayed.json'));
-  await page.waitForFunction(() => window.__fileGate.entered);
-  await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('新しい編集');
-  await releaseFileGate(page);
-  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('新しい編集が優先'), ROOT);
-  assert.equal(await page.frameLocator(frameSelector).locator('.pokome-overlay').textContent(), '新しい編集');
-  await beginFileGate(page);
-  await editor.locator('#import-overlays').setInputFiles(setFile(overlaySet('復活しない'), 'delayed.json'));
-  await page.waitForFunction(() => window.__fileGate.entered);
-  await editor.locator('#draft-reset').click(); await releaseFileGate(page); await countItems(page, 0);
-  await beginFileGate(page);
-  await editor.locator('#import-overlays').setInputFiles(setFile(overlaySet('古いインポート'), 'delayed.json'));
-  await page.waitForFunction(() => window.__fileGate.entered);
-  await editor.locator('#import-overlays').setInputFiles(setFile(overlaySet('最新インポート')));
-  await countItems(page, 1); await ready(page); await releaseFileGate(page);
-  assert.equal(await page.frameLocator(frameSelector).locator('.pokome-overlay').textContent(), '最新インポート');
-  await editor.locator('#import-overlays').setInputFiles(setFile(JSON.stringify({ version: 1, items: [{ id: 'bad', type: 'image', assetId: 'missing' }], assets: {} })));
-  await ready(page);
-  assert.match(await editor.locator('#design-status').textContent(), /読み込めない/);
-  assert.equal(await page.frameLocator(frameSelector).locator('.pokome-overlay').textContent(), '最新インポート');
-  assert.deepEqual(await appearance(page), before);
-  assert.deepEqual(errors, []);
-});
-
-browserTest('external appearance changes require reload even after cancelling and reopening the editor', async t => {
+browserTest('a design saved elsewhere reaches the page live and an older open draft cannot overwrite it', async t => {
   const { page, editor, url, errors } = await fixture(t);
   await openPreview(page); await editor.locator('#add-text').click();
-  const other = await page.context().newPage();
-  await other.goto(url);
-  await other.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
   const externalCSS = '.pokome-workspace .pokome-comment__author { color:#123456; }';
-  await other.evaluate(css => localStorage.setItem('pokome-theme-v1', css), externalCSS);
-  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('別のタブ'), ROOT);
+  await saveDesign(url, { theme: externalCSS });
+  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('別の画面'), ROOT);
+  assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(18, 52, 86\)/, 'the live page already shows it');
   await editor.locator('#apply-design').click();
-  assert.match(await editor.locator('#design-status').textContent(), /再読み込み/);
+  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('適用できませんでした'), ROOT);
   assert.equal(await savedOverlays(page), null);
+  assert.equal((await readDesign(url)).theme, externalCSS);
   await editor.locator('#cancel-design').click();
-  await editor.locator('#open-design-preview').click();
-  assert.equal(await editor.locator('#design-dialog').isVisible(), false);
-  assert.match(await editor.locator('#preview-result').textContent(), /再読み込み/);
-  await page.reload();
+  // Reopening starts from the newer design, without reloading the page.
   const frame = await openPreview(page);
   assert.equal(await frame.locator('.pokome-comment__author').first().evaluate(element => getComputedStyle(element).color), 'rgb(18, 52, 86)');
   await countItems(page, 0);
@@ -556,8 +510,8 @@ browserTest('external appearance changes require reload even after cancelling an
 browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS lowers the minimum', async t => {
   const panels = Object.fromEntries(['header','chat','speech','actor','footer'].map(id => [id, { x: 0, y: 0, w: 40, h: 20, z: 1, hidden: false }]));
   panels.speech = { x: 50, y: 75, w: 50, h: 25, z: 2, hidden: false };
-  const workspace = JSON.stringify({ version: 1, home: null, talk: { panels } });
-  const { page, editor, errors } = await fixture(t, { 'pokome-workspace-v1': workspace, 'pokome-theme-v1': '.pokome-workspace .stage-speech { min-height:300px; }' });
+  const { page, editor, url, errors } = await fixture(t, { design: design => ({ ...design, theme: '.pokome-workspace .stage-speech { min-height:300px; }',
+    ratios: { ...design.ratios, '16:9': { layout: { panels }, overlays: overlays([]) } } }) });
   const frame = await openPreview(page), speech = frame.locator('.stage-speech');
   assert.ok(Math.abs(await speech.evaluate(element => parseFloat(getComputedStyle(element).top)) - 420) < 1);
   await editor.getByText('追加CSSをプレビュー', { exact: true }).click();
@@ -568,7 +522,7 @@ browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS
     const frame = document.querySelector(root).shadowRoot.getElementById('design-preview-frame');
     return Math.abs(parseFloat(frame.contentWindow.getComputedStyle(frame.contentDocument.querySelector('.stage-speech')).top) - 260) < 1;
   }, ROOT);
-  assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), workspace);
+  assert.deepEqual((await readDesign(url)).ratios['16:9'].layout, { panels });
   await editor.locator('#cancel-design').click();
   assert.deepEqual(errors, []);
 });

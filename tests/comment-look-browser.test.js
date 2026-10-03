@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, appReady } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -49,7 +49,7 @@ const look = target => target.evaluate(() => {
 });
 
 browserTest('comment presets restyle the live stage and output, then return exactly to the theme', async t => {
-  const { context, page, errors } = await fixture(t);
+  const { context, page, errors, url } = await fixture(t);
   const original = await look(page);
   assert.equal(original.shadow, 'none');
 
@@ -105,7 +105,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
   await page.locator('#studio-comment-label').check();
 
   // Reload keeps the settings; returning to the theme restores every value.
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
   // Returning to the theme preset restores every value, names included.
@@ -117,9 +117,9 @@ browserTest('comment presets restyle the live stage and output, then return exac
 });
 
 browserTest('theme CSS applies at theme values and an explicit setting takes precedence', async t => {
-  const { page, errors } = await fixture(t);
-  await page.evaluate(() => localStorage.setItem('pokome-theme-v1', '.pokome-workspace .pokome-comment__author { color: rgb(1, 2, 3); }'));
-  await page.reload();
+  const { page, errors, url } = await fixture(t);
+  await saveDesign(url, { theme: '.pokome-workspace .pokome-comment__author { color: rgb(1, 2, 3); }' });
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
   await page.locator('#studio-comment-author-mode').selectOption('custom');
@@ -132,9 +132,9 @@ browserTest('theme CSS applies at theme values and an explicit setting takes pre
 });
 
 browserTest('an explicit outline reaches the name and body over a theme text-shadow', async t => {
-  const { context, page, errors } = await fixture(t);
-  await page.evaluate(() => localStorage.setItem('pokome-theme-v1', '.pokome-workspace .pokome-comment__body { text-shadow: none; } .pokome-workspace .pokome-comment__author { text-shadow: none; }'));
-  await page.reload();
+  const { context, page, errors, url } = await fixture(t);
+  await saveDesign(url, { theme: '.pokome-workspace .pokome-comment__body { text-shadow: none; } .pokome-workspace .pokome-comment__author { text-shadow: none; }' });
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   const shadows = target => target.evaluate(() => {
     const comment = document.querySelector('#stage-chat-list .stage-comment');
@@ -159,7 +159,7 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
 });
 
 browserTest('explicit settings win over theme CSS marked !important, and the theme returns at theme values', async t => {
-  const { context, page, errors } = await fixture(t);
+  const { context, page, errors, url } = await fixture(t);
   const theme = [
     '.pokome-workspace .pokome-comment__body { text-shadow: none !important; color: rgb(1, 2, 3) !important; line-height: 3 !important; }',
     '.pokome-workspace .pokome-comment__author { text-shadow: none !important; color: rgb(4, 5, 6) !important; }',
@@ -168,10 +168,9 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
     '.pokome-workspace { --stage-comment-text: rgb(10, 11, 12) !important; --stage-comment-outline: rgb(13, 14, 15) !important; --stage-comment-shadow: none !important; }',
     '.pokome-workspace .stage-chat { --stage-comment-ink: rgb(16, 17, 18) !important; --stage-comment-name: rgb(19, 20, 21) !important; }',
   ].join(' ');
-  await page.evaluate(css => localStorage.setItem('pokome-theme-v1', css), theme);
-  await page.reload();
+  await saveDesign(url, { theme });
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
-  assert.equal(await page.locator('#theme-status').textContent(), '見た目を反映・保存しました。');
   const read = target => target.evaluate(() => {
     const comment = document.querySelector('#stage-chat-list .stage-comment');
     const body = getComputedStyle(comment.querySelector('.pokome-comment__body')), author = getComputedStyle(comment.querySelector('.pokome-comment__author'));
@@ -211,9 +210,9 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
 });
 
 browserTest('a hidden label collapses identically in the preview and the output over a theme !important', async t => {
-  const { context, page, errors } = await fixture(t);
-  await page.evaluate(() => localStorage.setItem('pokome-theme-v1', '.pokome-workspace .stage-panel-label { display: flex !important; } .pokome-workspace #stage-chat-list { padding-top: 0 !important; }'));
-  await page.reload();
+  const { context, page, errors, url } = await fixture(t);
+  await saveDesign(url, { theme: '.pokome-workspace .stage-panel-label { display: flex !important; } .pokome-workspace #stage-chat-list { padding-top: 0 !important; }' });
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   await page.locator('#studio-comment-preset').selectOption('outline');
   const geometry = target => target.evaluate(() => {
@@ -236,7 +235,7 @@ browserTest('a hidden label collapses identically in the preview and the output 
 });
 
 browserTest('a chroma key output warns about a half-transparent comment panel', async t => {
-  const { page, errors } = await fixture(t);
+  const { page, errors, url } = await fixture(t);
   const status = page.locator('#output-status');
   await page.locator('#output-background').selectOption('key');
   await page.locator('#studio-comment-preset').selectOption('dark');

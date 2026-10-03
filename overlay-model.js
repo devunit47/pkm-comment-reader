@@ -1,14 +1,11 @@
-// User overlays live only in this dedicated store. Do not embed their bytes in
-// workspace layouts, shareable themes, or capped design exports. Full settings
-// backups may include this dedicated store as an optional, separately bounded key.
-export const OVERLAYS_KEY = 'pokome-overlays-v1';
+// Overlay items and their asset references. design.json passes file-reference
+// checks (design-model.js); the data URL defaults below remain only to read
+// backups from the browser-storage era, whose images had these limits.
 export const MAX_OVERLAYS = 20;
 export const MAX_OVERLAY_TEXT = 1000;
 export const MAX_OVERLAY_ASSET_BYTES = 512 * 1024;
 export const MAX_OVERLAY_TOTAL_ASSET_BYTES = 2 * 1024 * 1024;
 export const MAX_OVERLAY_PIXELS = 16_000_000;
-export const MAX_OVERLAYS_SERIALIZED_LENGTH = Math.ceil(MAX_OVERLAY_TOTAL_ASSET_BYTES / 3) * 4 + 128 * 1024;
-const MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 const RESERVED_IDS = new Set(['__proto__', 'prototype', 'constructor']);
 const safeId = value => typeof value === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(value) && !RESERVED_IDS.has(value);
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
@@ -21,7 +18,8 @@ const imageInfoCache = new Map();
 let cachedImageBytes = 0;
 const dimensionsAllowed = (width, height) => Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 && width * height <= MAX_OVERLAY_PIXELS;
 
-function rasterDimensions(bytes, mime) {
+// Reads only the image header, so the server can bound pixels without decoding.
+export function rasterDimensions(bytes, mime) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const text = (offset, length) => String.fromCharCode(...bytes.subarray(offset, offset + length));
   if (mime === 'image/png' && bytes.length >= 33 && bytes[0] === 137 && text(1, 7) === 'PNG\r\n\x1a\n' && view.getUint32(8) === 13 && text(12, 4) === 'IHDR') {
@@ -109,7 +107,9 @@ function normalizeItem(value) {
   };
 }
 
-export function normalizeOverlays(value) {
+// `inspectAsset` must reject an image that exceeds the per-image limit: this
+// function itself only enforces the total. The default checks data URLs.
+export function normalizeOverlays(value, { inspectAsset = inspectOverlayImage, maxTotalBytes = MAX_OVERLAY_TOTAL_ASSET_BYTES } = {}) {
   if (value == null) return empty();
   if (!record(value) || value.version !== 1) throw new Error('追加要素の形式またはバージョンが対応していません。');
   const result = empty(), seen = new Set(), inspected = new Map();
@@ -120,11 +120,11 @@ export function normalizeOverlays(value) {
     if (!item || seen.has(item.id)) continue;
     if (item.type === 'image') {
       if (!own(value.assets, item.assetId)) continue;
-      if (!inspected.has(item.assetId)) inspected.set(item.assetId, inspectOverlayImage(value.assets[item.assetId]));
+      if (!inspected.has(item.assetId)) inspected.set(item.assetId, inspectAsset(value.assets[item.assetId]));
       const info = inspected.get(item.assetId);
       if (!info) continue;
       if (!own(result.assets, item.assetId)) {
-        if (totalBytes + info.bytes > MAX_OVERLAY_TOTAL_ASSET_BYTES) continue;
+        if (totalBytes + info.bytes > maxTotalBytes) continue;
         result.assets[item.assetId] = value.assets[item.assetId];
         totalBytes += info.bytes;
       }
@@ -133,14 +133,6 @@ export function normalizeOverlays(value) {
     result.items.push(item);
   }
   return result;
-}
-
-export function readOverlays(storage) {
-  try {
-    const saved = storage?.getItem(OVERLAYS_KEY);
-    if (!saved || saved.length > MAX_OVERLAYS_SERIALIZED_LENGTH) return empty();
-    return normalizeOverlays(JSON.parse(saved));
-  } catch { return empty(); }
 }
 
 function nextId(prefix, existing) {
@@ -166,42 +158,22 @@ export function createOverlay(type, overrides = {}, existingItems = []) {
   return normalizeItem({ text: type === 'text' ? 'テキスト' : '', ...overrides, id, type });
 }
 
-export function pruneOverlayAssets(state) { return normalizeOverlays(state); }
+export function pruneOverlayAssets(state, options) { return normalizeOverlays(state, options); }
 
-export function removeOverlay(state, id) {
-  const normalized = normalizeOverlays(state);
-  return normalizeOverlays({ ...normalized, items: normalized.items.filter(item => item.id !== id) });
+export function removeOverlay(state, id, options) {
+  const normalized = normalizeOverlays(state, options);
+  return normalizeOverlays({ ...normalized, items: normalized.items.filter(item => item.id !== id) }, options);
 }
 
 // May temporarily return one unreferenced asset; append/update the image item
 // using the returned assetId before normalizing or saving the draft.
-export function addOverlayAsset(state, dataURL, assetId) {
-  const normalized = normalizeOverlays(state), info = inspectOverlayImage(dataURL);
-  if (!info) throw new Error('PNG・JPEG・WebP・GIFの512KB以下、1600万画素以内の画像を選んでください。');
+export function addOverlayAsset(state, dataURL, assetId, { inspectAsset = inspectOverlayImage, maxTotalBytes = MAX_OVERLAY_TOTAL_ASSET_BYTES } = {}) {
+  const normalized = normalizeOverlays(state, { inspectAsset, maxTotalBytes }), info = inspectAsset(dataURL);
+  if (!info) throw new Error('PNG・JPEG・WebP・GIFの対応する大きさ、1600万画素以内の画像を選んでください。');
   const duplicate = Object.keys(normalized.assets).find(id => normalized.assets[id] === dataURL);
   if (duplicate) return { state: normalized, assetId: duplicate };
-  const total = Object.values(normalized.assets).reduce((sum, asset) => sum + inspectOverlayImage(asset).bytes, 0);
-  if (total + info.bytes > MAX_OVERLAY_TOTAL_ASSET_BYTES) throw new Error('追加画像の合計は2MB以内にしてください。');
+  const total = Object.values(normalized.assets).reduce((sum, asset) => sum + inspectAsset(asset).bytes, 0);
+  if (total + info.bytes > maxTotalBytes) throw new Error('追加画像の合計が上限を超えます。');
   const id = safeId(assetId) && !own(normalized.assets, assetId) ? assetId : nextId('asset', Object.keys(normalized.assets));
   return { state: { ...normalized, assets: { ...normalized.assets, [id]: dataURL } }, assetId: id };
-}
-
-export async function readOverlayImage(file, { FileReader: Reader = globalThis.FileReader, Image: ImageClass = globalThis.Image } = {}) {
-  if (!file || !MIME_TYPES.includes(file.type) || !Number.isInteger(file.size) || file.size < 1 || file.size > MAX_OVERLAY_ASSET_BYTES) {
-    throw new Error('PNG・JPEG・WebP・GIFの512KB以下の画像を選んでください。');
-  }
-  if (!Reader || !ImageClass) throw new Error('このブラウザでは画像を読み込めません。');
-  const dataURL = await new Promise((resolve, reject) => {
-    const reader = new Reader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reader.onabort = () => reject(new Error('画像を読み込めませんでした。'));
-    reader.readAsDataURL(file);
-  });
-  const info = inspectOverlayImage(dataURL);
-  if (!info || info.mime !== file.type || info.bytes !== file.size) throw new Error('画像の形式または大きさが正しくありません。1600万画素以内の画像を選んでください。');
-  const probe = new ImageClass();
-  probe.src = dataURL;
-  try { await probe.decode(); } catch { throw new Error('画像が壊れているか、対応しない画像形式です。'); }
-  if (!dimensionsAllowed(probe.naturalWidth, probe.naturalHeight)) throw new Error('画像は1600万画素以内にしてください。');
-  return dataURL;
 }
