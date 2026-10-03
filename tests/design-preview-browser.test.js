@@ -223,6 +223,28 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.deepEqual(errors, []);
 });
 
+browserTest('numeric resizing keeps anchors and displays clamped dimensions through reload', async t => {
+  const item = createOverlay('text', { id: 'numeric-edge', x: 80, y: 80, w: 10, h: 10 });
+  const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify({ version: 1, items: [item], assets: {} }) });
+  await openPreview(page);
+  const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator(`#overlay-${key}`).inputValue())])));
+  await number(editor, 'w', 30); await number(editor, 'h', 30);
+  assert.deepEqual(await geometry(), { x: 80, y: 80, w: 20, h: 20 });
+  await number(editor, 'w', 0); await number(editor, 'h', -1);
+  assert.deepEqual(await geometry(), { x: 80, y: 80, w: 2, h: 2 });
+  await number(editor, 'w', 12); await number(editor, 'h', 15);
+  assert.deepEqual(await geometry(), { x: 80, y: 80, w: 12, h: 15 });
+  await number(editor, 'x', 95); await number(editor, 'y', 95);
+  assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
+  await number(editor, 'w', 30); await number(editor, 'h', 30);
+  assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
+  await editor.locator('#apply-design').click(); await page.reload();
+  assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 88, y: 85, w: 12, h: 15 });
+  await openPreview(page);
+  assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
+  assert.deepEqual(errors, []);
+});
+
 browserTest('keyboard resizing keeps its position at canvas edges and minimum sizes', async t => {
   const item = createOverlay('text', { id: 'edge', x: 90, y: 90, w: 10, h: 10 });
   const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify({ version: 1, items: [item], assets: {} }) });

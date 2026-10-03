@@ -231,7 +231,11 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
   };
   for (const key of ['x','y','w','h','z','font-size','text','color','hidden']) {
     $(`overlay-${key}`).addEventListener(key === 'text' || key === 'color' ? 'input' : 'change', () => {
-      if (!currentItem()) return; const element = $(`overlay-${key}`);
+      const item = currentItem(); if (!item) return; const element = $(`overlay-${key}`);
+      if (key === 'w' || key === 'h') {
+        changedItem(selected, resizePatch(item, key === 'w' ? Number(element.value) - item.w : 0, key === 'h' ? Number(element.value) - item.h : 0));
+        return;
+      }
       changedItem(selected,{[key === 'font-size' ? 'fontSize' : key]: key === 'hidden' ? element.checked : ['text','color'].includes(key) ? element.value : Number(element.value)});
     });
   }
