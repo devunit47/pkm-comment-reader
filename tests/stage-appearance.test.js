@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { renderStageAppearance, renderOverlays } from '../stage-appearance.js';
-import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS } from '../studio.js';
+import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS, applyCommentPreset } from '../studio.js';
 import { normalizeOverlays, createOverlay } from '../overlay-model.js';
 
 // A deliberately small behavioral DOM. It models ownership, descendant queries,
@@ -10,6 +10,7 @@ class FakeStyle {
   values = new Map();
   setProperty(name, value) { this.values.set(name, String(value)); }
   getPropertyValue(name) { return this.values.get(name) || ''; }
+  removeProperty(name) { this.values.delete(name); }
   set zIndex(value) { this.setProperty('z-index', value); }
   get zIndex() { return this.getPropertyValue('z-index'); }
   set color(value) { this.setProperty('color', value); }
@@ -248,4 +249,24 @@ test('normalized missing, remote or SVG assets remove stale image overlays witho
     assert.equal(directOverlays(stage).length, 0);
     assert.equal(ownerDocument.created.length, createdBefore);
   }
+});
+
+test('comment look writes only the attributes and variables it needs and removes them at theme values', () => {
+  const { stage } = fixture();
+  const baseline = { dataset: { ...stage.dataset }, style: new Map() };
+  renderStageAppearance(stage, normalizeStudio());
+  baseline.dataset = { ...stage.dataset }; baseline.style = new Map(stage.style.values);
+  renderStageAppearance(stage, applyCommentPreset(normalizeStudio(), 'dark'));
+  assert.deepEqual({ panel: stage.dataset.commentPanel, outline: stage.dataset.commentOutline, text: stage.dataset.commentText, author: stage.dataset.commentAuthor, label: stage.dataset.commentLabel },
+    { panel: 'dark', outline: 'thin', text: '', author: '', label: undefined });
+  assert.equal(stage.style.getPropertyValue('--stage-comment-opacity'), '0.35');
+  assert.equal(stage.style.getPropertyValue('--stage-comment-text'), '#ffffff');
+  assert.equal(stage.style.getPropertyValue('--stage-comment-outline'), '#000000');
+  renderStageAppearance(stage, applyCommentPreset(normalizeStudio(), 'dense'));
+  assert.deepEqual([stage.dataset.commentLineHeight, stage.dataset.commentGap, stage.dataset.commentDivider, stage.dataset.commentLabel], ['', '', 'false', 'false']);
+  assert.equal(stage.style.getPropertyValue('--stage-comment-gap'), '2px');
+  assert.equal(stage.style.getPropertyValue('--stage-comment-opacity'), '');
+  renderStageAppearance(stage, normalizeStudio());
+  assert.deepEqual(stage.dataset, baseline.dataset);
+  assert.deepEqual(new Map(stage.style.values), baseline.style);
 });

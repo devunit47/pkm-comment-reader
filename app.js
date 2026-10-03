@@ -11,7 +11,7 @@ import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredi
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { readStudio, normalizeStudio, readSavedVoices, THEME_ACCENTS } from './studio.js';
+import { readStudio, normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset } from './studio.js';
 import { enabledPlatforms, publication } from './app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from './theme.js';
@@ -623,6 +623,31 @@ function renderStudio() {
   $('studio-decoration').checked = studio.decoration;
   $('studio-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
   $('remove-actor-image').disabled = !studio.image;
+  renderCommentLookFields();
+  outputPanel?.refresh();
+}
+// An emptied field keeps the current value; other entries clamp to 0–100.
+function commentOpacityInput() {
+  const value = Number($('studio-comment-panel-opacity').value);
+  return $('studio-comment-panel-opacity').value === '' || !Number.isFinite(value) ? studio.commentPanelOpacity : Math.min(100, Math.max(0, Math.round(value)));
+}
+function renderCommentLookFields() {
+  $('studio-comment-preset').value = matchCommentPreset(studio);
+  $('studio-comment-panel').value = studio.commentPanel;
+  $('studio-comment-panel-opacity').value = studio.commentPanelOpacity;
+  $('studio-comment-panel-opacity').disabled = !['light', 'dark'].includes(studio.commentPanel);
+  for (const [id, key] of [['comment-text', 'commentTextColor'], ['comment-author', 'commentAuthorColor']]) {
+    $(`studio-${id}-mode`).value = studio[key] ? 'custom' : 'theme';
+    $(`studio-${id}`).disabled = !studio[key];
+    if (studio[key]) $(`studio-${id}`).value = studio[key];
+  }
+  $('studio-comment-outline').value = studio.commentOutline;
+  $('studio-comment-outline-color').value = studio.commentOutlineColor;
+  $('studio-comment-outline-color').disabled = studio.commentOutline === 'none';
+  $('studio-comment-line-height').value = studio.commentLineHeight === null ? '' : String(studio.commentLineHeight);
+  $('studio-comment-gap').value = studio.commentGap === null ? '' : String(studio.commentGap);
+  $('studio-comment-divider').checked = studio.commentDivider;
+  $('studio-comment-label').checked = studio.commentLabel;
 }
 
 function enterTalk(fromHistory = false) {
@@ -688,6 +713,13 @@ function updateStudio() {
     speechTextColor: $('studio-speech-text-color').value,
     listCount: Number($('studio-list-count').value),
     decoration: $('studio-decoration').checked, source,
+    commentPanel: $('studio-comment-panel').value, commentPanelOpacity: commentOpacityInput(),
+    commentTextColor: $('studio-comment-text-mode').value === 'custom' ? $('studio-comment-text').value : '',
+    commentAuthorColor: $('studio-comment-author-mode').value === 'custom' ? $('studio-comment-author').value : '',
+    commentOutline: $('studio-comment-outline').value, commentOutlineColor: $('studio-comment-outline-color').value,
+    commentLineHeight: $('studio-comment-line-height').value === '' ? null : Number($('studio-comment-line-height').value),
+    commentGap: $('studio-comment-gap').value === '' ? null : Number($('studio-comment-gap').value),
+    commentDivider: $('studio-comment-divider').checked, commentLabel: $('studio-comment-label').checked,
   });
   save('pokome-studio', studio);
   for (const state of Object.values(states)) {
@@ -697,9 +729,17 @@ function updateStudio() {
   renderStudio();
   render();
 }
-for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'decoration', 'source']) {
+for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'decoration', 'source',
+  'comment-panel', 'comment-panel-opacity', 'comment-text-mode', 'comment-text', 'comment-author-mode', 'comment-author',
+  'comment-outline', 'comment-outline-color', 'comment-line-height', 'comment-gap', 'comment-divider', 'comment-label']) {
   $(`studio-${id}`).onchange = updateStudio;
 }
+$('studio-comment-preset').onchange = () => {
+  studio = applyCommentPreset(studio, $('studio-comment-preset').value);
+  save('pokome-studio', studio);
+  renderStudio();
+  render();
+};
 $('studio-accent-mode').onchange = updateStudio;
 $('stage-comment-style').onchange = () => {
   const list = $('stage-chat-list');
@@ -902,7 +942,7 @@ initializeCustomization({ publication, platforms: enabledPlatforms, themeEditor,
     } catch { return false; }
   },
 });
-outputPanel = initializeOutputPanel({ storage, publisher: outputPublisher });
+outputPanel = initializeOutputPanel({ storage, publisher: outputPublisher, getStudio: () => studio });
 window.addEventListener('beforeunload', () => {
   outputPublisher.close();
   stop();

@@ -4,7 +4,7 @@ const SIZE_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 ×
 
 // Controls for opening the stream output. The output itself has no controls,
 // so everything a streamer needs to set up OBS lives on this page.
-export function initializeOutputPanel({ storage, publisher }) {
+export function initializeOutputPanel({ storage, publisher, getStudio = () => null }) {
   let preferences;
   try { preferences = normalizeOutputPreferences(JSON.parse(storage?.getItem(OUTPUT_PREFERENCES_KEY) || 'null')); }
   catch { preferences = normalizeOutputPreferences(); }
@@ -48,6 +48,7 @@ export function initializeOutputPanel({ storage, publisher }) {
     preferences = normalizeOutputPreferences({ background: $('output-background').value, key: $('output-key').value, size: $('output-size').value });
     try { storage?.setItem(OUTPUT_PREFERENCES_KEY, JSON.stringify(preferences)); } catch { /* Preferences are a convenience. */ }
     render();
+    setStatus(publisher.status());
   }
   for (const id of ['output-background', 'output-key', 'output-size']) $(id).onchange = update;
   $('open-output-window').onclick = () => {
@@ -80,11 +81,16 @@ export function initializeOutputPanel({ storage, publisher }) {
       const sizes = value.outputs.map(output => output.width && output.height ? `${output.width} × ${output.height}` : '大きさ不明');
       parts.push(`配信出力：${value.outputs.length}個 接続中（${sizes.join('、')}）`);
     }
+    // A chroma key leaves fringes around a half-transparent comment panel.
+    const look = getStudio();
+    if (preferences.background === 'key' && look && ['light', 'dark'].includes(look.commentPanel) && look.commentPanelOpacity < 100) {
+      parts.push('コメント欄のパネルが半透明のため、単色の背景を抜くと色がにじみます。不透明度を100%にするか、②のブラウザソースを使ってください。');
+    }
     if (value.otherControllers) parts.push('別の操作画面も配信出力に接続しています。表示が切り替わらないよう、操作画面は1つだけ開いてください。');
     if (message) parts.push(message);
     status.textContent = parts.join(' ');
   }
   render();
   setStatus(publisher.status());
-  return { setStatus };
+  return { setStatus, refresh: () => setStatus(publisher.status()) };
 }

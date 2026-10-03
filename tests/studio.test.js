@@ -4,7 +4,7 @@ test('comment styles persist and unknown styles use the default', () => {
   for (const commentStyle of ['stacked', 'anonymous', 'inline', 'compact']) assert.equal(readStudio({ getItem: () => JSON.stringify({ commentStyle }) }).commentStyle, commentStyle);
   assert.equal(normalizeStudio({ commentStyle: 'unknown' }).commentStyle, 'stacked');
 });
-import { DEFAULT_STUDIO, normalizeStudio, readStudio, readSavedVoices } from '../studio.js';
+import { DEFAULT_STUDIO, normalizeStudio, readStudio, readSavedVoices, COMMENT_PRESETS, applyCommentPreset, matchCommentPreset } from '../studio.js';
 
 test('studio settings validate styles, bounds and raster data without accepting arbitrary sources', () => {
   assert.deepEqual(normalizeStudio(null), DEFAULT_STUDIO);
@@ -83,4 +83,34 @@ test('accent modes preserve custom colors and infer legacy settings', () => {
   assert.equal(normalizeStudio({ theme: 'mint', accent: '#ACE5CD' }).accentMode, 'theme');
   assert.equal(normalizeStudio({ accentMode: 'theme', accent: '#123456' }).accent, '#123456');
   assert.equal(normalizeStudio({ accentMode: 'custom', accent: '#ace5cd' }).accentMode, 'custom');
+});
+
+test('comment look settings accept only listed values and keep theme defaults otherwise', () => {
+  const look = normalizeStudio({ commentPanel: 'dark', commentPanelOpacity: 40, commentTextColor: '#ABCDEF', commentAuthorColor: '#123456',
+    commentOutline: 'thick', commentOutlineColor: '#FF0000', commentLineHeight: 1.5, commentGap: 8, commentDivider: false, commentLabel: false });
+  assert.deepEqual([look.commentPanel, look.commentPanelOpacity, look.commentTextColor, look.commentAuthorColor, look.commentOutline, look.commentOutlineColor, look.commentLineHeight, look.commentGap, look.commentDivider, look.commentLabel],
+    ['dark', 40, '#abcdef', '#123456', 'thick', '#ff0000', 1.5, 8, false, false]);
+  const invalid = normalizeStudio({ commentPanel: 'url(x)', commentPanelOpacity: 101, commentTextColor: 'red', commentAuthorColor: 'var(--x)',
+    commentOutline: 'huge', commentOutlineColor: '#00000', commentLineHeight: 1.4, commentGap: '8', commentDivider: 'no', commentLabel: 0 });
+  assert.deepEqual(invalid, DEFAULT_STUDIO);
+  assert.equal(normalizeStudio({ commentPanelOpacity: 12.5 }).commentPanelOpacity, DEFAULT_STUDIO.commentPanelOpacity);
+});
+
+test('comment presets switch every look setting and are recognized until adjusted', () => {
+  const base = normalizeStudio({ commentStyle: 'inline', title: 'kept' });
+  // A different comment format is a custom mix, not the theme preset.
+  assert.equal(matchCommentPreset(base), '');
+  assert.equal(matchCommentPreset(normalizeStudio()), 'theme');
+  for (const name of Object.keys(COMMENT_PRESETS)) {
+    const applied = applyCommentPreset(base, name);
+    assert.equal(matchCommentPreset(applied), name);
+    assert.equal(applied.title, 'kept');
+    assert.equal(applied.commentStyle, name === 'dense' ? 'anonymous' : 'stacked');
+    // Presets are complete: applying one after another leaves no residue.
+    assert.equal(matchCommentPreset(applyCommentPreset(applyCommentPreset(base, 'dense'), name)), name);
+  }
+  assert.equal(matchCommentPreset({ ...applyCommentPreset(base, 'light'), commentPanelOpacity: 80 }), '');
+  assert.deepEqual(applyCommentPreset(base, 'unknown'), base);
+  // Returning from 本文だけ高密度 shows names again.
+  assert.equal(applyCommentPreset(applyCommentPreset(base, 'dense'), 'theme').commentStyle, 'stacked');
 });

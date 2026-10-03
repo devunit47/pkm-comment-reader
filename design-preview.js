@@ -194,7 +194,7 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
       if (!isCurrent(token)) return;
       await new Promise(resolve => {
         frame.onload = resolve;
-        frame.srcdoc = '<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src \'none\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'"></head><body class="talk-mode"></body></html>';
+        frame.srcdoc = '<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src \'none\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'"></head><body class="talk-mode pokome-preview"></body></html>';
       });
       if (!isCurrent(token)) return;
       frameDoc = frame.contentDocument;
