@@ -103,10 +103,16 @@ export function applyOutputMessage(view, message, now = Date.now()) {
   const result = { changed: false, resync: false };
   if (!message) return result;
   if (message.role === 'controller') {
-    if (message.id !== view.controllerId) return result;
-    if (message.type === 'heartbeat') view.lastSeen = now;
-    // A closed control page releases the output at once; content stays.
-    if (message.type === 'bye') view.lastSeen = 0;
+    if (message.id === view.controllerId) {
+      if (message.type === 'heartbeat') view.lastSeen = now;
+      // A closed control page releases the output at once; content stays
+      // until a remaining control page answers the resync with a snapshot.
+      if (message.type === 'bye') { view.lastSeen = -Infinity; result.resync = true; }
+    } else if (message.type === 'heartbeat' && (!view.controllerId || now - view.lastSeen >= CONTROLLER_TIMEOUT_MS)) {
+      // A quiet chat sends no diffs, so another page's heartbeat must also
+      // recover an output whose controller closed, crashed or never existed.
+      result.resync = true;
+    }
     return result;
   }
   if (!message.controllerId) return result;

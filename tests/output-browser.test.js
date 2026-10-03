@@ -79,6 +79,29 @@ browserTest('output window mirrors visible comments without controls and follows
   assert.deepEqual(errors, []);
 });
 
+browserTest('closing the followed control page hands the output to a remaining one without new comments', async t => {
+  const { context, page, url, errors } = await fixture(t);
+  const output = await context.newPage();
+  output.setDefaultTimeout(8000);
+  await output.goto(`${url}/output.html?background=theme`);
+  await output.locator('.stage-comment').nth(11).waitFor({ state: 'attached' });
+  // Page A gains one comment so its list differs from page B's.
+  await page.locator('#demo').click();
+  await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '13 COMMENTS');
+  const second = await context.newPage();
+  second.setDefaultTimeout(8000);
+  await second.goto(url);
+  await second.locator('#comment-list .username').nth(11).waitFor();
+  // The output keeps following A while A is alive.
+  await output.waitForTimeout(2500);
+  assert.equal(await output.locator('#stage-count').textContent(), '13 COMMENTS');
+  // B stays quiet: only its heartbeat can trigger the handover.
+  await page.close({ runBeforeUnload: true });
+  await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '12 COMMENTS');
+  assert.equal((await comments(output)).length, 12);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('transparent output stays empty and transparent without a control page', async t => {
   const { context, url, errors } = await fixture(t);
   const output = await context.newPage();

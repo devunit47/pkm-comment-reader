@@ -112,6 +112,27 @@ test('outputs follow one controller until it leaves or goes quiet', () => {
   assert.deepEqual(view.messages.map(message => message.id), ['2']);
 });
 
+test('a released or quiet controller lets another controller heartbeat request a resync', () => {
+  const view = createOutputView();
+  const heartbeat = id => normalizeOutputMessage({ v: 1, type: 'heartbeat', id, role: 'controller' });
+  // An output opened before any control page recovers from the first heartbeat.
+  assert.equal(applyOutputMessage(view, heartbeat('control-a'), 1000).resync, true);
+  replay(view, [{ v: 1, type: 'snapshot', controllerId: 'control-a', seq: 1, platform: 'twitch', received: 1, messages: [comment(1)], speech: null, credit: '' }], 1000);
+  // While the followed controller is alive, other heartbeats are ignored.
+  assert.deepEqual(applyOutputMessage(view, heartbeat('control-b'), 2000), { changed: false, resync: false });
+  assert.deepEqual(applyOutputMessage(view, heartbeat('control-a'), 3000), { changed: false, resync: false });
+  // Closing asks the remaining controllers for a snapshot right away.
+  assert.equal(applyOutputMessage(view, normalizeOutputMessage({ v: 1, type: 'bye', id: 'control-a', role: 'controller' }), 4000).resync, true);
+  assert.equal(applyOutputMessage(view, heartbeat('control-b'), 4001).resync, true);
+  assert.deepEqual(view.messages.map(message => message.id), ['1']);
+  // A bye from a controller the output does not follow changes nothing.
+  replay(view, [{ v: 1, type: 'snapshot', controllerId: 'control-b', seq: 5, platform: 'twitch', received: 2, messages: [comment(2)], speech: null, credit: '' }], 5000);
+  assert.equal(applyOutputMessage(view, normalizeOutputMessage({ v: 1, type: 'bye', id: 'control-a', role: 'controller' }), 5001).resync, false);
+  // A crashed controller without bye is released after the timeout.
+  assert.equal(applyOutputMessage(view, heartbeat('control-c'), 5000 + CONTROLLER_TIMEOUT_MS - 1).resync, false);
+  assert.equal(applyOutputMessage(view, heartbeat('control-c'), 5000 + CONTROLLER_TIMEOUT_MS).resync, true);
+});
+
 test('controller reports outputs and other controllers with generous presence', () => {
   const statuses = [];
   const { instance, advance } = publisher({ onStatus: status => statuses.push(status) });
