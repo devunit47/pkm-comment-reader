@@ -10,9 +10,15 @@ export const DEFAULT_THEME_CSS = `/* Pokome Theme API: 1 */
   color: var(--pk-accent-color);
 }`;
 
+// The bound limits parsing work; storage size no longer constrains it.
+export const MAX_THEME_CSS_BYTES = 1_000_000;
+export const themeByteLength = css => new TextEncoder().encode(css).length;
+
 // CSSOM handles comments, escapes and nested syntax before the scope check.
+// Self-contained (tests evaluate its source alone), so the limit is written
+// out here; it equals MAX_THEME_CSS_BYTES.
 export function compileTheme(css, Sheet = globalThis.CSSStyleSheet) {
-  if (typeof css !== 'string' || css.length > 100000) throw new Error('CSSは100KB以内にしてください。');
+  if (typeof css !== 'string' || new TextEncoder().encode(css).length > 1_000_000) throw new Error('CSSは1MB以内にしてください。');
   const sheet = new Sheet();
   sheet.replaceSync(css);
   const visit = rules => Array.from(rules, rule => {
@@ -41,7 +47,7 @@ export function compileTheme(css, Sheet = globalThis.CSSStyleSheet) {
   return compiled;
 }
 
-export function initializeTheme(storage) {
+export function initializeTheme(designStore) {
   document.querySelector('main').classList.add('pokome-workspace');
   document.querySelector('.sidebar').classList.add('pokome-workspace');
   const style = document.createElement('style');
@@ -49,16 +55,13 @@ export function initializeTheme(storage) {
   document.head.append(style);
   const section = document.createElement('section');
   section.className = 'panel studio-form';
-  section.innerHTML = `<div class="studio-fields"><h2>見た目の保存・読み込み</h2>
-    <p>読み込んだ見た目やCSSで追加した見た目、ホーム・雑談画面の配置を保存して、後で戻したり、ほかの人と共有したりできます。</p>
-    <label>保存した見た目を読み込む<input id="theme-import" type="file" accept=".css,.json,text/css,application/json" aria-describedby="theme-import-help"></label>
-    <p id="theme-import-help">.cssのファイルは色や文字、枠などの見た目を変更します。.jsonのファイルは見た目とパネルの配置を変更します。読み込むと現在の設定が置き換わるため、残したい場合は先に保存してください。</p>
-    <div><button id="design-export" class="button" aria-describedby="design-export-help">見た目と配置をファイルに保存</button></div>
-    <p id="design-export-help">読み込んだ見た目やCSSで追加した見た目と、パネルの位置やサイズをまとめて保存します。上の配信デザイン設定、接続情報、コメントは含まれません。</p>
+  section.innerHTML = `<div class="studio-fields"><h2>CSSで見た目を変える</h2>
+    <label>CSSファイルを読み込む<input id="theme-import" type="file" accept=".css,text/css" aria-describedby="theme-import-help"></label>
+    <p id="theme-import-help">.cssのファイルは色や文字、枠などの見た目を変更します。読み込むと今のCSSが置き換わります。</p>
     <details><summary>詳しく見た目を編集する（CSS）</summary>
     <p>CSSは色や文字、枠などの見た目を指定するための記述です。使わなくても、上の配信デザイン設定で見た目を調整できます。自分でCSSを書きたい方だけご利用ください。</p>
     <label>見た目を指定するCSS<textarea id="theme-css" rows="12" spellcheck="false" aria-describedby="theme-css-help"></textarea></label>
-    <p id="theme-css-help">入力後に「編集した見た目を反映」を押すと画面に反映され、自動で保存されます。「追加した見た目を解除」で、この欄のCSSによる変更を取り消せます。</p>
+    <p id="theme-css-help">入力後に「編集した見た目を反映」を押すと画面に反映され、customizationフォルダーに保存されます。「追加した見た目を解除」で、この欄のCSSによる変更を取り消せます。</p>
     <div><button id="theme-apply" class="button">編集した見た目を反映</button> <button id="theme-reset" class="button">追加した見た目を解除</button></div>
     <div><button id="theme-export" class="button">見た目だけを保存（CSS）</button></div>
     <p>この欄のCSSをファイルに保存します。パネルの配置や、上の配信デザイン設定は含まれません。</p>
@@ -69,54 +72,47 @@ export function initializeTheme(storage) {
   const status = section.querySelector('#theme-status');
   let current = '';
   let generation = 0;
-  let workspace;
-  const persist = css => {
-    try { storage?.setItem('pokome-theme-v1', css); return !!storage; }
-    catch { return false; }
-  };
   const beginChange = () => ++generation;
-  const apply = (css, expected = beginChange(), { save = true } = {}) => {
-    if (expected !== generation) return null;
-    const compiled = compileTheme(css);
-    style.textContent = compiled;
+  const show = css => {
+    style.textContent = compileTheme(css);
     current = css;
     input.value = css || DEFAULT_THEME_CSS;
-    const saved = !save || persist(css);
-    status.textContent = saved ? '見た目を反映・保存しました。' : '見た目を反映しました。保存できないため、再読み込みすると元に戻ります。';
-    return saved;
+  };
+  // Resolves true once saved, false if saving failed, null if superseded.
+  const apply = async (css, expected = beginChange()) => {
+    if (expected !== generation) return null;
+    show(css);
+    try { await designStore.save({ ...designStore.design, theme: css }); }
+    catch (error) { status.textContent = `見た目を反映しましたが、保存できません。${error.message}`; return false; }
+    if (expected === generation) status.textContent = '見た目を反映・保存しました。';
+    return true;
+  };
+  // Shows a theme that is already stored, such as one changed in another tab.
+  const reflectTheme = css => {
+    beginChange();
+    try { show(css); } catch (error) { style.textContent = ''; current = css; input.value = css; status.textContent = `保存されているCSSを適用できません：${error.message}`; }
   };
   const resetTheme = () => apply('');
-  const run = action => { try { action(); } catch (error) { status.textContent = error.message; } };
-  try { apply(storage?.getItem('pokome-theme-v1') || ''); } catch { resetTheme(); }
+  const run = async action => { try { await action(); } catch (error) { status.textContent = error.message; } };
+  reflectTheme(designStore.design.theme);
   section.querySelector('#theme-apply').onclick = () => run(() => apply(input.value));
   section.querySelector('#theme-reset').onclick = () => run(resetTheme);
-  const download = (name, content, type) => {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    const link = document.createElement('a'); link.href = url; link.download = name; link.click();
+  section.querySelector('#theme-export').onclick = () => {
+    const url = URL.createObjectURL(new Blob([current], { type: 'text/css' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'pokome-theme.css'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  section.querySelector('#theme-export').onclick = () => download('pokome-theme.css', current, 'text/css');
-  section.querySelector('#design-export').onclick = () => download('pokome-design.json', JSON.stringify({
-    manifest: { format: 'pokome-design', version: 1, themeApi: 1 }, theme: current, layout: workspace.getLayouts(),
-  }, null, 2), 'application/json');
   section.querySelector('#theme-import').onchange = async event => {
     const file = event.target.files[0];
     if (!file) return;
     const expected = beginChange();
     try {
-      if (file.size > 200000) throw new Error('ファイルは200KB以内にしてください。');
+      if (file.size > MAX_THEME_CSS_BYTES) throw new Error('CSSは1MB以内にしてください。');
       const content = await file.text();
       if (expected !== generation) return;
-      if (file.name.toLowerCase().endsWith('.css')) apply(content, expected);
-      else {
-        const design = JSON.parse(content);
-        if (design.manifest?.format !== 'pokome-design' || design.manifest.version !== 1 || design.manifest.themeApi !== 1) throw new Error('対応しないデザイン形式です。');
-        compileTheme(design.theme);
-        workspace.applyLayouts(design.layout);
-        apply(design.theme, expected);
-      }
+      await apply(content, expected);
     } catch (error) { status.textContent = `読み込み失敗: ${error.message}`; }
     event.target.value = '';
   };
-  return { resetTheme, applyTheme: apply, beginChange, getTheme: () => current, reflectTheme: css => apply(css, beginChange(), { save: false }), connectWorkspace(value) { workspace = value; } };
+  return { resetTheme, applyTheme: apply, beginChange, getTheme: () => current, reflectTheme };
 }

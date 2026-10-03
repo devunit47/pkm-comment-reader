@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  OVERLAYS_KEY, MAX_OVERLAYS, MAX_OVERLAY_TEXT, MAX_OVERLAY_ASSET_BYTES,
-  MAX_OVERLAY_TOTAL_ASSET_BYTES, MAX_OVERLAY_PIXELS, MAX_OVERLAYS_SERIALIZED_LENGTH,
-  normalizeOverlays, readOverlays, createOverlay, removeOverlay, pruneOverlayAssets,
-  addOverlayAsset, inspectOverlayImage, readOverlayImage,
+  MAX_OVERLAYS, MAX_OVERLAY_TEXT, MAX_OVERLAY_ASSET_BYTES,
+  MAX_OVERLAY_TOTAL_ASSET_BYTES, MAX_OVERLAY_PIXELS,
+  normalizeOverlays, createOverlay, removeOverlay, pruneOverlayAssets,
+  addOverlayAsset, inspectOverlayImage,
 } from '../overlay-model.js';
 
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -19,16 +19,23 @@ function sizedPNG(width, height, byteLength = pngBytes.length) {
   return dataURL(bytes);
 }
 
-test('blank overlays and defensive storage reads stay separate from existing settings', () => {
+test('blank overlays normalize to an empty set and unknown versions are rejected', () => {
   assert.deepEqual(normalizeOverlays(), envelope());
   assert.deepEqual(normalizeOverlays(null), envelope());
-  assert.deepEqual(readOverlays(), envelope());
-  assert.deepEqual(readOverlays({ getItem() { throw new Error('denied'); } }), envelope());
-  for (const saved of ['{broken', 'null', '[]', '{"version":2}', 'x'.repeat(MAX_OVERLAYS_SERIALIZED_LENGTH + 1)]) {
-    assert.deepEqual(readOverlays({ getItem: () => saved }), envelope());
-  }
   assert.throws(() => normalizeOverlays({ version: 2 }));
-  assert.deepEqual(readOverlays({ getItem(key) { assert.equal(key, OVERLAYS_KEY); return JSON.stringify(envelope()); } }), envelope());
+  assert.throws(() => normalizeOverlays([]));
+});
+
+test('a custom asset check and total replace the data URL defaults', () => {
+  const refs = { a: { bytes: 900 }, b: { bytes: 900 } };
+  const options = { inspectAsset: value => refs[value] || null, maxTotalBytes: 1000 };
+  const state = envelope([imageItem('one', 'first'), imageItem('two', 'second')], { first: 'a', second: 'b' });
+  assert.deepEqual(normalizeOverlays(state, options).items.map(item => item.id), ['one']);
+  assert.deepEqual(normalizeOverlays(state, { ...options, maxTotalBytes: Infinity }).items.map(item => item.id), ['one', 'two']);
+  const added = addOverlayAsset(envelope(), 'a', undefined, { ...options, maxTotalBytes: Infinity });
+  assert.equal(added.state.assets[added.assetId], 'a');
+  assert.throws(() => addOverlayAsset(envelope(), 'missing', undefined, options));
+  assert.deepEqual(removeOverlay(state, 'one', { ...options, maxTotalBytes: Infinity }).assets, { second: 'b' });
 });
 
 test('overlay geometry, text, colors, booleans and ordering are bounded', () => {
@@ -90,7 +97,7 @@ test('image storage has a shared 2MiB budget, not a budget per overlay reference
   const result = normalizeOverlays(envelope(items, assets));
   assert.equal(result.items.length, 5); assert.equal(Object.keys(result.assets).length, 4);
   assert.equal(Object.values(result.assets).reduce((total, asset) => total + inspectOverlayImage(asset).bytes, 0), MAX_OVERLAY_TOTAL_ASSET_BYTES);
-  assert.throws(() => addOverlayAsset(result, png), /2MB/);
+  assert.throws(() => addOverlayAsset(result, png), /合計/);
 });
 
 test('creation, asset addition and deletion preserve safe IDs and prune only unused bytes', () => {
@@ -111,32 +118,6 @@ test('creation, asset addition and deletion preserve safe IDs and prune only unu
   assert.deepEqual(removeOverlay(state, image.id).assets, {});
   assert.deepEqual(pruneOverlayAssets({ ...state, assets: { ...state.assets, orphan: png } }), state);
   assert.throws(() => addOverlayAsset(state, 'data:image/svg+xml;base64,PHN2Zz4='));
-});
-
-function imageEnvironment({ result = png, width = 1, height = 1, failRead = false, failDecode = false } = {}) {
-  return {
-    FileReader: class {
-      readAsDataURL() { queueMicrotask(() => { this.result = result; if (failRead) this.onerror(); else this.onload(); }); }
-    },
-    Image: class {
-      naturalWidth = width; naturalHeight = height;
-      async decode() { if (failDecode) throw new Error('bad image'); }
-    },
-  };
-}
-
-test('browser upload helper requires byte, MIME, header and successful decode validation', async () => {
-  const file = { type: 'image/png', size: pngBytes.length };
-  assert.equal(await readOverlayImage(file, imageEnvironment()), png);
-  await assert.rejects(readOverlayImage({ ...file, type: 'image/svg+xml' }, imageEnvironment()));
-  await assert.rejects(readOverlayImage({ ...file, size: MAX_OVERLAY_ASSET_BYTES + 1 }, imageEnvironment()));
-  await assert.rejects(readOverlayImage({ ...file, size: file.size + 1 }, imageEnvironment()));
-  await assert.rejects(readOverlayImage(file, imageEnvironment({ failRead: true })));
-  await assert.rejects(readOverlayImage(file, imageEnvironment({ failDecode: true })));
-  await assert.rejects(readOverlayImage(file, imageEnvironment({ result: png.replace('image/png', 'image/jpeg') })));
-  await assert.rejects(readOverlayImage(file, imageEnvironment({ width: 4001, height: 4000 })));
-  await assert.rejects(readOverlayImage(file, imageEnvironment({ width: 0 })));
-  await assert.rejects(readOverlayImage(file, { FileReader: null, Image: null }));
 });
 
 test('missing geometry stays inside a full-canvas overlay and malformed overrides fall back safely', () => {

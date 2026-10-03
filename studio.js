@@ -2,7 +2,7 @@ export const THEME_ACCENTS = Object.freeze({ mint: '#ace5cd', rose: '#efb4c5', v
 export const DEFAULT_STUDIO = Object.freeze({
   theme: 'mint', accentMode: 'theme', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
   maxVisible: 0, holdSeconds: 0, newestPosition: 'bottom',
-  fontSize: 20, listCount: 300, commentStyle: 'stacked', layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
+  fontSize: 20, commentStyle: 'stacked', layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
   speechStyle: 'image', speechBackground: '#f3f1dc', speechImage: '', speechTextColor: '#25382f',
   footer: 'ひとつのコメントから、おしゃべりが広がる。',
@@ -29,10 +29,10 @@ export const COMMENT_PRESETS = Object.freeze({
   dense: { label: '本文だけ高密度', values: { ...themeLook, commentPanel: 'none', commentLineHeight: 1.35, commentGap: 4, commentDivider: false, commentLabel: false }, commentStyle: 'anonymous' },
 });
 
-export function applyCommentPreset(studio, name) {
+export function applyCommentPreset(studio, name, options) {
   const preset = COMMENT_PRESETS[name];
-  if (!preset) return normalizeStudio(studio);
-  return normalizeStudio({ ...studio, ...preset.values, commentStyle: preset.commentStyle });
+  if (!preset) return normalizeStudio(studio, options);
+  return normalizeStudio({ ...studio, ...preset.values, commentStyle: preset.commentStyle }, options);
 }
 
 // The preset whose values the studio currently matches, or '' for a custom mix.
@@ -43,7 +43,11 @@ export function matchCommentPreset(studio) {
   }) || '';
 }
 
-export function normalizeStudio(value = {}) {
+const dataImage = value => value.length <= 2800000 && /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(value);
+
+// `image` decides which actor/speech images are kept. The default accepts raster
+// data URLs; design.json passes a check for validated file references.
+export function normalizeStudio(value = {}, { image = dataImage } = {}) {
   const options = { ...DEFAULT_STUDIO };
   if (!value || typeof value !== 'object') return options;
   if (['stacked', 'anonymous', 'inline', 'compact'].includes(value.commentStyle)) options.commentStyle = value.commentStyle;
@@ -63,7 +67,6 @@ export function normalizeStudio(value = {}) {
   if (Number.isInteger(value.maxVisible) && value.maxVisible >= 0 && value.maxVisible <= 30) options.maxVisible = value.maxVisible;
   if ([0, 5, 15, 30].includes(value.holdSeconds)) options.holdSeconds = value.holdSeconds;
   if (['bottom', 'top'].includes(value.newestPosition)) options.newestPosition = value.newestPosition;
-  if (Number.isInteger(value.listCount) && value.listCount >= 1 && value.listCount <= 300) options.listCount = value.listCount;
   if (Number.isInteger(value.actorWidth) && value.actorWidth >= 30 && value.actorWidth <= 60) options.actorWidth = value.actorWidth;
   if (typeof value.decoration === 'boolean') options.decoration = value.decoration;
   if (COMMENT_PANELS.includes(value.commentPanel)) options.commentPanel = value.commentPanel;
@@ -76,14 +79,19 @@ export function normalizeStudio(value = {}) {
   if (COMMENT_GAPS.includes(value.commentGap)) options.commentGap = value.commentGap;
   for (const key of ['commentDivider', 'commentLabel']) if (typeof value[key] === 'boolean') options[key] = value[key];
   // Raster images only: uploaded SVG/HTML must never become executable content.
-  if (typeof value.image === 'string' && value.image.length <= 2800000 && /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(value.image)) options.image = value.image;
-  if (typeof value.speechImage === 'string' && value.speechImage.length <= 2800000 && /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(value.speechImage)) options.speechImage = value.speechImage;
+  for (const key of ['image', 'speechImage']) if (typeof value[key] === 'string' && value[key] && image(value[key])) options[key] = value[key];
   return options;
 }
 
-export function readStudio(storage) {
-  try { return normalizeStudio(JSON.parse(storage?.getItem('pokome-studio') || '{}')); }
-  catch { return normalizeStudio(); }
+// Comment history is an operating setting, not part of a shareable design.
+export const HISTORY_LIMIT_KEY = 'pokome-history-limit';
+export const DEFAULT_HISTORY_LIMIT = 300;
+export function normalizeHistoryLimit(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 300 ? value : DEFAULT_HISTORY_LIMIT;
+}
+export function readHistoryLimit(storage) {
+  try { return normalizeHistoryLimit(JSON.parse(storage?.getItem(HISTORY_LIMIT_KEY) ?? 'null')); }
+  catch { return DEFAULT_HISTORY_LIMIT; }
 }
 
 export function readSavedVoices(storage) {

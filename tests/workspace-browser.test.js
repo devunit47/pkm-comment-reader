@@ -1,12 +1,20 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign } from './browser-support.js';
+
+// Each server gets its own customization folder, never the repository's.
+const folders = [];
+after(() => Promise.all(folders.map(folder => rm(folder, { recursive: true, force: true }))));
+const scratch = async () => { const folder = await mkdtemp(join(tmpdir(), 'pokome-workspace-')); folders.push(folder); return folder; };
 
 test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer();
+  const server = createServer({ customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -80,7 +88,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
     await page.locator('#stage-comment-style').selectOption('compact');
     assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-studio')).commentStyle), 'compact');
+    assert.equal((await waitForDesign(`http://127.0.0.1:${server.address().port}`, design => design.studio.commentStyle === 'compact')).studio.commentStyle, 'compact');
     assert.equal(await page.locator('.stage-comment').count(), initialCount);
     await page.locator('#stage-comment-style').selectOption('stacked');
     await page.keyboard.press('Escape');
@@ -115,7 +123,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
       await page.getByRole('textbox', { name: label, exact: true }).fill(`<新しい${label}>`);
       await page.locator('.stage-text-editor').getByRole('button', { name: '保存', exact: true }).click();
       assert.equal(await page.locator(`#${id}`).textContent(), `<新しい${label}>`);
-      assert.equal(await page.evaluate(key => JSON.parse(localStorage.getItem('pokome-studio'))[key], key), `<新しい${label}>`);
+      assert.equal((await waitForDesign(`http://127.0.0.1:${server.address().port}`, design => design.studio[key] === `<新しい${label}>`)).studio[key], `<新しい${label}>`);
     }
     await page.locator('#stage-title').hover();
     await page.getByRole('button', { name: '配信タイトルを編集', exact: true }).click();
@@ -188,20 +196,17 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.match(await page.locator('#pokome-user-theme').textContent(), /border-radius: 3px/);
     await page.locator('#theme-import').setInputFiles({ name: 'theme.css', mimeType: 'text/css', buffer: Buffer.from('.pokome-workspace { color: rgb(1, 2, 3); }') });
     await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('rgb(1, 2, 3)'));
-    const downloadEvent = page.waitForEvent('download');
-    await page.locator('#design-export').click();
-    const download = await downloadEvent;
-    const stream = await download.createReadStream();
-    const chunks = [];
-    for await (const chunk of stream) chunks.push(chunk);
-    const exported = Buffer.concat(chunks);
-    const design = JSON.parse(exported.toString());
-    assert.deepEqual(design.layout.home, home);
-    assert.equal(design.layout.talk.panels.header.hidden, true);
-    await page.locator('#theme-reset').click();
-    await page.locator('#theme-import').setInputFiles({ name: 'design.json', mimeType: 'application/json', buffer: exported });
-    await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('rgb(1, 2, 3)'));
-    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1'))), design.layout);
+    // The talk layout and theme are saved to the folder; the home layout stays in this browser.
+    const base = `http://127.0.0.1:${server.address().port}`;
+    const saved = await waitForDesign(base, design => design.theme.includes('rgb(1, 2, 3)') && design.ratios['16:9']?.layout?.panels.header.hidden === true);
+    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1'))), { version: 1, home, talk: null });
+    assert.equal(await page.locator('#design-export').count(), 0, 'the old design file export is gone');
+    assert.equal(await page.locator('#theme-import').getAttribute('accept'), '.css,text/css');
+    await page.reload();
+    assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(1, 2, 3\)/);
+    assert.equal(await page.locator('.stage-header').evaluate(element => element.style.display), 'none');
+    assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
+    assert.deepEqual((await waitForDesign(base, () => true)).ratios['16:9'].layout, saved.ratios['16:9'].layout);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
@@ -212,7 +217,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
 
 test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer();
+  const server = createServer({ customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
@@ -266,7 +271,7 @@ test('platform buttons toggle saved connections independently and open settings 
 test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
   const uuid = '3c37646f-3881-5374-2a83-149267990abc';
-  const server = createServer({ fetchImpl: async url => {
+  const server = createServer({ customizationDirectory: await scratch(), fetchImpl: async url => {
     if (url.endsWith('/speakers') && url.includes(':50021')) return Response.json([{ name: 'ボイステスト', styles: [{ id: 3, name: 'ノーマル' }] }]);
     if (url.endsWith('/v1/speakers')) return Response.json([{ speakerName: '声色テスト', speakerUuid: uuid, styles: [{ styleId: 0, styleName: 'れいせい' }] }]);
     if (url.includes('/audio_query?')) return Response.json({ accent_phrases: [] });
@@ -321,7 +326,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
 
 test('fixed home side panels keep all controls reachable by scrolling', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.addInitScript(() => {
@@ -377,7 +382,7 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
 
 test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage();
     const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -389,19 +394,48 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#home-page').isVisible(), true);
     await page.locator('#open-setup').click(); await page.locator('#complete-setup').click();
     assert.equal(await page.locator('#setup-welcome').isVisible(), false);
-    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-theme').selectOption('rose');
+    const base = 'http://127.0.0.1:' + server.address().port;
+    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
     await page.locator('[data-page="settings"]').click();
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
     const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
-    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-theme').selectOption('mint');
+    // Backups hold operating settings only: no appearance, no images.
+    assert.doesNotMatch(backup.toString(), /pokome-studio|pokome-theme|pokome-overlays|data:image/);
+    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await page.locator('#studio-theme').selectOption('rose');
+    await waitForDesign(base, design => design.studio.theme === 'rose');
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
     assert.equal(await page.locator('#confirm-restore').isDisabled(), true);
     await page.locator('#restore-settings').setInputFiles({ name: 'settings.json', mimeType: 'application/json', buffer: backup });
     assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
-    await page.locator('[data-page="studio"]').click(); assert.equal(await page.locator('#studio-theme').inputValue(), 'rose');
+    await page.locator('[data-page="studio"]').click();
+    assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
+    assert.equal(await page.locator('#studio-theme').inputValue(), 'rose', 'restoring settings leaves the folder design alone');
+    // A backup from the browser-only edition imports its appearance and images into the folder.
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+    const legacy = JSON.parse(backup.toString());
+    Object.assign(legacy.settings, {
+      'pokome-studio': JSON.stringify({ theme: 'violet', title: '旧版のタイトル', image: png, source: 'image', listCount: 7 }),
+      'pokome-theme-v1': '.pokome-workspace { color: rgb(9, 8, 7); }',
+      'pokome-overlays-v1': JSON.stringify({ version: 1, items: [{ id: 'item-1', type: 'image', assetId: 'asset-1' }], assets: { 'asset-1': png } }),
+    });
+    delete legacy.settings['pokome-history-limit'];
+    await page.locator('[data-page="settings"]').click();
+    await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
+    assert.match(await page.locator('#backup-status').textContent(), /取り込みます/);
+    await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
+    const imported = await waitForDesign(base, design => design.studio.theme === 'violet');
+    assert.equal(imported.studio.title, '旧版のタイトル');
+    assert.match(imported.studio.image, /^images\/[0-9a-f]{64}\.png$/);
+    assert.equal(imported.ratios['16:9'].overlays.assets['asset-1'], imported.studio.image, 'the same image is stored once');
+    assert.equal(imported.theme, '.pokome-workspace { color: rgb(9, 8, 7); }');
+    await page.locator('[data-page="studio"]').click();
+    assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
+    assert.equal(await page.locator('#actor-image').evaluate(image => image.complete && image.naturalWidth), 1);
+    assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });

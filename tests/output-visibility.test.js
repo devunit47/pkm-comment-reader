@@ -1,9 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeStudio, readStudio, applyCommentPreset } from '../studio.js';
+import { normalizeStudio, applyCommentPreset } from '../studio.js';
 import { selectOutputComments } from '../stage-appearance.js';
 import { createOutputView, applyOutputMessage, normalizeOutputMessage } from '../output-protocol.js';
-import { exportSettings, parseSettings, restoreSettings } from '../settings-backup.js';
 const messages = Array.from({length:100}, (_,i) => ({id:String(i),user:'u',text:'text',receivedAt:1000+i*100}));
 test('output defaults, boundaries and invalid settings recover safely', () => {
   assert.deepEqual([normalizeStudio().maxVisible,normalizeStudio().holdSeconds,normalizeStudio().newestPosition],[0,0,'bottom']);
@@ -48,19 +47,15 @@ test('resync and controller snapshots preserve receipt time, speech and credit d
   assert.equal(selectOutputComments(view.messages,{holdSeconds:5},40000).length,0);
   assert.equal(view.speech.text,'keep'); assert.equal(view.credit,'credit');
 });
-test('settings survive backup roundtrip and look presets preserve independent limits', () => {
-  const values=new Map(); const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+test('look presets preserve independent output limits and validated image references', () => {
   const settings=normalizeStudio({maxVisible:3,holdSeconds:15,newestPosition:'top'});
-  storage.setItem('pokome-studio',JSON.stringify(settings));
-  const backup=parseSettings(JSON.stringify(exportSettings(storage)));
-  values.clear(); restoreSettings(storage,backup);
-  assert.deepEqual(readStudio(storage),settings);
   for (const preset of ['theme','outline','light','dark','dense']) {
     const applied=applyCommentPreset(settings,preset);
     assert.deepEqual([applied.maxVisible,applied.holdSeconds,applied.newestPosition],[3,15,'top']);
   }
-  storage.setItem('pokome-studio','{"listCount":12}');
-  assert.deepEqual([readStudio(storage).listCount,readStudio(storage).maxVisible,readStudio(storage).holdSeconds],[12,0,0]);
+  const keep={image:()=>true}, withImage=normalizeStudio({image:'images/'+'a'.repeat(64)+'.png'},keep);
+  assert.equal(applyCommentPreset(withImage,'dark',keep).image,withImage.image);
+  assert.deepEqual([normalizeStudio({listCount:12}).maxVisible,normalizeStudio({listCount:12}).holdSeconds],[0,0]);
 });
 
 
@@ -70,7 +65,7 @@ test('unlimited selects all retained eligible messages and keeps expiration and 
   const expired=messages.map(message=>({...message,receivedAt:1000}));
   assert.equal(selectOutputComments(expired,{maxVisible:0,holdSeconds:5},6000).length,0);
   assert.deepEqual(selectOutputComments(messages.slice(-3),{maxVisible:0,newestPosition:'top'}).map(m=>m.id),['99','98','97']);
-  for (const value of [{}, {maxVisible:null}, {maxVisible:-1}]) assert.equal(readStudio({getItem:()=>JSON.stringify(value)}).maxVisible,0);
+  for (const value of [{}, {maxVisible:null}, {maxVisible:-1}]) assert.equal(normalizeStudio(value).maxVisible,0);
 });
 
 test('selection reads only the three normalized visibility fields, never embedded images', () => {

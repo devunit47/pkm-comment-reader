@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileTheme } from '../theme.js';
+import { compileTheme, MAX_THEME_CSS_BYTES } from '../theme.js';
 
 import { chromium, executablePath, browserAvailable } from './browser-support.js';
 
@@ -25,6 +25,10 @@ test('theme validation with browser CSSOM', { skip: !browserAvailable }, async (
       { css: '@layer early, pokome-settings; .pokome-workspace { color: red }', valid: false },
       { css: '@media (min-width: 1px) { @layer x { .pokome-workspace { color: red } } }', valid: false },
       { css: '@font-face { font-family: external; src: url(https://example.com/font.woff2) }', valid: false },
+      // The folder era allows up to 1MB (formerly 100KB because of browser storage).
+      { css: '/*' + 'a'.repeat(MAX_THEME_CSS_BYTES - 4) + '*/', valid: true },
+      { css: '/*' + 'a'.repeat(MAX_THEME_CSS_BYTES - 3) + '*/', valid: false },
+      { css: '/*' + 'あ'.repeat(MAX_THEME_CSS_BYTES / 3) + '*/', valid: false },
     ];
     const results = await page.evaluate(({ source, cases }) => {
       const compile = (0, eval)(`(${source})`);

@@ -4,7 +4,12 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign } from './browser-support.js';
+
+// The talk (stream) layout is saved in customization/current, not in the browser.
+const savedSpeech = async base => (await readDesign(base)).ratios['16:9']?.layout?.panels.speech;
+const speechWhere = (base, predicate) => waitForDesign(base, design => { const p = design.ratios['16:9']?.layout?.panels.speech; return !!p && predicate(p); })
+  .then(design => design.ratios['16:9'].layout.panels.speech);
 
 const uuid = '3c37646f-3881-5374-2a83-149267990abc';
 async function editorScreenshot(page, name) {
@@ -183,7 +188,7 @@ test('short and resized speech panels keep readable text and visible credits for
   await page.mouse.down();
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 - 160, { steps: 8 });
   await page.mouse.up();
-  await page.waitForFunction(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech.h < 20);
+  await speechWhere(base, p => p.h < 20);
   await page.locator('#layout-session #finish').click();
   await page.locator('#enter-talk').click();
   for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
@@ -210,7 +215,8 @@ function bottomAlignedPanels() {
 test('saved bottom-aligned speech stays in the unscrolled viewport after reload and resize', { skip: !browserAvailable }, async t => {
   const { base } = await local(t);
   const panels = bottomAlignedPanels();
-  const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
+  await saveTalk(base, { layout: { panels } });
+  const { page, errors } = await open(t, base);
   for (const engine of ['voicevox', 'coeiroink']) {
     await choose(page, engine);
     await page.reload();
@@ -226,7 +232,7 @@ test('saved bottom-aligned speech stays in the unscrolled viewport after reload 
       });
       assert.deepEqual(geometry, { visible: true, contained: true, unscrolled: true }, `${engine}/${viewport.width}x${viewport.height}`);
     }
-    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech), panels.speech);
+    assert.deepEqual(await savedSpeech(base), panels.speech);
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('#leave-talk').click();
   }
@@ -237,7 +243,8 @@ for (const action of ['drag', 'keyboard']) {
   test(`clamped saved speech responds to the first upward ${action} and retains desktop sizing`, { skip: !browserAvailable }, async t => {
     const { base } = await local(t);
     const panels = bottomAlignedPanels();
-    const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
+    await saveTalk(base, { layout: { panels } });
+  const { page, errors } = await open(t, base);
     await choose(page, 'voicevox');
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.locator('[data-page="studio"]').click();
@@ -249,7 +256,7 @@ for (const action of ['drag', 'keyboard']) {
     assert.equal(compact.y, 140);
     await page.setViewportSize({ width: 1280, height: 720 });
     assert.deepEqual(await page.locator('.stage-speech').boundingBox(), desktop, 'resize alone restores desktop geometry');
-    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech), panels.speech, 'resize alone preserves saved percentages');
+    assert.deepEqual(await savedSpeech(base), panels.speech, 'resize alone preserves saved percentages');
     await page.setViewportSize({ width: 640, height: 360 });
     const move = page.locator('.stage-speech [data-layout-handle] button').first();
     await editorScreenshot(page, `speech-editor-${action}-before-640x360`);
@@ -265,7 +272,7 @@ for (const action of ['drag', 'keyboard']) {
     const changed = await page.locator('.stage-speech').boundingBox();
     const distance = compact.y - changed.y;
     assert.ok(action === 'drag' ? distance >= 40 && distance <= 60 : Math.abs(distance - 7.2) < 1, `first ${action} moves from visible position; observed ${distance}px`);
-    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech);
+    const stored = await speechWhere(base, p => p.y !== panels.speech.y);
     assert.equal(stored.h, panels.speech.h, 'moving does not rewrite saved height');
     assert.equal(stored.w, panels.speech.w, 'moving does not rewrite saved width');
     t.diagnostic(JSON.stringify({ action, initialY: compact.y, changedY: changed.y, distance, storedY: stored.y }));
@@ -282,8 +289,8 @@ for (const action of ['drag', 'keyboard']) {
 test('one-axis resize preserves untouched saved dimensions and desktop intent', { skip: !browserAvailable }, async t => {
   const { base } = await local(t);
   const panels = bottomAlignedPanels();
-  const layout = { version: 1, home: null, talk: { panels } };
-  const { page, errors } = await open(t, base, { 'pokome-workspace-v1': layout });
+  await saveTalk(base, { layout: { panels } });
+  const { page, errors } = await open(t, base);
   await choose(page, 'voicevox');
   const scenarios = [
     { key: 'ArrowLeft', axis: 'w' }, { key: 'ArrowRight', axis: 'w' },
@@ -293,10 +300,11 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
   for (const scenario of scenarios) {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.locator('[data-page="studio"]').click();
-    await page.locator('#workspace-editor #import').setInputFiles({ name: 'axis-layout.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(layout)) });
+    // Restore the saved layout from outside; the page follows the folder's change.
+    await saveTalk(base, { layout: { panels } });
     await page.waitForFunction(() => {
-      const p = JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech;
-      return p.y === 75 && p.w === 50 && p.h === 25;
+      const style = document.querySelector('.stage-speech').style;
+      return style.width === '50%' && style.height === '25%' && style.left === '50%';
     });
     await page.locator('#workspace-editor #mode').selectOption('talk');
     await page.locator('#workspace-editor #edit').click();
@@ -311,7 +319,7 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
       await page.mouse.move(x + scenario.pointer[0], y + scenario.pointer[1], { steps: 6 });
       await page.mouse.up();
     }
-    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech);
+    const stored = await speechWhere(base, p => p[scenario.axis] !== panels.speech[scenario.axis]);
     await page.setViewportSize({ width: 1280, height: 720 });
     const returned = await page.locator('.stage-speech').boundingBox();
     const label = scenario.key || `pointer-${scenario.axis}`;
@@ -337,7 +345,8 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
 test('custom CSS minimum height updates saved speech bounds on apply, clear and appearance reset', { skip: !browserAvailable }, async t => {
   const { base } = await local(t);
   const panels = bottomAlignedPanels();
-  const { page, errors } = await open(t, base, { 'pokome-workspace-v1': { version: 1, home: null, talk: { panels } } });
+  await saveTalk(base, { layout: { panels } });
+  const { page, errors } = await open(t, base);
   await choose(page, 'voicevox');
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.locator('[data-page="studio"]').click();
@@ -350,7 +359,7 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
       return panel.height === expected && panel.bottom <= innerHeight && credit.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
     }, height);
     await editorScreenshot(page, `speech-custom-css-${height}px-1280x720`);
-    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk.panels.speech), panels.speech, 'CSS does not rewrite saved layout');
+    assert.deepEqual(await savedSpeech(base), panels.speech, 'CSS does not rewrite saved layout');
     await page.locator('#leave-talk').click();
     await page.locator('[data-page="studio"]').click();
   };
@@ -364,7 +373,8 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   await check(300);
   await page.locator('#appearance-recovery #open-reset').click();
   await page.locator('#appearance-recovery #confirm-reset').click();
-  assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
+  await waitForDesign(base, design => design.ratios['16:9'] === null);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).talk), null);
   assert.equal(await page.locator('#pokome-user-theme').textContent(), '');
   await page.locator('#enter-talk').click();
   await page.waitForFunction(() => {

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -27,10 +27,13 @@ async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [],
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   page.on('pageerror', error => errors.push(error.message));
+  if (maxVisible !== null) await saveStudio(url, { maxVisible });
   await page.goto(url);
-  if (maxVisible !== null) await page.evaluate(value => localStorage.setItem('pokome-studio', JSON.stringify({...JSON.parse(localStorage.getItem('pokome-studio') || '{}'), maxVisible:value})), maxVisible);
   return { context, page, url, errors };
 }
+// A same-origin page without output.js: a producer running the output itself
+// could ask for a resync, and the test's reply would reset the observed output.
+const producerPage = url => `${url}/speech-background.svg`;
 const comments = output => output.locator('.stage-comment').evaluateAll(cards => cards.map(card => card.textContent));
 const backgrounds = output => output.evaluate(() => ['html', 'body', 'main', '#talk-stage'].map(selector => getComputedStyle(document.querySelector(selector)).backgroundColor));
 const controls = output => output.evaluate(() => document.querySelectorAll('button,input,select,textarea,dialog,[popover],output').length);
@@ -117,13 +120,13 @@ browserTest('preview has ten persistent samples and count and direction changes 
   assert.deepEqual(errors, []);
 });
 
-browserTest('output caches studio reads and normalization across appends but refreshes settings and retained comments', async t => {
+browserTest('output caches design reads and normalization across appends but follows saved settings and retained comments', async t => {
   const { context, page, url, errors } = await fixture(t);
   await page.close();
+  await saveStudio(url, { maxVisible: 8, holdSeconds: 0 });
   const producer = await context.newPage();
-  await producer.goto(`${url}/output.html`);
+  await producer.goto(producerPage(url));
   await producer.evaluate(() => {
-    localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 8, holdSeconds: 0 }));
     window.testChannel = new BroadcastChannel('pokome-output-v1');
     window.testChannel.onmessage = event => {
       if (event.data.type === 'hello') window.testChannel.postMessage({ v: 1, type: 'snapshot', controllerId: 'cache-controller', seq: 0, received: 0, messages: [] });
@@ -131,21 +134,19 @@ browserTest('output caches studio reads and normalization across appends but ref
   });
   const output = await context.newPage();
   output.setDefaultTimeout(8000);
+  const signature = 'export function normalizeStudio(value = {}, { image = dataImage } = {}) {';
   await output.route('**/studio.js', async route => {
     const response = await route.fetch();
     const source = await response.text();
-    assert.ok(source.includes('export function normalizeStudio(value = {}) {'));
-    await route.fulfill({ response, body: source.replace('export function normalizeStudio(value = {}) {', 'export function normalizeStudio(value = {}) { globalThis.studioNormalizations = (globalThis.studioNormalizations || 0) + 1;') });
+    assert.ok(source.includes(signature));
+    await route.fulfill({ response, body: source.replace(signature, `${signature} globalThis.studioNormalizations = (globalThis.studioNormalizations || 0) + 1;`) });
   });
-  await output.addInitScript(() => {
-    window.studioReads = 0;
-    const original = Storage.prototype.getItem;
-    Storage.prototype.getItem = function(key) { if (key === 'pokome-studio') window.studioReads++; return original.call(this, key); };
-  });
+  let reads = 0;
+  output.on('request', request => { if (new URL(request.url()).pathname === '/api/design/current') reads++; });
   await output.goto(`${url}/output.html`);
   await output.waitForFunction(() => document.querySelector('#stage-count')?.textContent === '0 COMMENTS');
   await output.waitForTimeout(100);
-  const metrics = () => output.evaluate(() => ({ reads: window.studioReads, normalizations: window.studioNormalizations }));
+  const metrics = async () => ({ reads, normalizations: await output.evaluate(() => window.studioNormalizations) });
   const baseline = await metrics();
   await producer.evaluate(() => {
     for (let i = 1; i <= 40; i++) window.testChannel.postMessage({ v: 1, type: 'append', controllerId: 'cache-controller', seq: i, received: i,
@@ -153,29 +154,23 @@ browserTest('output caches studio reads and normalization across appends but ref
   });
   await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '40 COMMENTS');
   assert.equal((await comments(output)).length, 8);
-  assert.deepEqual(await metrics(), baseline);
-  await producer.evaluate(() => localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 0, holdSeconds: 0, newestPosition: 'top' })));
+  assert.deepEqual(await metrics(), baseline, 'appends neither reread nor renormalize the design');
+  // A save from any page is announced by the server and reaches the output.
+  await saveStudio(url, { maxVisible: 0, holdSeconds: 0, newestPosition: 'top' });
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 40);
   assert.equal(await output.locator('.stage-comment strong').first().textContent(), 'user40');
-  assert.ok((await metrics()).reads > baseline.reads);
   const updated = await metrics();
+  assert.ok(updated.reads > baseline.reads);
+  assert.ok(updated.normalizations > baseline.normalizations);
   await producer.evaluate(() => window.testChannel.postMessage({ v: 1, type: 'append', controllerId: 'cache-controller', seq: 41, received: 41,
     message: { id: '41', user: 'user41', text: 'body41', receivedAt: Date.now() } }));
   await output.waitForFunction(() => document.querySelector('.stage-comment strong').textContent === 'user41');
   assert.equal((await comments(output)).length, 41);
   assert.deepEqual(await metrics(), updated);
   await producer.evaluate(() => { window.testChannel.onmessage = null; });
-  // The same-window write deliberately emits no storage event. Becoming visible
-  // must refresh appearance even if the browser missed cross-window events.
-  await output.evaluate(() => localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 3, holdSeconds: 5, newestPosition: 'bottom' })));
-  assert.equal((await comments(output)).length, 41);
-  await output.evaluate(() => {
-    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
-    document.dispatchEvent(new Event('visibilitychange'));
-  });
+  await saveStudio(url, { maxVisible: 3, holdSeconds: 5, newestPosition: 'bottom' });
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 3);
   assert.equal(await output.locator('.stage-comment strong').last().textContent(), 'user41');
-  assert.ok((await metrics()).reads > updated.reads);
   await producer.evaluate(() => window.testChannel.postMessage({ v: 1, type: 'append', controllerId: 'cache-controller', seq: 42, received: 42,
     message: { id: '42', user: 'expired', text: 'expired body', receivedAt: Date.now() - 6000 } }));
   await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '42 COMMENTS');
@@ -210,7 +205,7 @@ browserTest('output defaults to unlimited comments and switching eight and unlim
   await page.locator('#draft-maxVisible').selectOption('0');
   await page.locator('#apply-design').click();
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-studio')).maxVisible), 0);
+  assert.equal((await waitForDesign(url, design => design.studio.maxVisible === 0)).studio.maxVisible, 0);
   await page.locator('#studio-max-visible').selectOption('3');
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 3);
   const initialBottom = await comments(output);
@@ -234,9 +229,9 @@ browserTest('output expires without messages, preserves speech and restores reta
   // Isolate a protocol producer so no application heartbeat can cause a redraw.
   await page.close();
   const producer = await context.newPage();
-  await producer.goto(`${url}/output.html`);
+  await saveStudio(url, { maxVisible: 8, holdSeconds: 5 });
+  await producer.goto(producerPage(url));
   await producer.evaluate(() => {
-    localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 8, holdSeconds: 5 }));
     window.testChannel = new BroadcastChannel('pokome-output-v1');
     window.testSnapshot = { v: 1, type: 'snapshot', controllerId: 'test-controller', seq: 0, received: 100,
       messages: [], speech: { user: 'speaker', text: 'keep speaking', speaking: true }, credit: 'test credit' };
@@ -244,7 +239,7 @@ browserTest('output expires without messages, preserves speech and restores reta
   });
   const output = await context.newPage();
   await output.goto(`${url}/output.html`);
-  await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '100 COMMENTS');
+  await output.waitForFunction(() => document.querySelector('#stage-count')?.textContent === '100 COMMENTS');
   assert.deepEqual(await comments(output), []);
   await producer.evaluate(() => {
     const now = Date.now();
@@ -259,14 +254,15 @@ browserTest('output expires without messages, preserves speech and restores reta
   await output.reload();
   await output.waitForFunction(() => document.querySelector('#stage-count')?.textContent === '100 COMMENTS');
   assert.deepEqual(await comments(output), []);
-  await producer.evaluate(() => localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 30, holdSeconds: 0, newestPosition: 'top' })));
+  await saveStudio(url, { maxVisible: 30, holdSeconds: 0, newestPosition: 'top' });
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 30);
   assert.equal(await output.locator('.stage-comment strong').first().textContent(), 'user99');
   await producer.evaluate(() => window.testChannel.postMessage({ v: 1, type: 'remove', controllerId: 'test-controller', seq: 1, received: 100, ids: ['99', '98'] }));
   await output.waitForFunction(() => document.querySelector('.stage-comment strong').textContent === 'user97');
   // A replacement controller keeps original receive times rather than reviving expired cards.
+  await saveStudio(url, { maxVisible: 8, holdSeconds: 5 });
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length <= 8);
   await producer.evaluate(() => {
-    localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 8, holdSeconds: 5 }));
     window.testChannel.postMessage({ v: 1, type: 'bye', role: 'controller', id: 'test-controller' });
     window.testSnapshot.controllerId = 'replacement-controller';
     window.testChannel.postMessage(window.testSnapshot);
@@ -310,7 +306,7 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   await page.close();
   await output.close();
   const producer = await context.newPage();
-  await producer.goto(`${url}/output.html`);
+  await producer.goto(producerPage(url));
   await producer.evaluate(() => {
     const channel = new BroadcastChannel('pokome-output-v1');
     channel.onmessage = event => { if (event.data.type === 'hello') channel.postMessage({ v: 1, type: 'snapshot', controllerId: 'long-card', seq: 0, received: 1,

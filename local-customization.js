@@ -3,15 +3,18 @@ import { lstat, mkdir, open, readdir, realpath } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const MAX_CUSTOM_CSS_BYTES = 100000;
-export const MAX_CUSTOM_IMAGE_BYTES = 512 * 1024;
+import { MAX_IMAGE_BYTES, MAX_THEME_CSS_BYTES } from './design-model.js';
+
+// Applied files are copied into the design folder, not into browser storage.
+export const MAX_CUSTOM_CSS_BYTES = MAX_THEME_CSS_BYTES;
+export const MAX_CUSTOM_IMAGE_BYTES = MAX_IMAGE_BYTES;
 export const DEFAULT_CUSTOMIZATION_DIRECTORY = resolve(fileURLToPath(new URL('./customization/', import.meta.url)));
 const imageTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
 
 function invalidFile() { return Object.assign(new Error('Unsupported customization file'), { code: 'INVALID_CUSTOMIZATION' }); }
 function directoryPath(directory) { return resolve(directory instanceof URL ? fileURLToPath(directory) : directory); }
 
-async function safeDirectory(path, create = false) {
+export async function safeDirectory(path, create = false) {
   if (create) {
     // Do not use recursive mkdir: it can follow a pre-existing directory symlink.
     try { await mkdir(path); } catch (error) { if (error.code !== 'EEXIST') throw error; }
@@ -36,7 +39,7 @@ function allowedName(kind, name) {
   return kind === 'styles' ? extension === '.css' : Object.hasOwn(imageTypes, extension);
 }
 
-function imageSignatureMatches(extension, bytes) {
+export function imageSignatureMatches(extension, bytes) {
   if (extension === '.png') return bytes.length >= 33 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) &&
     bytes.readUInt32BE(8) === 13 && bytes.toString('ascii', 12, 16) === 'IHDR' && bytes.readUInt32BE(16) > 0 && bytes.readUInt32BE(20) > 0;
   // JPEGs may include padding or metadata after the end marker. Check their leading
@@ -63,14 +66,16 @@ async function readCustomization(root, kind, name) {
   try {
     const opened = await handle.stat();
     if (!opened.isFile() || opened.size > maxBytes || opened.dev !== before.dev || opened.ino !== before.ino) throw invalidFile();
-    const buffer = Buffer.alloc(maxBytes + 1);
+    // Size the buffer to the file (plus one byte to detect growth), not the 20MB limit.
+    const buffer = Buffer.alloc(Math.min(maxBytes, opened.size) + 1);
     let size = 0;
     while (size < buffer.length) {
       const { bytesRead } = await handle.read(buffer, size, buffer.length - size, size);
       if (!bytesRead) break;
       size += bytesRead;
     }
-    if (size > maxBytes) throw invalidFile();
+    // A file that grew while being read is rejected instead of truncated.
+    if (size > maxBytes || size > opened.size) throw invalidFile();
     const after = await lstat(path);
     const rootAfter = await safeDirectory(root);
     const folderAfter = await safeDirectory(folder);

@@ -5,8 +5,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
+import { createHash } from 'node:crypto';
 import { DEFAULT_STUDIO } from '../studio.js';
-import { chromium, executablePath, browserAvailable } from './browser-support.js';
+import { defaultDesign } from '../design-model.js';
+import { chromium, executablePath, browserAvailable, readDesign } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const cssTwo = '.pokome-workspace .pokome-panel { border-radius: 11px; }';
@@ -35,8 +37,10 @@ function png(red, green, blue) {
 }
 const redPNG = png(229, 80, 98), bluePNG = png(70, 100, 220);
 const paddedJPEG = Buffer.concat([Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64'), Buffer.from('\0\0trailing metadata')]);
-const redURL = `data:image/png;base64,${redPNG.toString('base64')}`;
-const blueURL = `data:image/png;base64,${bluePNG.toString('base64')}`;
+// Applied images are copied into customization/current under their SHA-256.
+const ref = (bytes, extension = 'png') => `images/${createHash('sha256').update(bytes).digest('hex')}.${extension}`;
+const redURL = ref(redPNG), blueURL = ref(bluePNG);
+const served = value => `/api/design/current/${value}`;
 
 async function fixture(t, files = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-customization-browser-'));
@@ -75,7 +79,7 @@ async function studio(page, local = true) {
   await page.locator('[data-page="studio"]').click();
   if (local) await page.waitForFunction(() => !document.querySelector('#customization-status').textContent.includes('一覧を取得しています'));
 }
-const savedStudio = page => page.evaluate(() => JSON.parse(localStorage.getItem('pokome-studio') || '{}'));
+const savedStudio = async page => (await readDesign(new URL(page.url()).origin)).studio;
 const currentCSS = page => page.locator('#pokome-user-theme').textContent();
 async function applyCSS(page, name, expected = name) {
   await page.locator('#customization-style').selectOption(name);
@@ -94,6 +98,8 @@ async function resetAppearance(page, confirm = true) {
   assert.equal(await recovery.locator('dialog').evaluate(dialog => dialog.matches(':modal')), true);
   await recovery.locator(confirm ? '#confirm-reset' : '#cancel-reset').click();
   assert.equal(await recovery.locator('dialog').isVisible(), false);
+  // The reset is saved to the folder asynchronously; its message appears when done.
+  if (confirm) await page.waitForFunction(() => document.querySelector('#appearance-recovery').shadowRoot.querySelector('#result').textContent !== '');
 }
 async function screenshot(page, name) {
   if (!qaDirectory) return;
@@ -133,13 +139,13 @@ test('local picker applies CSS and both image targets, rejects invalid files and
   await applyCSS(page, 'first.css');
   assert.match(await currentCSS(page), /border-radius: 7px/);
   await applyImage(page, 'padded.jpg');
-  assert.equal((await savedStudio(page)).image, `data:image/jpeg;base64,${paddedJPEG.toString('base64')}`);
+  assert.equal((await savedStudio(page)).image, ref(paddedJPEG, 'jpg'));
   assert.equal(await page.locator('#actor-image').evaluate(image => image.complete && image.naturalWidth), 1);
   await applyImage(page, 'actor.png'); await applyImage(page, 'background.png', 'speechImage');
   assert.equal((await savedStudio(page)).image, redURL);
   assert.equal((await savedStudio(page)).speechImage, blueURL);
-  assert.equal(await page.locator('#actor-image').getAttribute('src'), redURL);
-  assert.match(await page.locator('#talk-stage').getAttribute('style'), /data:image\/png;base64/);
+  assert.equal(await page.locator('#actor-image').getAttribute('src'), served(redURL));
+  assert.ok((await page.locator('#talk-stage').getAttribute('style')).includes(served(blueURL)));
   const goodCSS = await currentCSS(page), goodStudio = await savedStudio(page);
   await applyCSS(page, 'invalid.css', '適用できません');
   assert.equal(await currentCSS(page), goodCSS);
@@ -207,7 +213,9 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal(await page.locator('#stage-title').textContent(), DEFAULT_STUDIO.title);
   assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
   assert.match(await page.locator('#talk-stage').getAttribute('style'), /\.\/speech-background\.svg/);
-  for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-workspace-v1']) assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null, key);
+  assert.deepEqual(await readDesign(base), defaultDesign());
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).home), null);
+  for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1']) assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null, key);
   for (const [key, value] of Object.entries(preserved)) assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key), value, key);
   await resetAppearance(page); await resetAppearance(page);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
@@ -217,7 +225,8 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal(await currentCSS(page), '');
   await screenshot(page, 'local-restored-default');
   for (const [file, bytes] of Object.entries(originalFiles)) assert.deepEqual(await readFile(join(directory, file)), bytes, file);
-  assert.deepEqual((await readdir(directory)).sort(), ['images', 'styles']);
+  // The applied design lives beside the user's own files, which stay untouched.
+  assert.deepEqual((await readdir(directory)).sort(), ['current', 'images', 'styles']);
   assert.ok(requests.some(url => new URL(url).pathname === '/style.css'));
   assert.ok(requests.some(url => new URL(url).pathname === '/speech-background.svg'));
   assert.equal((await fetch(base + '/style.css')).status, 200);
@@ -256,7 +265,7 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
     assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
     await held.finish();
     assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
-    assert.equal((await savedStudio(page))[target], undefined);
+    assert.equal((await savedStudio(page))[target], '');
     held = await holdResponse(page, '**/api/customizations/images/first.png', { status: 200, contentType: 'image/png', body: redPNG });
     await page.locator('#apply-customization-image').click(); await held.started;
     await applyImage(page, 'second.png', target); await held.finish();
@@ -291,33 +300,6 @@ test('image success does not hide an independent CSS failure and reset clears bo
   assert.match(await page.locator('[data-status-channel=css]').textContent(), /CSS deleted after listing/);
   await resetAppearance(page);
   assert.equal(await page.locator('#customization-status').textContent(), '標準の見た目に戻しました。');
-  assert.deepEqual(errors, []);
-});
-
-test('a pending uploaded layout cannot undo a full appearance reset', { skip: !browserAvailable }, async t => {
-  const directory = await fixture(t);
-  const base = await serve(t, createServer({ customizationDirectory: directory }));
-  const { page, errors } = await openBrowser(t, base);
-  await studio(page);
-  const layout = { version: 1, talk: null, home: { panels: Object.fromEntries(['comments', 'now', 'reading'].map((id, index) => [id, {
-    x: index * 30, y: 10, w: 25, h: 80, z: 1, hidden: false,
-  }])) } };
-  await page.evaluate(() => {
-    const originalText = File.prototype.text;
-    File.prototype.text = function () {
-      if (this.name !== 'held-layout.json') return originalText.call(this);
-      return new Promise(resolve => { window.releaseHeldLayout = resolve; });
-    };
-    window.restoreFileText = () => { File.prototype.text = originalText; };
-  });
-  await page.locator('#workspace-editor #import').setInputFiles({ name: 'held-layout.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(layout)) });
-  await page.waitForFunction(() => typeof window.releaseHeldLayout === 'function');
-  await resetAppearance(page);
-  await page.evaluate(value => { window.releaseHeldLayout(value); window.restoreFileText(); }, JSON.stringify(layout));
-  await page.waitForFunction(() => document.querySelector('#workspace-editor').shadowRoot.querySelector('#import').value === '');
-  assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
-  assert.equal(await page.locator('.comments').evaluate(panel => panel.style.position), '');
-  assert.equal(await page.locator('#layout-session').isVisible(), false);
   assert.deepEqual(errors, []);
 });
 

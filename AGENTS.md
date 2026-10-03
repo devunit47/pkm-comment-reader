@@ -27,12 +27,14 @@
 
 - 外部パッケージのインストールは不要（依存なし）。
 - CI（`.github/workflows/ci.yml`）は PR で `npm run check`・`npm test`（Ubuntu）と `build:local`（Windows）を実行する。
-- 2026-10-03 時点（GitHub Pages 版の削除後）では、全 187 件中 183 件成功・4 件スキップ（シンボリックリンク権限 3 件と非 Windows 専用 1 件）。
+- 2026-10-03 時点（P1-B1 フォルダー保存の後）では、全 203 件中 198 件成功・5 件スキップ（シンボリックリンク権限 4 件と非 Windows 専用 1 件）。
 
 ## コードの約束事
 
 - 画面の文言・文書は日本語。コード中のコメントは英語で、「なぜ」を短く書く。
 - 受け取ったコメントや設定は必ず正規化してから使う。描画は `textContent` のみで、`innerHTML` に利用者のデータを入れない。
+- 見た目（配信デザイン・テーマCSS・雑談画面の配置・追加の文字と画像・出力の大きさ）は `customization/current/design.json` と画像ファイルに保存し、`design-client.js` の `createDesignStore` を通して読み書きする。localStorage に見た目を書かない。localStorage に残すのは接続先・音声・ユーザー管理・ホームの配置・履歴件数（`pokome-history-limit`）・配信出力の背景だけ。
+- design.json の画像は `images/<SHA-256>.<拡張子>` の参照。正規化は `design-model.js` の `normalizeDesign`（画像目録で検査）を使い、`normalizeStudio`・`normalizeOverlays` を design.json に使うときは `studioOptions`・`overlayOptions` を渡す（渡さないと画像参照が消える）。保存済みの設計オブジェクトは直接書き換えず、複製してから編集する。
 - 提供するのはローカル版だけ（Windows 配布版と開発版）。GitHub Pages は静的な移転案内（`pages/index.html`）だけを公開し、アプリは置かない。
 - Windows 配布版は Twitch 専用。Kick は開発版だけで有効（Twitch 版の完成後に配布版へ追加する予定）。カメラ・マイクは扱わない。
 - 新しいブラウザ用ファイルは `asset-manifest.js` の `BROWSER_ASSETS` に追加する。
@@ -47,7 +49,10 @@
 | ファイル | 役割 |
 | --- | --- |
 | `app.js` | 操作画面。接続・読み上げ・ユーザー管理・配信デザイン設定・雑談モード |
-| `studio.js` | 配信デザイン設定（`pokome-studio`）の既定値・正規化・コメント欄プリセット |
+| `studio.js` | 配信デザイン設定の既定値・正規化・コメント欄プリセット・履歴件数 |
+| `design-model.js` | design.json の形式・正規化・画像参照の検査と URL 変換（サーバーとブラウザで共用） |
+| `design-storage.js` | `customization/current/` の読み書き API（`/api/design/*`）・画像の保存と検査・変更通知（SSE） |
+| `design-client.js` | ブラウザ側の読み書き（保存の直列化・競合時の再読み込み・変更通知の購読） |
 | `stage-appearance.js` | 配信画面の描画（見た目・追加画像・コメントカード・配置・コメント欄の見た目） |
 | `output.html` / `output.js` | 配信出力。描画のみで、接続も音声もしない |
 | `output-protocol.js` | 操作画面 → 配信出力の BroadcastChannel 同期（正規化・差分・再同期・操作画面の切替） |

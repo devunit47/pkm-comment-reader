@@ -1,13 +1,20 @@
 import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
+import { ACTIVE_RATIO } from './design-client.js';
 export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
 
-export function initializeWorkspace(storage) {
+// The home layout is an operating preference kept in this browser. The talk
+// (stream) layout is part of the design and is saved in the customization folder.
+export function initializeWorkspace(storage, designStore) {
   const roots = { home: document.querySelector('.workspace'), talk: document.querySelector('#talk-stage') };
   const selectors = { home: ['.comments', '.now', '.reading'], talk: ['.stage-header', '.stage-chat', '.stage-speech', '.stage-actor', '.stage-footer'] };
   let layouts = { version: 1, home: null, talk: null }, editing = false, snap = true, selected = 'comments', lastMode = '', target = 'home';
   let layoutGeneration = 0;
   const names = { comments: 'コメント一覧', now: '読み上げプレビュー', reading: '読み上げ設定', header: 'タイトル・接続状態', chat: '配信用コメント一覧', speech: '読み上げ中のコメント', actor: '立ち絵・映像のスペース', footer: '画面下のひとこと' };
-  try { const saved = storage.getItem(WORKSPACE_KEY); if (saved) layouts = normalizeWorkspace(JSON.parse(saved)); } catch { /* Keep the original layout when saved data is unusable. */ }
+  try { const saved = storage?.getItem(WORKSPACE_KEY); if (saved) layouts.home = normalizeWorkspace(JSON.parse(saved)).home; } catch { /* Keep the original layout when saved data is unusable. */ }
+  const storedTalk = () => designStore.design.ratios[ACTIVE_RATIO]?.layout ?? null;
+  // Edits mutate panels in place; a copy keeps the store's saved state intact.
+  const editableTalk = () => structuredClone(storedTalk());
+  layouts.talk = editableTalk();
   const panels = {}, originals = new Map();
   for (const mode of Object.keys(roots)) {
     roots[mode].classList.add('pokome-workspace');
@@ -21,7 +28,7 @@ export function initializeWorkspace(storage) {
   const host = document.createElement('div'); host.id = 'workspace-editor';
   document.getElementById('studio-page').prepend(host);
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>:host{display:block;margin-bottom:24px;font:14px system-ui;color:#e4eeea}*{box-sizing:border-box}section{background:#1a2325;border:1px solid #2c3739;border-radius:12px;padding:24px}h2{margin:0 0 12px;font-size:18px}button,select,input{font:inherit;padding:9px;border:1px solid #647a72;border-radius:6px;background:#101718;color:#e4eeea}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #ace5cd;outline-offset:3px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}label{display:grid;gap:6px;margin:12px 0}input[type=number]{width:100%}p,small{line-height:1.7;color:#b2c2b8}p{margin:8px 0}small{font-size:12px}#numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 16px}.check{display:flex;align-items:center;gap:8px}details{margin-top:20px}summary{cursor:pointer}input[type=file]{max-width:100%}</style><section aria-label="画面の配置"><h2>画面の配置</h2><p>コメントや立ち絵などの枠を、好きな場所に動かせます。変更はこのブラウザに自動で保存されます。</p><label>配置を変える画面<select id="mode"><option value="home">ホーム（コメントを操作する画面）</option><option value="talk">雑談画面（配信に映す画面）</option></select></label><p>「画面を見ながら配置を変える」を押し、枠の「移動」をつかんで動かしてください。「大きさ」で枠を広げたり縮めたりできます。終わったら「完了して設定に戻る」を押します。</p><div class="actions"><button id="edit">画面を見ながら配置を変える</button><button id="reset">選んだ画面の配置を元に戻す</button></div><p>元に戻すと、選んだ画面の枠の位置・大きさ・表示が初期状態になります。色や文字は変わりません。</p><details class="fields"><summary>枠ごとに表示や位置を調整する</summary><p id="layout-help">最初に画面を見ながら配置を変えると、ここでも調整できます。</p><label>調整する枠<select id="panel" aria-label="調整する枠"></select></label><label class="check"><input id="hidden" type="checkbox">この枠を表示しない</label><p>配置を変えている間は、表示しない枠も薄く表示されます。チェックを外すと再表示できます。</p><label class="check"><input id="snap" type="checkbox" checked>動かすときに位置をそろえる</label><p>細かいずれを減らすため、画面の2%ずつの間隔にそろえます。自由に微調整する場合はチェックを外してください。</p><div id="numbers"></div><p>矢印キーでも枠を動かせます。Shiftキーを押しながら矢印キーを押すと、大きさを変えられます。</p></details><details><summary>配置をファイルに保存・読み込みする</summary><p>配置だけを保存して、別のブラウザで使ったり、人に渡したりできます。ホームと雑談画面の両方の配置が入ります。</p><div class="actions"><button id="export">配置をファイルに保存</button></div><label>保存した配置ファイルを選ぶ<input id="import" type="file" accept="application/json,.json"></label><p>読み込むと両方の画面の配置を置き換えます。色や文字も一緒に渡す場合は「見た目の保存・読み込み」を使ってください。</p></details><p id="status" role="status" aria-live="polite"></p></section>`;
+  shadow.innerHTML = `<style>:host{display:block;margin-bottom:24px;font:14px system-ui;color:#e4eeea}*{box-sizing:border-box}section{background:#1a2325;border:1px solid #2c3739;border-radius:12px;padding:24px}h2{margin:0 0 12px;font-size:18px}button,select,input{font:inherit;padding:9px;border:1px solid #647a72;border-radius:6px;background:#101718;color:#e4eeea}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #ace5cd;outline-offset:3px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}label{display:grid;gap:6px;margin:12px 0}input[type=number]{width:100%}p,small{line-height:1.7;color:#b2c2b8}p{margin:8px 0}small{font-size:12px}#numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 16px}.check{display:flex;align-items:center;gap:8px}details{margin-top:20px}summary{cursor:pointer}input[type=file]{max-width:100%}</style><section aria-label="画面の配置"><h2>画面の配置</h2><p>コメントや立ち絵などの枠を、好きな場所に動かせます。変更は自動で保存されます（ホームの配置はこのブラウザ、雑談画面の配置はcustomizationフォルダー）。</p><label>配置を変える画面<select id="mode"><option value="home">ホーム（コメントを操作する画面）</option><option value="talk">雑談画面（配信に映す画面）</option></select></label><p>「画面を見ながら配置を変える」を押し、枠の「移動」をつかんで動かしてください。「大きさ」で枠を広げたり縮めたりできます。終わったら「完了して設定に戻る」を押します。</p><div class="actions"><button id="edit">画面を見ながら配置を変える</button><button id="reset">選んだ画面の配置を元に戻す</button></div><p>元に戻すと、選んだ画面の枠の位置・大きさ・表示が初期状態になります。色や文字は変わりません。</p><details class="fields"><summary>枠ごとに表示や位置を調整する</summary><p id="layout-help">最初に画面を見ながら配置を変えると、ここでも調整できます。</p><label>調整する枠<select id="panel" aria-label="調整する枠"></select></label><label class="check"><input id="hidden" type="checkbox">この枠を表示しない</label><p>配置を変えている間は、表示しない枠も薄く表示されます。チェックを外すと再表示できます。</p><label class="check"><input id="snap" type="checkbox" checked>動かすときに位置をそろえる</label><p>細かいずれを減らすため、画面の2%ずつの間隔にそろえます。自由に微調整する場合はチェックを外してください。</p><div id="numbers"></div><p>矢印キーでも枠を動かせます。Shiftキーを押しながら矢印キーを押すと、大きさを変えられます。</p></details><p id="status" role="status" aria-live="polite"></p></section>`;
   const $ = id => shadow.getElementById(id);
   const sessionHost = document.createElement('div'); sessionHost.id = 'layout-session';
   sessionHost.style.cssText = 'position:fixed!important;top:12px!important;left:50%!important;transform:translateX(-50%)!important;z-index:2147483647!important;';
@@ -36,7 +43,15 @@ export function initializeWorkspace(storage) {
   }
   function currentMode() { return target; }
   function available() { return !roots.talk.hidden || !document.getElementById('home-page').hidden; }
-  function save() { layoutGeneration++; try { storage.setItem(WORKSPACE_KEY, JSON.stringify(layouts)); $('status').textContent = '配置を保存しました。'; } catch { $('status').textContent = '保存できません。配置を書き出して保管してください。'; } }
+  function save() {
+    layoutGeneration++;
+    try { storage?.setItem(WORKSPACE_KEY, JSON.stringify({ version: 1, home: layouts.home, talk: null })); $('status').textContent = '配置を保存しました。'; }
+    catch { $('status').textContent = 'ホームの配置を保存できません。ブラウザの保存設定を確認してください。'; }
+    if (JSON.stringify(layouts.talk) === JSON.stringify(storedTalk())) return;
+    const design = designStore.design, entry = design.ratios[ACTIVE_RATIO];
+    designStore.save({ ...design, ratios: { ...design.ratios, [ACTIVE_RATIO]: { layout: layouts.talk, overlays: entry?.overlays ?? { version: 1, items: [], assets: {} } } } })
+      .catch(error => { $('status').textContent = `雑談画面の配置を保存できません。${error.message}`; });
+  }
   function ensure(mode) {
     if (layouts[mode]) return;
     const rect = roots[mode].getBoundingClientRect();
@@ -114,19 +129,7 @@ export function initializeWorkspace(storage) {
   $('snap').onchange = () => { snap = $('snap').checked; };
   $('panel').onchange = () => { selected = $('panel').value; fields(); };
   $('hidden').onchange = () => { layouts[currentMode()].panels[selected].hidden = $('hidden').checked; apply(currentMode()); save(); };
-  $('export').onclick = () => { const url = URL.createObjectURL(new Blob([JSON.stringify(layouts, null, 2)], { type: 'application/json' })); const link = document.createElement('a'); link.href = url; link.download = 'layout.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
   function applyLayouts(value) { layouts = normalizeWorkspace(value); for (const mode of Object.keys(roots)) apply(mode); fields(); save(); }
-  $('import').onchange = async () => {
-    const expected = ++layoutGeneration;
-    try {
-      const file = $('import').files[0]; if (!file) return;
-      if (file.size > 100000) throw new Error('配置ファイルは100KBまでです。');
-      const content = await file.text();
-      if (expected !== layoutGeneration) return;
-      applyLayouts(JSON.parse(content));
-    } catch (error) { if (expected === layoutGeneration) $('status').textContent = error.message; }
-    finally { $('import').value = ''; }
-  };
   const observer = new MutationObserver(() => {
     if (editing && (target === 'talk' ? roots.talk.hidden : document.getElementById('home-page').hidden)) {
       editing = false; for (const mode of Object.keys(roots)) apply(mode);
@@ -139,5 +142,7 @@ export function initializeWorkspace(storage) {
   // size without reapplying a layout. Updating top does not change panel size.
   new ResizeObserver(clampTalkSpeech).observe(talkSpeech);
   for (const mode of Object.keys(roots)) apply(mode); fields();
-  return { cancelPending() { layoutGeneration++; }, getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); } };
+  return { cancelPending() { layoutGeneration++; }, getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); },
+    // Shows a talk layout saved elsewhere without writing it back.
+    reload() { layoutGeneration++; layouts.talk = editableTalk(); apply('talk'); fields(); } };
 }
