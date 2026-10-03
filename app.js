@@ -12,7 +12,7 @@ import { createChatState, addMessage, userRule, visibleMessages, clearMessages }
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 import { readStudio, normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset } from './studio.js';
-import { enabledPlatforms, publication } from './app-config.js';
+import { enabledPlatforms } from './app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from './theme.js';
 
@@ -23,9 +23,8 @@ let active = 'twitch';
 document.querySelectorAll('[data-service]').forEach(element => {
   element.hidden = !enabledPlatforms.includes(element.dataset.service);
 });
-document.querySelectorAll('[data-local-only]').forEach(element => { element.hidden = publication === 'pages'; });
 if (!enabledPlatforms.includes('kick')) {
-  $('platform-help').textContent = 'Twitch専用の公開版';
+  $('platform-help').textContent = 'Twitch専用';
   $('edition-label').textContent = 'ぽこめ Reader / Twitch版';
 }
 let session = 0;
@@ -34,7 +33,7 @@ try { storage = window.localStorage; } catch { /* Storage may be disabled by the
 const savedConnections = readSavedConnections(storage);
 const savedAutoSpeech = readSavedAutoSpeech(storage);
 for (const platform of Object.keys(states)) states[platform].autoSpeech = savedAutoSpeech[platform];
-const enginePreferences = readSpeechEngines(storage, publication !== 'pages');
+const enginePreferences = readSpeechEngines(storage);
 const engineVoices = { voicevox: null, coeiroink: null };
 let voiceLoadGeneration = 0;
 const localSpeech = new LocalSpeechPlayer({ onError: message => { $('engine-status').textContent = message + ' 音声ソフトを起動して「声を再取得」を押し、音声テストを試してください。'; notify(message); stop(); } });
@@ -394,8 +393,6 @@ $('speech-engine').onchange = () => {
 };
 $('refresh-voices').onclick = () => loadVoices(true);
 $('test-voice').onclick = () => speak({ user: '音声テスト', login: 'pokome_test', text: 'こんにちは。読み上げ音声のテストです。' });
-$('local-speech-controls').hidden = publication === 'pages';
-if (publication === 'pages') for (const option of $('speech-engine').options) option.hidden = option.value !== 'browser';
 function renderSpeechSettings() {
   const state = states[active];
   $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
@@ -536,7 +533,6 @@ if (supported) {
   window.speechSynthesis.addEventListener('voiceschanged', () => { if (enginePreferences[active].engine === 'browser') loadVoices(); });
 } else {
   for (const state of Object.values(states)) state.autoSpeech = false;
-  $('auto-speech').disabled = publication === 'pages';
   loadVoices();
   $('speech-status').textContent = 'ブラウザ非対応';
 }
@@ -932,7 +928,7 @@ const designPreview = initializeDesignPreview({ storage, themeEditor,
   getStudio: () => studio, getLayouts: () => workspaceEditor.getLayouts(),
   commitStudio(next) { imageGeneration++; speechImageGeneration++; studio = next; renderStudio(); },
 });
-initializeCustomization({ publication, platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
+initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
   resetAppearance() {
     designPreview.reset();
     imageGeneration++; speechImageGeneration++;

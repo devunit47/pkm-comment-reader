@@ -1,6 +1,8 @@
-name: Publish Twitch version to GitHub Pages
-run-name: Publish Twitch-only GitHub Pages
+name: Publish moved notice to GitHub Pages
+run-name: Publish GitHub Pages moved notice
 
+# The browser edition has ended. Pages serves only a static notice so people
+# with old bookmarks, including deep links such as /output.html, learn where it went.
 on:
   workflow_dispatch:
 
@@ -16,15 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '24.19.0'
-      - run: npm run check
-      - run: npm test
-      - run: npm run build:pages
+      - name: Stage notice
+        run: |
+          mkdir site
+          cp pages/index.html site/index.html
+          cp pages/index.html site/404.html
+          touch site/.nojekyll
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
-          path: dist
+          path: site
   deploy:
     needs: build
     runs-on: ubuntu-latest

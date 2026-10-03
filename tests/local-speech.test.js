@@ -83,10 +83,9 @@ test('engine failures do not expose upstream errors or treat non-audio as WAV', 
   const response = await fetch(base + '/api/speech/voicevox/synthesis', post({ text: 'x', voice: '1', rate: 1 }));
   assert.equal(response.status, 502); assert.doesNotMatch(await response.text(), /secret/);
 });
-test('saved engines stay platform-specific and Pages always selects browser', () => {
+test('saved engines stay platform-specific', () => {
   const storage = { getItem: () => JSON.stringify({ twitch: { engine: 'voicevox', voicevox: '4' }, kick: { engine: 'coeiroink', coeiroink: 'bad' } }) };
   assert.equal(readSpeechEngines(storage).twitch.voicevox, '4'); assert.equal(readSpeechEngines(storage).kick.coeiroink, '');
-  assert.equal(readSpeechEngines(storage, false).twitch.engine, 'browser');
   assert.equal(readSpeechEngines({ getItem: () => '{' }).twitch.engine, 'browser');
 });
 test('local playback starts display only when playing, runs serially and revokes URLs', async () => {

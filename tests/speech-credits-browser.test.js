@@ -3,10 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { createServer } from '../server.js';
-import { buildPages } from '../build-pages.js';
-import { createPreviewServer } from '../preview-pages.js';
 import { chromium, executablePath, browserAvailable } from './browser-support.js';
 
 const uuid = '3c37646f-3881-5374-2a83-149267990abc';
@@ -478,21 +475,5 @@ test('a late voice-list response cannot overwrite another engine or platform cre
   await page.waitForTimeout(100); await credits(page, 'COEIROINK:つくよみちゃん');
   await page.locator('[data-platform="kick"]').click(); await credits(page, '');
   await choose(page, 'voicevox'); await credits(page, 'VOICEVOX:ずんだもん');
-  assert.deepEqual(errors, []);
-});
-
-test('Pages forces browser speech and hides local credits even with restored local preferences', { skip: !browserAvailable }, async t => {
-  const destination = pathToFileURL((await temporary(t, 'pokome-credit-pages-')) + '/');
-  await buildPages(destination);
-  const base = await serve(t, createPreviewServer(destination));
-  const { page, errors, requests } = await open(t, base + '/preview/', {
-    'pokome-speech-engines': { twitch: { engine: 'voicevox', voicevox: '3', speakerName: 'stale' } },
-  });
-  await credits(page, '');
-  assert.equal(await page.locator('#speech-engine').inputValue(), 'browser');
-  await page.locator('#test-voice').click(); await credits(page, '');
-  await page.locator('#enter-talk').click();
-  assert.equal(await page.locator('#stage-speech-credit').isVisible(), false);
-  assert.deepEqual(requests.filter(url => /\/api\//.test(new URL(url).pathname)), []);
   assert.deepEqual(errors, []);
 });

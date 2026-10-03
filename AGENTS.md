@@ -23,19 +23,19 @@
 | 構文チェック | `npm run check` |
 | 全テスト | `npm test`（`node --test`。Playwright と Chromium 系ブラウザがあればブラウザテストも実行。Windows では Edge を自動検出） |
 | 1ファイルだけ | `node --test tests/<file>.test.js` |
-| GitHub Pages 版 | `npm run build:pages` → `npm run preview:pages`（http://localhost:5174/preview/） |
 | Windows 配布版 | `npm run build:local`（`dist-local/`） |
 
 - 外部パッケージのインストールは不要（依存なし）。
 - CI（`.github/workflows/ci.yml`）は PR で `npm run check`・`npm test`（Ubuntu）と `build:local`（Windows）を実行する。
-- 2026-10-03 時点の master（`e13384b`）では、全 170 件中 166 件成功・4 件スキップ（シンボリックリンク権限 3 件と非 Windows 専用 1 件）。
+- 2026-10-03 時点（GitHub Pages 版の削除後）では、全 185 件中 181 件成功・4 件スキップ（シンボリックリンク権限 3 件と非 Windows 専用 1 件）。
 
 ## コードの約束事
 
 - 画面の文言・文書は日本語。コード中のコメントは英語で、「なぜ」を短く書く。
 - 受け取ったコメントや設定は必ず正規化してから使う。描画は `textContent` のみで、`innerHTML` に利用者のデータを入れない。
-- 公開版（GitHub Pages）は Twitch 専用。Kick は開発版だけで有効。カメラ・マイクは扱わない。
-- 新しいブラウザ用ファイルは `asset-manifest.js` の `BROWSER_ASSETS` に追加し、`tests/pages.test.js` のファイル一覧も更新する。
+- 提供するのはローカル版だけ（Windows 配布版と開発版）。GitHub Pages は静的な移転案内（`pages/index.html`）だけを公開し、アプリは置かない。
+- Windows 配布版は Twitch 専用。Kick は開発版だけで有効（Twitch 版の完成後に配布版へ追加する予定）。カメラ・マイクは扱わない。
+- 新しいブラウザ用ファイルは `asset-manifest.js` の `BROWSER_ASSETS` に追加する。
 - テーマCSS（`theme.js` の `compileTheme`）は `.pokome-workspace` 以下の通常ルール・`@media`・`@supports` だけを受け付ける。`@layer` は拒否する（次の項目の前提）。
 - 「配信デザイン」の明示設定は、テーマCSSより優先する。`style.css` の先頭で宣言した `@layer pokome-settings` に、`!important` 付きで規則を書く。配信画面へ書き込む CSS 変数も `setProperty(name, value, 'important')` で書く。「テーマのまま」の項目は、属性も変数も書かない。
 - 配信画面の見た目は `stage-appearance.js` の `renderStageAppearance` に集約し、雑談画面・デザインプレビュー（`design-preview.js` の iframe）・配信出力（`output.js`）の3か所で共用する。

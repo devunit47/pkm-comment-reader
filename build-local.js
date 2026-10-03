@@ -14,7 +14,7 @@ export async function stageLocalFiles(destination = new URL('./dist-local/', imp
   await ensureCustomizationDirectories(new URL('customization/', destination));
   for (const file of files) await copyFile(new URL(file, import.meta.url), new URL(file, destination));
   await unlink(new URL('kick.js', destination)).catch(error => { if (error.code !== 'ENOENT') throw error; });
-  await writeFile(new URL('app-config.js', destination), "export const enabledPlatforms = Object.freeze(['twitch']);\nexport const publication = 'local';\n");
+  await writeFile(new URL('app-config.js', destination), "export const enabledPlatforms = Object.freeze(['twitch']);\n");
   const html = await readFile(new URL('index.html', destination), 'utf8');
   await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden'));
 }
@@ -57,7 +57,7 @@ Write-Host ('ブラウザで ' + $readerBrowserUrl + ' を開きました。')
 Write-Host 'このウィンドウを閉じてもアプリは動作します。'
 Read-Host 'Enterでこのウィンドウを閉じる' | Out-Null
 `, 'utf8');
-  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n\r\nカスタマイズ素材は、このアプリと同じ場所のcustomization/stylesにCSS（UTF-8・100,000バイト以下）、customization/imagesにPNG・JPEG・WebP・GIF（512 KiB以下）を入れてください。直下の通常ファイルのみ対応します。\r\nアプリの一覧を更新し、素材を選択して適用してください。ファイル編集後は一覧を更新して再適用します。適用済みの内容はブラウザにコピーされ、元ファイルを削除しても保持されます。\r\n標準デザインのstyle.css・theme.js・studio.js・speech-background.svgはcustomizationの外にあります。変更せず、独自の素材だけをcustomizationに置いてください。\r\nGitHub Pages版はローカルフォルダーを一覧表示・読込できません。ブラウザからのCSS・画像の手動設定を使ってください。\r\nソース側のcustomization内の素材は配布用フォルダーへコピーしません。再ビルド時は出力先に既にあるcustomizationの内容を保持します。出力先を他の人へ渡す前に、個人の素材が残っていないか確認してください。\r\n設定バックアップには接続先・ユーザー名・画像が含まれるため、共有先にご注意ください。\r\n', 'utf8');
+  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n\r\nカスタマイズ素材は、このアプリと同じ場所のcustomization/stylesにCSS（UTF-8・100,000バイト以下）、customization/imagesにPNG・JPEG・WebP・GIF（512 KiB以下）を入れてください。直下の通常ファイルのみ対応します。\r\nアプリの一覧を更新し、素材を選択して適用してください。ファイル編集後は一覧を更新して再適用します。適用済みの内容はブラウザにコピーされ、元ファイルを削除しても保持されます。\r\n標準デザインのstyle.css・theme.js・studio.js・speech-background.svgはcustomizationの外にあります。変更せず、独自の素材だけをcustomizationに置いてください。\r\nソース側のcustomization内の素材は配布用フォルダーへコピーしません。再ビルド時は出力先に既にあるcustomizationの内容を保持します。出力先を他の人へ渡す前に、個人の素材が残っていないか確認してください。\r\n設定バックアップには接続先・ユーザー名・画像が含まれるため、共有先にご注意ください。\r\n', 'utf8');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await buildLocal(); console.log('Windows local package: dist-local/');

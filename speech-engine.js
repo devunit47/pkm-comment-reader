@@ -38,12 +38,12 @@ export function speechDisplayCredits(preference, voices, currentSpeech = null, p
   return { preview: previewCredit ?? selected, stage: currentSpeech?.credit ?? selected };
 }
 
-export function readSpeechEngines(storage, local = true) {
+export function readSpeechEngines(storage) {
   const result = { twitch: { engine: 'browser', voicevox: '', coeiroink: '' }, kick: { engine: 'browser', voicevox: '', coeiroink: '' } };
   try {
     const saved = JSON.parse(storage?.getItem('pokome-speech-engines') || '{}');
     for (const platform of Object.keys(result)) {
-      if (local && ['browser', 'voicevox', 'coeiroink'].includes(saved?.[platform]?.engine)) result[platform].engine = saved[platform].engine;
+      if (['browser', 'voicevox', 'coeiroink'].includes(saved?.[platform]?.engine)) result[platform].engine = saved[platform].engine;
       for (const engine of ['voicevox', 'coeiroink']) {
         const voice = saved?.[platform]?.[engine];
         if (validLocalVoiceId(engine, voice)) result[platform][engine] = voice;

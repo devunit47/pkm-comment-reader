@@ -3,11 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
-import { buildPages } from '../build-pages.js';
-import { createPreviewServer } from '../preview-pages.js';
 import { DEFAULT_STUDIO } from '../studio.js';
 import { chromium, executablePath, browserAvailable } from './browser-support.js';
 
@@ -348,50 +345,5 @@ test('empty and temporarily unavailable local lists recover on refresh, and repe
   }
   assert.equal(await page.locator('#customization-style').isDisabled(), false);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
-  assert.deepEqual(errors, []);
-});
-
-test('built Pages subpath explains limits without local APIs while uploads, persistence and recovery work', { skip: !browserAvailable }, async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'pokome-customization-pages-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
-  const destination = pathToFileURL(directory + '/'); await buildPages(destination);
-  const base = await serve(t, createPreviewServer(destination));
-  const { page, errors, requests } = await openBrowser(t, base + '/preview/');
-  assert.match(await page.locator('#edition-label').textContent(), /GitHub Pages/);
-  await page.locator('[data-page="settings"]').click();
-  const edition = await page.locator('#edition-capabilities').textContent();
-  assert.match(edition, /Twitchのみ/); assert.match(edition, /ブラウザ標準音声のみ/); assert.match(edition, /フォルダー一覧は取得できません/); assert.match(edition, /localhostでは別/);
-  assert.equal(await page.locator('#local-speech-controls').isVisible(), false);
-  assert.equal(await page.locator('[data-service="kick"]:visible').count(), 0);
-  await screenshot(page, 'pages-edition-capabilities');
-  await studio(page, false);
-  assert.equal(await page.locator('#local-customization').count(), 0);
-  assert.match(await page.locator('#pages-customization-help').textContent(), /ファイル選択/);
-  await page.locator('#theme-import').setInputFiles({ name: 'uploaded.css', mimeType: 'text/css', buffer: Buffer.from(cssOne) });
-  await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('7px'));
-  await page.locator('#studio-image').setInputFiles({ name: 'actor.png', mimeType: 'image/png', buffer: redPNG });
-  // The change handler decodes asynchronously; storage can still be absent on
-  // the first poll. Wait for the exact persisted image without throwing early.
-  await page.waitForFunction(value => JSON.parse(localStorage.getItem('pokome-studio') || '{}').image === value, redURL);
-  await page.locator('#studio-speech-image').setInputFiles({ name: 'speech.png', mimeType: 'image/png', buffer: bluePNG });
-  await page.waitForFunction(value => JSON.parse(localStorage.getItem('pokome-studio') || '{}').speechImage === value, blueURL);
-  const good = await savedStudio(page);
-  await page.locator('#studio-image').setInputFiles({ name: 'broken.png', mimeType: 'image/png', buffer: redPNG.subarray(0, 33) });
-  await page.waitForFunction(() => document.querySelector('#studio-image').value === '');
-  assert.deepEqual(await savedStudio(page), good);
-  await page.reload(); await studio(page, false);
-  assert.match(await currentCSS(page), /7px/); assert.deepEqual(await savedStudio(page), good);
-  await screenshot(page, 'pages-upload-customization');
-  await page.locator('#theme-import').setInputFiles({ name: 'hide.css', mimeType: 'text/css', buffer: Buffer.from(hidingCSS) });
-  await page.locator('main').waitFor({ state: 'hidden' });
-  await resetAppearance(page, false); assert.equal(await page.locator('main').isVisible(), false);
-  await resetAppearance(page); assert.equal(await page.locator('main').isVisible(), true);
-  assert.equal(await currentCSS(page), '');
-  assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
-  assert.match(await page.locator('#talk-stage').getAttribute('style'), /speech-background\.svg\?v=/);
-  assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
-  assert.deepEqual(requests.filter(url => /\/api\//.test(new URL(url).pathname)), []);
-  assert.ok(requests.some(url => new URL(url).pathname === '/preview/style.css'));
-  assert.ok(requests.some(url => new URL(url).pathname === '/preview/speech-background.svg'));
   assert.deepEqual(errors, []);
 });
