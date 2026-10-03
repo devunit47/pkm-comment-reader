@@ -25,7 +25,7 @@ export async function buildPages(destination = new URL('./dist/', import.meta.ur
   const version = createHash('sha256').update(contents.join('\n')).digest('hex').slice(0, 16);
   for (let index = 0; index < publicFiles.length; index++) {
     const file = publicFiles[index];
-    if (!file.endsWith('.js') && file !== 'index.html') continue;
+    if (!file.endsWith('.js') && !file.endsWith('.html')) continue;
     const versioned = contents[index].replace(/(["'])(\.\/[^"'?#]+\.(?:js|css|svg))\1/g,
       (_, quote, path) => `${quote}${path}?v=${version}${quote}`);
     await writeFile(new URL(file, destination), versioned);

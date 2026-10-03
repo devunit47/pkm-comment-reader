@@ -204,3 +204,7 @@ footer{color:var(--muted);font-size:12px}
 
 /* User additions are presentation-only outside the isolated editor. */
 .pokome-overlay{position:absolute;box-sizing:border-box;pointer-events:none;white-space:pre-wrap;overflow-wrap:anywhere;overflow:hidden;line-height:1.3;text-align:left;font-family:inherit}.pokome-overlay[hidden]{display:none}.pokome-overlay img{display:block;width:100%;height:100%;object-fit:contain}
+/* Stream output (output.html): no controls, no guidance, background per mode. */
+html:has(>body.pokome-output){background:transparent}body.pokome-output{background:transparent;overflow:hidden;pointer-events:none;user-select:none}body.pokome-output main{margin:0;padding:0;max-width:none;background:transparent}body.pokome-output #talk-stage{height:100vh}body.pokome-output #actor-placeholder,body.pokome-output .stage-empty{display:none!important}
+body.pokome-output[data-background=transparent] #talk-stage,body.pokome-output[data-background=key] #talk-stage{background:transparent}body.pokome-output[data-background=key]{background:var(--output-key,#00ff00)}body.pokome-output[data-background=theme]{background:var(--bg)}
+.output-notes{margin:0;padding-left:1.4em;line-height:1.7}#stream-output-panel{margin-bottom:24px}#stream-output-panel input[readonly]{width:100%}

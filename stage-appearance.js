@@ -67,3 +67,52 @@ export function renderOverlays(stage, state) {
   const current = stage.querySelectorAll(':scope > .pokome-overlay');
   if (ordered.some((element, index) => current[index] !== element)) stage.append(...ordered);
 }
+
+// The live stage and the stream output build comment cards identically so a
+// theme written for one applies to the other.
+export function renderStageComments(list, messages) {
+  const doc = list.ownerDocument;
+  list.replaceChildren(...messages.map(message => {
+    const card = doc.createElement('div');
+    card.className = 'stage-comment pokome-comment';
+    card.title = `${message.user}: ${message.text}`;
+    const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = message.user;
+    const body = doc.createElement('p'); body.className = 'pokome-comment__body'; body.textContent = message.text;
+    card.append(author, body);
+    return card;
+  }));
+}
+
+export function markClippedComments(list) {
+  if (!list.clientHeight) return;
+  const bounds = list.getBoundingClientRect();
+  for (const comment of list.querySelectorAll('.stage-comment')) {
+    const rect = comment.getBoundingClientRect();
+    // Long comments remain scrollable even when they cannot fit in one view.
+    const clipped = rect.height <= list.clientHeight && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1);
+    comment.classList.toggle('stage-comment-clipped', clipped);
+  }
+}
+
+export const TALK_PANEL_SELECTORS = Object.freeze({ header: '.stage-header', chat: '.stage-chat', speech: '.stage-speech', actor: '.stage-actor', footer: '.stage-footer' });
+
+// Read-only application of a saved talk layout, matching workspace.js outside
+// of its editing mode. A null layout keeps the stylesheet's default grid.
+export function applyTalkLayout(stage, layout) {
+  for (const [id, selector] of Object.entries(TALK_PANEL_SELECTORS)) {
+    const element = stage.querySelector(selector);
+    if (!element) continue;
+    element.classList.add('pokome-panel'); element.dataset.panelType = id;
+    const p = layout?.panels?.[id];
+    if (!p) { element.removeAttribute('style'); continue; }
+    element.style.setProperty('position', 'absolute');
+    for (const [property, value] of Object.entries({ left: p.x, top: p.y, width: p.w, height: p.h })) element.style.setProperty(property, `${value}%`);
+    element.style.zIndex = p.z; element.style.maxHeight = 'none'; element.style.margin = '0';
+    element.style.display = p.hidden ? 'none' : '';
+  }
+  const speech = stage.querySelector(TALK_PANEL_SELECTORS.speech), p = layout?.panels?.speech;
+  if (speech && p) {
+    const minimum = parseFloat(getComputedStyle(speech).minHeight) || 0;
+    speech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
+  }
+}
