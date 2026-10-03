@@ -26,7 +26,7 @@ async function fixture(t) {
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
-  await page.goto(url);
+  await page.goto(url); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   return { context, page, url, errors };
 }

@@ -1,20 +1,33 @@
 import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
-import { ACTIVE_RATIO } from './design-client.js';
+import { nearestRatio, talkLayout, defaultTalkLayout, talkOverlays, withTalk } from './design-model.js';
+import { OUTPUT_SIZES } from './output-protocol.js';
 export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
 
 // The home layout is an operating preference kept in this browser. The talk
-// (stream) layout is part of the design and is saved in the customization folder.
-export function initializeWorkspace(storage, designStore) {
+// (stream) layout is part of the design and is saved in the customization folder,
+// one per ratio. The talk screen previews the stream: it shows the ratio of the
+// chosen output size, framed to that shape, and while editing the chosen ratio.
+export function initializeWorkspace(storage, designStore, { onTalkRatioChange = () => {} } = {}) {
   const roots = { home: document.querySelector('.workspace'), talk: document.querySelector('#talk-stage') };
   const selectors = { home: ['.comments', '.now', '.reading'], talk: ['.stage-header', '.stage-chat', '.stage-speech', '.stage-actor', '.stage-footer'] };
   let layouts = { version: 1, home: null, talk: null }, editing = false, snap = true, selected = 'comments', lastMode = '', target = 'home';
   let layoutGeneration = 0;
   const names = { comments: 'コメント一覧', now: '読み上げプレビュー', reading: '読み上げ設定', header: 'タイトル・接続状態', chat: '配信用コメント一覧', speech: '読み上げ中のコメント', actor: '立ち絵・映像のスペース', footer: '画面下のひとこと' };
   try { const saved = storage?.getItem(WORKSPACE_KEY); if (saved) layouts.home = normalizeWorkspace(JSON.parse(saved)).home; } catch { /* Keep the original layout when saved data is unusable. */ }
-  const storedTalk = () => designStore.design.ratios[ACTIVE_RATIO]?.layout ?? null;
-  // Edits mutate panels in place; a copy keeps the store's saved state intact.
-  const editableTalk = () => structuredClone(storedTalk());
-  layouts.talk = editableTalk();
+  let editRatio = '16:9', shownRatio = '';
+  // Not the window's shape: browser windows vary, and the stream has a fixed size.
+  const liveRatio = () => nearestRatio(...(OUTPUT_SIZES[designStore.design.outputSize] ?? OUTPUT_SIZES['1280x720']));
+  const framing = () => editing && target === 'talk';
+  // While the talk stage is not on screen, the numeric fields and reset work on the
+  // ratio chosen for editing; on screen it previews the output size's ratio.
+  const talkRatio = () => framing() || (target === 'talk' && roots.talk.hidden) ? editRatio : liveRatio();
+  // talkLayout returns a copy: edits mutate panels in place and must not touch the store.
+  function loadTalk(ratio = talkRatio()) {
+    const changed = ratio !== shownRatio;
+    shownRatio = ratio; layouts.talk = talkLayout(designStore.design, ratio);
+    if (changed) onTalkRatioChange(ratio);
+  }
+  loadTalk();
   const panels = {}, originals = new Map();
   for (const mode of Object.keys(roots)) {
     roots[mode].classList.add('pokome-workspace');
@@ -28,7 +41,7 @@ export function initializeWorkspace(storage, designStore) {
   const host = document.createElement('div'); host.id = 'workspace-editor';
   document.getElementById('studio-page').prepend(host);
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>:host{display:block;margin-bottom:24px;font:14px system-ui;color:#e4eeea}*{box-sizing:border-box}section{background:#1a2325;border:1px solid #2c3739;border-radius:12px;padding:24px}h2{margin:0 0 12px;font-size:18px}button,select,input{font:inherit;padding:9px;border:1px solid #647a72;border-radius:6px;background:#101718;color:#e4eeea}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #ace5cd;outline-offset:3px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}label{display:grid;gap:6px;margin:12px 0}input[type=number]{width:100%}p,small{line-height:1.7;color:#b2c2b8}p{margin:8px 0}small{font-size:12px}#numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 16px}.check{display:flex;align-items:center;gap:8px}details{margin-top:20px}summary{cursor:pointer}input[type=file]{max-width:100%}</style><section aria-label="画面の配置"><h2>画面の配置</h2><p>コメントや立ち絵などの枠を、好きな場所に動かせます。変更は自動で保存されます（ホームの配置はこのブラウザ、雑談画面の配置はcustomizationフォルダー）。</p><label>配置を変える画面<select id="mode"><option value="home">ホーム（コメントを操作する画面）</option><option value="talk">雑談画面（配信に映す画面）</option></select></label><p>「画面を見ながら配置を変える」を押し、枠の「移動」をつかんで動かしてください。「大きさ」で枠を広げたり縮めたりできます。終わったら「完了して設定に戻る」を押します。</p><div class="actions"><button id="edit">画面を見ながら配置を変える</button><button id="reset">選んだ画面の配置を元に戻す</button></div><p>元に戻すと、選んだ画面の枠の位置・大きさ・表示が初期状態になります。色や文字は変わりません。</p><details class="fields"><summary>枠ごとに表示や位置を調整する</summary><p id="layout-help">最初に画面を見ながら配置を変えると、ここでも調整できます。</p><label>調整する枠<select id="panel" aria-label="調整する枠"></select></label><label class="check"><input id="hidden" type="checkbox">この枠を表示しない</label><p>配置を変えている間は、表示しない枠も薄く表示されます。チェックを外すと再表示できます。</p><label class="check"><input id="snap" type="checkbox" checked>動かすときに位置をそろえる</label><p>細かいずれを減らすため、画面の2%ずつの間隔にそろえます。自由に微調整する場合はチェックを外してください。</p><div id="numbers"></div><p>矢印キーでも枠を動かせます。Shiftキーを押しながら矢印キーを押すと、大きさを変えられます。</p></details><p id="status" role="status" aria-live="polite"></p></section>`;
+  shadow.innerHTML = `<style>:host{display:block;margin-bottom:24px;font:14px system-ui;color:#e4eeea}*{box-sizing:border-box}section{background:#1a2325;border:1px solid #2c3739;border-radius:12px;padding:24px}h2{margin:0 0 12px;font-size:18px}button,select,input{font:inherit;padding:9px;border:1px solid #647a72;border-radius:6px;background:#101718;color:#e4eeea}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #ace5cd;outline-offset:3px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}label{display:grid;gap:6px;margin:12px 0}input[type=number]{width:100%}p,small{line-height:1.7;color:#b2c2b8}p{margin:8px 0}small{font-size:12px}#numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 16px}.check{display:flex;align-items:center;gap:8px}details{margin-top:20px}summary{cursor:pointer}input[type=file]{max-width:100%}</style><section aria-label="画面の配置"><h2>画面の配置</h2><p>コメントや立ち絵などの枠を、好きな場所に動かせます。変更は自動で保存されます（ホームの配置はこのブラウザ、雑談画面の配置はcustomizationフォルダー）。</p><label>配置を変える画面<select id="mode"><option value="home">ホーム（コメントを操作する画面）</option><option value="talk">雑談画面（配信に映す画面）</option></select></label><div id="ratio-fields" hidden><label>編集する比率<select id="ratio" aria-describedby="ratio-help"><option value="16:9">16:9（横長。1920×1080・1280×720など）</option><option value="9:16">9:16（縦長。1080×1920など）</option><option value="4:3">4:3（1440×1080など）</option></select></label><p id="ratio-help">配置は比率ごとに保存します。雑談画面は「配信出力（OBS用）」で選んだ「出力の大きさ」の比率の配置を使い、その比率の枠で表示します。配信出力は、自分の大きさにいちばん近い比率の配置を使います。編集中は、選んだ比率の枠で雑談画面を表示します。</p><details id="copy-ratio"><summary>ほかの比率からコピー</summary><p>コピー元の比率の配置と追加の文字・画像を、上で選んだ「編集する比率」へ写します。コピー先の配置と追加の文字・画像は置き換わります。</p><label>コピー元<select id="copy-source"><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="4:3">4:3</option></select></label><div class="actions"><button id="copy-ratio-button" type="button">この比率へコピー</button></div></details></div><p>「画面を見ながら配置を変える」を押し、枠の「移動」をつかんで動かしてください。「大きさ」で枠を広げたり縮めたりできます。終わったら「完了して設定に戻る」を押します。</p><div class="actions"><button id="edit">画面を見ながら配置を変える</button><button id="reset">選んだ画面の配置を元に戻す</button></div><p>元に戻すと、選んだ画面の枠の位置・大きさ・表示が初期状態になります。色や文字は変わりません。</p><details class="fields"><summary>枠ごとに表示や位置を調整する</summary><p id="layout-help">最初に画面を見ながら配置を変えると、ここでも調整できます。</p><label>調整する枠<select id="panel" aria-label="調整する枠"></select></label><label class="check"><input id="hidden" type="checkbox">この枠を表示しない</label><p>配置を変えている間は、表示しない枠も薄く表示されます。チェックを外すと再表示できます。</p><label class="check"><input id="snap" type="checkbox" checked>動かすときに位置をそろえる</label><p>細かいずれを減らすため、画面の2%ずつの間隔にそろえます。自由に微調整する場合はチェックを外してください。</p><div id="numbers"></div><p>矢印キーでも枠を動かせます。Shiftキーを押しながら矢印キーを押すと、大きさを変えられます。</p></details><p id="status" role="status" aria-live="polite"></p></section>`;
   const $ = id => shadow.getElementById(id);
   const sessionHost = document.createElement('div'); sessionHost.id = 'layout-session';
   sessionHost.style.cssText = 'position:fixed!important;top:12px!important;left:50%!important;transform:translateX(-50%)!important;z-index:2147483647!important;';
@@ -47,9 +60,8 @@ export function initializeWorkspace(storage, designStore) {
     layoutGeneration++;
     try { storage?.setItem(WORKSPACE_KEY, JSON.stringify({ version: 1, home: layouts.home, talk: null })); $('status').textContent = '配置を保存しました。'; }
     catch { $('status').textContent = 'ホームの配置を保存できません。ブラウザの保存設定を確認してください。'; }
-    if (JSON.stringify(layouts.talk) === JSON.stringify(storedTalk())) return;
-    const design = designStore.design, entry = design.ratios[ACTIVE_RATIO];
-    designStore.save({ ...design, ratios: { ...design.ratios, [ACTIVE_RATIO]: { layout: layouts.talk, overlays: entry?.overlays ?? { version: 1, items: [], assets: {} } } } })
+    if (JSON.stringify(layouts.talk) === JSON.stringify(talkLayout(designStore.design, shownRatio))) return;
+    designStore.save(withTalk(designStore.design, shownRatio, { layout: layouts.talk }))
       .catch(error => { $('status').textContent = `雑談画面の配置を保存できません。${error.message}`; });
   }
   function ensure(mode) {
@@ -89,8 +101,20 @@ export function initializeWorkspace(storage, designStore) {
     } else { if (mode === 'home') { root.style.removeProperty('position'); root.style.removeProperty('display'); root.style.removeProperty('height'); } for (const element of panels[mode]) { const original = originals.get(element); original == null ? element.removeAttribute('style') : element.setAttribute('style', original); } }
     for (const element of panels[mode]) element.querySelector('[data-layout-handle]').hidden = !editing || mode !== currentMode();
   }
+  function frame() {
+    const ratio = talkRatio();
+    roots.talk.dataset.frameRatio = ratio; roots.talk.style.setProperty('--frame', ratio.replace(':', ' / '));
+    if (framing()) roots.talk.dataset.frameEditing = ''; else delete roots.talk.dataset.frameEditing;
+  }
+  // Show the talk layout of the ratio this screen should use now.
+  function showTalk() {
+    frame();
+    if (talkRatio() !== shownRatio) { loadTalk(); apply('talk'); }
+  }
   function fields() {
     sessionHost.style.setProperty('display', editing ? 'block' : 'none', 'important');
+    $('ratio-fields').hidden = target !== 'talk';
+    $('ratio').value = editRatio;
     for (const id of ['panel', 'hidden', 'x', 'y', 'w', 'h', 'z']) $(id).disabled = !layouts[target];
     $('layout-help').textContent = layouts[target] ? '枠を選んで調整してください。変更はすぐに保存されます。' : '最初に画面を見ながら配置を変えると、ここでも調整できます。';
     const mode = currentMode(); if (lastMode !== mode) { selected = PANEL_IDS[mode][0]; $('panel').replaceChildren(...PANEL_IDS[mode].map(id => { const option = document.createElement('option'); option.value = id; option.textContent = names[id]; return option; })); lastMode = mode; }
@@ -112,37 +136,62 @@ export function initializeWorkspace(storage, designStore) {
     }
   }
   function finish() {
-    editing = false;
+    editing = false; showTalk();
     if (!roots.talk.hidden) document.getElementById('leave-talk').click();
     for (const mode of Object.keys(roots)) apply(mode);
     document.querySelector('[data-page="studio"]').click(); fields(); save(); $('edit').focus();
   }
   sessionShadow.getElementById('finish').onclick = finish;
-  $('mode').onchange = () => { target = $('mode').value; fields(); };
+  $('mode').onchange = () => { target = $('mode').value; showTalk(); fields(); };
   $('edit').onclick = () => {
     document.querySelector('[data-page="home"]').click();
     if (target === 'talk') document.getElementById('enter-talk').click();
-    editing = true; ensure(target); for (const mode of Object.keys(roots)) apply(mode); fields(); save();
+    editing = true; showTalk(); ensure(target); for (const mode of Object.keys(roots)) apply(mode); fields(); save();
     sessionShadow.getElementById('finish').focus();
   };
-  $('reset').onclick = () => { layouts[currentMode()] = null; editing = false; apply(currentMode()); fields(); save(); };
+  $('reset').onclick = () => {
+    const mode = currentMode();
+    editing = false; showTalk();
+    layouts[mode] = mode === 'talk' ? defaultTalkLayout(shownRatio) : null;
+    apply(mode); fields(); save();
+  };
+  $('ratio').onchange = () => { editRatio = $('ratio').value; showTalk(); fields(); };
+  // Copying is the only way one ratio's layout reaches another.
+  $('copy-ratio-button').onclick = () => {
+    const source = $('copy-source').value;
+    if (source === editRatio) { $('status').textContent = 'コピー元と編集する比率が同じです。別の比率を選んでください。'; return; }
+    const design = designStore.design, layout = talkLayout(design, source);
+    // The landscape default is the stylesheet's grid, which has no positions to copy.
+    const next = withTalk(design, editRatio, { overlays: talkOverlays(design, source), ...(layout ? { layout } : {}) });
+    designStore.save(next).catch(error => { $('status').textContent = `コピーを保存できません。${error.message}`; });
+    layoutGeneration++;
+    if (shownRatio === editRatio) { loadTalk(editRatio); apply('talk'); }
+    onTalkRatioChange(shownRatio);
+    $('status').textContent = layout ? `${source} の配置と追加の文字・画像を ${editRatio} にコピーしました。` : `${source} は標準の並びのため、追加の文字・画像だけを ${editRatio} にコピーしました。`;
+    fields();
+  };
   $('snap').onchange = () => { snap = $('snap').checked; };
   $('panel').onchange = () => { selected = $('panel').value; fields(); };
   $('hidden').onchange = () => { layouts[currentMode()].panels[selected].hidden = $('hidden').checked; apply(currentMode()); save(); };
-  function applyLayouts(value) { layouts = normalizeWorkspace(value); for (const mode of Object.keys(roots)) apply(mode); fields(); save(); }
+  function applyLayouts(value) { layouts = normalizeWorkspace(value); layouts.talk ??= defaultTalkLayout(shownRatio); for (const mode of Object.keys(roots)) apply(mode); fields(); save(); }
   const observer = new MutationObserver(() => {
     if (editing && (target === 'talk' ? roots.talk.hidden : document.getElementById('home-page').hidden)) {
-      editing = false; for (const mode of Object.keys(roots)) apply(mode);
+      editing = false; showTalk(); for (const mode of Object.keys(roots)) apply(mode);
     }
-    fields();
+    // Entering or leaving talk mode switches between the output ratio and the edit ratio.
+    showTalk(); fields();
   });
   observer.observe(roots.talk, { attributes: true, attributeFilter: ['hidden'] });
   observer.observe(document.getElementById('home-page'), { attributes: true, attributeFilter: ['hidden'] });
   // CSS application/removal and responsive minimums can change the rendered
   // size without reapplying a layout. Updating top does not change panel size.
   new ResizeObserver(clampTalkSpeech).observe(talkSpeech);
-  for (const mode of Object.keys(roots)) apply(mode); fields();
+
+  frame(); for (const mode of Object.keys(roots)) apply(mode); fields();
   return { cancelPending() { layoutGeneration++; }, getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); },
     // Shows a talk layout saved elsewhere without writing it back.
-    reload() { layoutGeneration++; layouts.talk = editableTalk(); apply('talk'); fields(); } };
+    // Also follows a new output size, which decides the talk screen's ratio.
+    reload() { layoutGeneration++; frame(); loadTalk(talkRatio()); apply('talk'); fields(); },
+    // The ratio whose layout and overlays the talk screen shows now.
+    talkRatio: () => shownRatio };
 }

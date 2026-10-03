@@ -5,7 +5,7 @@ export const OUTPUT_CHANNEL = 'pokome-output-v1';
 export const OUTPUT_PREFERENCES_KEY = 'pokome-output-v1';
 export const BACKGROUNDS = Object.freeze(['transparent', 'theme', 'key']);
 export const KEY_COLORS = Object.freeze(['00ff00', 'ff00ff', '0000ff']);
-export const OUTPUT_SIZES = Object.freeze({ '1920x1080': [1920, 1080], '1280x720': [1280, 720], '1080x1920': [1080, 1920] });
+export const OUTPUT_SIZES = Object.freeze({ '1920x1080': [1920, 1080], '1280x720': [1280, 720], '1080x1920': [1080, 1920], '1440x1080': [1440, 1080] });
 export const HEARTBEAT_MS = 2000;
 // Hidden pages may run timers only once a minute, so presence is generous and
 // losing it never clears what an output has already rendered.

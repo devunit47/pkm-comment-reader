@@ -8,7 +8,7 @@ import { createServer } from '../server.js';
 import { createHash } from 'node:crypto';
 import { DEFAULT_STUDIO } from '../studio.js';
 import { defaultDesign } from '../design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const cssTwo = '.pokome-workspace .pokome-panel { border-radius: 11px; }';
@@ -59,7 +59,7 @@ async function serve(t, server) {
 async function openBrowser(t, url, initialStorage = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   t.after(() => browser.close());
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
   page.setDefaultTimeout(8000);
   const errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));

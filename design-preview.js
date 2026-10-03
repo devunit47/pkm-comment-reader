@@ -1,9 +1,9 @@
 import { normalizeStudio } from './studio.js';
 import { compileTheme } from './theme.js';
-import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments } from './stage-appearance.js';
+import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { MAX_OVERLAYS, normalizeOverlays, createOverlay, removeOverlay, addOverlayAsset } from './overlay-model.js';
-import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions } from './design-model.js';
-import { checkImageFile, ACTIVE_RATIO } from './design-client.js';
+import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, withTalk } from './design-model.js';
+import { checkImageFile } from './design-client.js';
 
 const VISUAL_KEYS = Object.keys(normalizeStudio());
 const visual = studio => Object.fromEntries(VISUAL_KEYS.map(key => [key, studio[key]]));
@@ -16,12 +16,15 @@ const SAMPLE_COMMENTS = Object.freeze([
   'コメント欄の幅で折り返しが変わります。', '背景が明るい場面と暗い場面で確認しましょう。',
   '表示件数は履歴の保持件数とは別の設定です。', 'これが最後に届いたサンプルコメントです。',
 ].map((text, index) => ({ id: `sample-${index + 1}`, user: `サンプル${String(index + 1).padStart(2, '0')}`, text, receivedAt: index + 1 })));
-const resolutions = { 1280: 720, 960: 540, 640: 360 };
+const size = value => value.split('x').map(Number);
 
-export function initializeDesignPreview({ designStore, themeEditor, getStudio, commitStudio, getLayouts = () => null, beginDraft = () => {} }) {
+// The draft keeps the additions of every ratio; the preview size picks which
+// ratio is shown and edited. getLiveRatio tells which ratio the talk screen shows.
+export function initializeDesignPreview({ designStore, themeEditor, getStudio, commitStudio, getLiveRatio = () => '16:9', beginDraft = () => {} }) {
   const live = document.getElementById('talk-stage');
   const assetOptions = () => overlayOptions(designStore.images), imageOptions = () => studioOptions(designStore.images);
-  const storedOverlays = () => structuredClone(designStore.design.ratios[ACTIVE_RATIO]?.overlays ?? normalizeOverlays());
+  const storedOverlays = () => talkOverlays(designStore.design, getLiveRatio());
+  const previewRatio = () => nearestRatio(...size($('preview-width').value));
   let overlays = storedOverlays(), draft = null, baseline, selected = '', epoch = 0, pending = 0, stale = false, revision = 0;
   let commentResizeObserver, previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', renderedStudio = null, dragCleanup;
   const requests = new Map();
@@ -32,7 +35,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   shadow.innerHTML = `<style>
     :host{display:block;color:#edf4e9;font:14px system-ui;margin-bottom:24px}*{box-sizing:border-box}section{background:#1a2325;border:1px solid #506960;border-radius:12px;padding:24px}h2,h3,p{margin:0 0 12px}p{line-height:1.7;color:#c0d0c8}button,input,select,textarea{font:inherit;background:#101b18;color:#edf4e9;border:1px solid #70877b;border-radius:6px;padding:9px;max-width:100%}button{cursor:pointer}button:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #ace5cd;outline-offset:2px}label{display:grid;gap:5px;margin:10px 0}textarea{width:100%;resize:vertical}input[type=color]{width:100%;height:40px;padding:3px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.primary{background:#ace5cd;color:#11271e;font-weight:700}dialog{background:#101a18;color:#edf4e9;border:1px solid #ace5cd;border-radius:12px;width:calc(100vw - 24px);max-width:1500px;height:calc(100dvh - 24px);max-height:calc(100dvh - 24px);padding:20px;overflow:auto}dialog::backdrop{background:#000b}.bar{display:flex;gap:12px;justify-content:space-between;align-items:center;flex-wrap:wrap}.editor{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:20px}.preview-pane{min-width:0;position:sticky;top:0;align-self:start}.viewport{position:relative;overflow:hidden;background:#080e0c;border:1px solid #5d776b;border-radius:8px;width:100%}iframe{position:absolute;left:0;top:0;border:0;transform-origin:top left;background:#122321}.controls{min-width:0}.numbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.numbers input{width:100%}details{margin:16px 0;border-top:1px solid #40554b;padding-top:12px}summary{cursor:pointer}small{line-height:1.6;color:#c0d0c8}.check{display:flex;gap:8px;align-items:center}#design-status{margin:10px 0;min-height:24px}#overlay-text-fields[hidden],dialog:not([open]){display:none}@media(max-width:850px){.editor{grid-template-columns:1fr}.preview-pane{position:static}dialog{padding:12px}.controls{display:grid;grid-template-columns:minmax(0,1fr)}}
   </style><section><h2>文字・画像とデザインのプレビュー</h2><p>雑談画面に好きな文章や画像を複数追加できます。プレビュー内で移動・サイズ・重なりを調整し、「適用する」でまとめて保存します。</p><button id="open-design-preview" class="primary" type="button">プレビューでデザインを編集</button><p id="preview-result" role="status"></p><p><small>この編集画面での変更は適用まで配信画面に反映されません。下の従来の設定・配置操作は、これまでどおり即時反映されます。</small></p></section>
-  <dialog id="design-dialog" aria-labelledby="design-title"><div class="bar"><h2 id="design-title">デザインを試す</h2><div class="actions"><button id="apply-design" class="primary" type="button">適用する</button><button id="cancel-design" type="button">キャンセル</button></div></div><p>サンプル表示です。チャット接続・音声再生は行いません。外部フォントを読み込まないため、文字の折り返しは適用後も確認してください。画面収録・ウィンドウキャプチャ中は、この編集画面自体も映るためOBSの別シーンなどで編集してください。</p><p id="design-status" role="status" aria-live="polite"></p><div class="editor"><div class="preview-pane"><label>確認する画面サイズ<select id="preview-width"><option value="1280">1280 × 720</option><option value="960">960 × 540</option><option value="640">640 × 360</option></select></label><div class="viewport" id="preview-viewport"><iframe id="design-preview-frame" title="雑談画面のデザインプレビュー" sandbox="allow-same-origin"></iframe></div><p><small>追加した文字・画像の「移動」「大きさ」をドラッグできます。矢印キーで移動、Shift＋矢印でサイズ変更。位置は画面に対する割合で保存します。</small></p></div><div class="controls"><h3>追加する文字・画像</h3><p><small>最大20個。画像はPNG・JPEG・WebP・GIF、1枚20MB・1600万画素まで。</small></p><div class="actions"><button id="add-text" type="button">文字を追加</button><button id="delete-overlay" type="button">選んだ項目を削除</button></div><label>画像を追加<input id="overlay-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label>編集する項目<select id="overlay-select"></select></label><label class="check"><input id="overlay-hidden" type="checkbox">この項目を非表示</label><div id="overlay-text-fields"><label>表示する文章<textarea id="overlay-text" maxlength="1000" rows="3"></textarea></label><label>文字の色<input id="overlay-color" type="color"></label><label>文字の大きさ（px）<input id="overlay-font-size" type="number" min="12" max="160"></label></div><div class="numbers">${[['x','横位置（%）'],['y','縦位置（%）'],['w','幅（%）'],['h','高さ（%）'],['z','重なり順 0〜99']].map(([key,label]) => `<label>${label}<input id="overlay-${key}" type="number" min="${['w','h'].includes(key)?2:0}" max="${key==='z'?99:100}" step="1"></label>`).join('')}</div><p><small>大きい重なり順の項目ほど手前に表示します。既存の枠は下の「画面の配置」で変更できます。</small></p>
+  <dialog id="design-dialog" aria-labelledby="design-title"><div class="bar"><h2 id="design-title">デザインを試す</h2><div class="actions"><button id="apply-design" class="primary" type="button">適用する</button><button id="cancel-design" type="button">キャンセル</button></div></div><p>サンプル表示です。チャット接続・音声再生は行いません。外部フォントを読み込まないため、文字の折り返しは適用後も確認してください。画面収録・ウィンドウキャプチャ中は、この編集画面自体も映るためOBSの別シーンなどで編集してください。</p><p id="design-status" role="status" aria-live="polite"></p><div class="editor"><div class="preview-pane"><label>確認する画面サイズ<select id="preview-width">${PREVIEW_SIZES.map(value => `<option value="${value}"${value === '1280x720' ? ' selected' : ''}>${value.replace('x', ' × ')}（${nearestRatio(...size(value))}）</option>`).join('')}</select></label><label class="check"><input id="preview-guides" type="checkbox" checked>画面端のガイドを表示</label><p id="preview-ratio-help"><small>比率ごとに、配置と追加の文字・画像を別々に保存します。サイズを変えると、その比率の内容を表示・編集します。</small></p><div class="viewport" id="preview-viewport"><iframe id="design-preview-frame" title="雑談画面のデザインプレビュー" sandbox="allow-same-origin"></iframe></div><p><small>追加した文字・画像の「移動」「大きさ」をドラッグできます。矢印キーで移動、Shift＋矢印でサイズ変更。位置は画面に対する割合で保存します。</small></p></div><div class="controls"><h3>追加する文字・画像</h3><p><small>最大20個。画像はPNG・JPEG・WebP・GIF、1枚20MB・1600万画素まで。</small></p><div class="actions"><button id="add-text" type="button">文字を追加</button><button id="delete-overlay" type="button">選んだ項目を削除</button></div><label>画像を追加<input id="overlay-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label>編集する項目<select id="overlay-select"></select></label><label class="check"><input id="overlay-hidden" type="checkbox">この項目を非表示</label><div id="overlay-text-fields"><label>表示する文章<textarea id="overlay-text" maxlength="1000" rows="3"></textarea></label><label>文字の色<input id="overlay-color" type="color"></label><label>文字の大きさ（px）<input id="overlay-font-size" type="number" min="12" max="160"></label></div><div class="numbers">${[['x','横位置（%）'],['y','縦位置（%）'],['w','幅（%）'],['h','高さ（%）'],['z','重なり順 0〜99']].map(([key,label]) => `<label>${label}<input id="overlay-${key}" type="number" min="${['w','h'].includes(key)?2:0}" max="${key==='z'?99:100}" step="1"></label>`).join('')}</div><p><small>大きい重なり順の項目ほど手前に表示します。既存の枠は下の「画面の配置」で変更できます。</small></p>
   <details><summary>画面のデザインも試す</summary><label>テーマ<select id="draft-theme"><option value="mint">ミントの夜</option><option value="rose">ローズの夜</option><option value="violet">すみれの夜</option><option value="paper">お昼の喫茶室</option></select></label><label>配色モード<select id="draft-accentMode"><option value="theme">テーマに合わせる</option><option value="custom">自分で設定</option></select></label><label>アクセントカラー<input id="draft-accent" type="color"></label><label class="check"><input id="draft-decoration" type="checkbox">星やハートの装飾を表示</label>${[['title','タイトル',60],['subtitle','サブタイトル',100],['footer','画面下のひとこと',100],['speechTitle','読み上げ枠の見出し',40]].map(([key,label,max]) => `<label>${label}<input id="draft-${key}" type="text" maxlength="${max}"></label>`).join('')}<label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="28"></label><label>読み上げの文字サイズ<select id="draft-speechFontSize"><option value="16">16px</option><option value="22">22px</option><option value="28">28px</option><option value="32">32px</option></select></label><label>読み上げ枠<select id="draft-speechStyle"><option value="panel">通常のパネル</option><option value="bubble">セリフの吹き出し</option><option value="image">背景画像</option></select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label><label>コメントの表示<select id="draft-commentStyle"><option value="stacked">名前を上に表示</option><option value="anonymous">名前なし</option><option value="inline">名前と本文を横並び</option><option value="compact">1行コンパクト</option></select></label></details>
   <label>配信出力の表示件数<select id="draft-maxVisible"><option value="0">制限なし</option><option value="1">1件</option><option value="2">2件</option><option value="3">3件</option><option value="4">4件</option><option value="5">5件</option><option value="6">6件</option><option value="7">7件</option><option value="8">8件</option><option value="9">9件</option><option value="10">10件</option><option value="11">11件</option><option value="12">12件</option><option value="13">13件</option><option value="14">14件</option><option value="15">15件</option><option value="16">16件</option><option value="17">17件</option><option value="18">18件</option><option value="19">19件</option><option value="20">20件</option><option value="21">21件</option><option value="22">22件</option><option value="23">23件</option><option value="24">24件</option><option value="25">25件</option><option value="26">26件</option><option value="27">27件</option><option value="28">28件</option><option value="29">29件</option><option value="30">30件</option></select></label><label>配信出力の表示時間<select id="draft-holdSeconds"><option value="0">時間では消さない</option><option value="5">5秒</option><option value="15">15秒</option><option value="30">30秒</option></select></label><label>配信出力の新着位置<select id="draft-newestPosition"><option value="bottom">下</option><option value="top">上</option></select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p><details><summary>追加CSSをプレビュー</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。</small></p></details><button id="draft-reset" type="button">追加項目・配色・文章・画像・CSSを標準に戻して試す</button><p><small>既存の枠の配置は変わりません。「適用する」までは元のデザインを保持します。</small></p></div></div></dialog>`;
   const $ = id => shadow.getElementById(id), dialog = $('design-dialog'), frame = $('design-preview-frame');
@@ -68,12 +71,28 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
     for (const key of fieldKeys) { const element = $(`draft-${key}`); if (element.type === 'checkbox') element.checked = draft.studio[key]; else element.value = draft.studio[key]; }
     $('draft-css').value = draft.theme;
   }
+  // Portrait previews fit the height instead of stretching across the width.
   function scale() {
-    const width = Number($('preview-width').value), height = resolutions[width], available = $('preview-viewport').clientWidth;
-    frame.style.width = `${width}px`; frame.style.height = `${height}px`; frame.style.transform = `scale(${available / width})`;
-    $('preview-viewport').style.height = `${height * available / width}px`;
+    const [width, height] = size($('preview-width').value), available = $('preview-viewport').parentElement.clientWidth;
+    const factor = Math.min(available / width, Math.max(240, innerHeight * .7) / height);
+    frame.style.width = `${width}px`; frame.style.height = `${height}px`; frame.style.transform = `scale(${factor})`;
+    $('preview-viewport').style.width = `${width * factor}px`; $('preview-viewport').style.height = `${height * factor}px`;
   }
-  new ResizeObserver(scale).observe($('preview-viewport'));
+  new ResizeObserver(scale).observe($('preview-viewport').parentElement);
+  // Edges viewers' apps may cover, drawn only in the preview.
+  function drawGuides() {
+    if (!frameDoc) return;
+    let guides = frameDoc.getElementById('safe-guides');
+    if (!guides) { guides = frameDoc.createElement('div'); guides.id = 'safe-guides'; frameDoc.body.append(guides); }
+    guides.hidden = !$('preview-guides').checked;
+    const area = SAFE_AREAS[draft?.ratio || previewRatio()];
+    if (guides.dataset.ratio === (draft?.ratio || previewRatio())) return;
+    guides.dataset.ratio = draft?.ratio || previewRatio();
+    const box = (className, style, text) => { const element = frameDoc.createElement('div'); element.className = className; Object.assign(element.style, style); element.textContent = text; return element; };
+    guides.replaceChildren(...(area.shade
+      ? [box('guide-shade', { top: '0', height: `${area.top}%` }, 'アプリの表示で隠れやすい範囲'), box('guide-shade', { bottom: '0', height: `${area.bottom}%` }, 'アプリの表示で隠れやすい範囲')]
+      : [box('guide-line', { top: `${area.top}%`, bottom: `${area.bottom}%`, left: `${area.left}%`, right: `${area.right}%` }, '文字を置かない目安')]));
+  }
   function draw() {
     if (!previewStage || !draft) return;
     if (renderedStudio !== draft.studio) { renderStageAppearance(previewStage, resolveStudioImages(draft.studio), defaultImage); renderedStudio = draft.studio; }
@@ -101,12 +120,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       hit.style.zIndex = 1000 + item.z; hit.style.opacity = item.hidden ? '.5' : '1';
     }
     for (const hit of old.values()) hit.remove();
-    positionHits();
+    positionHits(); drawGuides();
     // Match the live workspace's responsive speech minimum without changing its
     // saved desktop coordinates when previewing another resolution.
     const speech = previewStage.querySelector('.stage-speech');
     if (speech.style.position === 'absolute') {
-      const panel = baseline.speechPanel;
+      const panel = baseline.layouts[draft.ratio]?.panels.speech;
       if (panel) speech.style.top = `min(${panel.y}%, max(0px, calc(100% - max(${panel.h}%, ${parseFloat(frame.contentWindow.getComputedStyle(speech).minHeight)||0}px))))`;
     }
     updateSampleVisibility(true);
@@ -179,8 +198,10 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   $('open-design-preview').onclick = async () => {
     if (draft) return;
     beginDraft(); themeEditor.beginChange(); invalidate(); const token = epoch; stale = false;
-    baseline = {studio:visual(getStudio()), theme:themeEditor.getTheme(), speechPanel:clone(getLayouts()?.talk?.panels?.speech || null), revision:designStore.revision};
-    draft = {studio:clone(getStudio()),theme:baseline.theme,overlays:clone(overlays)};
+    const design = designStore.design, ratio = previewRatio();
+    baseline = {studio:visual(getStudio()), theme:themeEditor.getTheme(), layouts:Object.fromEntries(RATIOS.map(r => [r, talkLayout(design, r)])), revision:designStore.revision};
+    const byRatio = Object.fromEntries(RATIOS.map(r => [r, talkOverlays(design, r)]));
+    draft = {studio:clone(getStudio()),theme:baseline.theme,ratio,byRatio,overlays:byRatio[ratio]};
     selected = draft.overlays.items[0]?.id || ''; compiledCSS = compileTheme(draft.theme);
     dialog.showModal(); status('プレビューを準備しています…'); fields(); studioFields(); scale();
     try {
@@ -199,9 +220,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       frameDoc = frame.contentDocument;
       const css = frameDoc.createElement('style'); css.textContent = previewCSS;
       const theme = frameDoc.createElement('style'); theme.id = 'preview-theme';
-      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,.stage-font-controls,[data-layout-handle]{visibility:hidden!important}#talk-stage button{pointer-events:none}.overlay-hit{position:absolute;border:1px dashed #ace5cd;box-sizing:border-box;pointer-events:none}.overlay-hit[data-selected=true]{outline:2px solid #fff}.overlay-hit button{font:14px system-ui;padding:5px;background:#fff;color:#10291e;border:1px solid #174b39;cursor:move;touch-action:none;pointer-events:auto}.overlay-hit button:last-child{position:absolute;right:0;bottom:0;cursor:nwse-resize}.overlay-hit button:focus-visible{outline:3px solid #ffcc6f}`;
+      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,.stage-font-controls,[data-layout-handle]{visibility:hidden!important}#talk-stage button{pointer-events:none}.overlay-hit{position:absolute;border:1px dashed #ace5cd;box-sizing:border-box;pointer-events:none}.overlay-hit[data-selected=true]{outline:2px solid #fff}.overlay-hit button{font:14px system-ui;padding:5px;background:#fff;color:#10291e;border:1px solid #174b39;cursor:move;touch-action:none;pointer-events:auto}.overlay-hit button:last-child{position:absolute;right:0;bottom:0;cursor:nwse-resize}.overlay-hit button:focus-visible{outline:3px solid #ffcc6f}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}.guide-line{position:absolute;border:2px dashed #ffcc6fcc;color:#ffcc6f;text-shadow:0 1px 2px #000;padding:4px}`;
       frameDoc.head.append(css, theme, controls);
       previewStage = frameDoc.importNode(live,true); previewStage.hidden = false;
+      // The copy carries the live ratio's layout and edit frame; show the preview ratio's own.
+      delete previewStage.dataset.frameRatio; previewStage.style.removeProperty('--frame');
+      applyTalkLayout(previewStage, baseline.layouts[draft.ratio]);
       for (const element of previewStage.querySelectorAll('dialog,[popover],[data-layout-handle],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
       for (const element of previewStage.querySelectorAll('button,input,select,textarea,a')) { element.setAttribute('tabindex','-1'); element.removeAttribute('href'); }
       previewStage.querySelector('#stage-speech-user').textContent = 'サンプルさん'; previewStage.querySelector('#stage-speech-text').textContent = '表示の色と大きさを確認しています。';
@@ -218,7 +242,18 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       draw(); buttons(); status('プレビュー内だけの変更です。確認できたら「適用する」を押してください。');
     } catch (error) { if (isCurrent(token)) status(`プレビューを開けませんでした：${error.message}`); }
   };
-  $('preview-width').onchange = () => { dragCleanup?.(); scale(); requestAnimationFrame(draw); };
+  $('preview-width').onchange = () => {
+    dragCleanup?.(); scale();
+    const ratio = previewRatio();
+    if (draft && ratio !== draft.ratio) {
+      // Keep this ratio's edits and switch to the other ratio's own additions and layout.
+      draft.byRatio[draft.ratio] = draft.overlays; draft.ratio = ratio; draft.overlays = draft.byRatio[ratio];
+      selected = draft.overlays.items[0]?.id || ''; fields();
+      if (previewStage) applyTalkLayout(previewStage, baseline.layouts[ratio]);
+    }
+    requestAnimationFrame(draw);
+  };
+  $('preview-guides').onchange = drawGuides;
   $('overlay-select').onchange = () => { selected = $('overlay-select').value; fields(); draw(); };
   $('add-text').onclick = () => {
     if (!draft || draft.overlays.items.length >= MAX_OVERLAYS) return;
@@ -264,7 +299,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
     catch (error) { status(error.message); }
   };
   $('draft-reset').onclick = () => {
-    if (!draft || !previewStage) return; invalidate(); draft = {studio:normalizeStudio(),theme:'',overlays:normalizeOverlays()}; compiledCSS = ''; selected = ''; fields(); studioFields(); draw(); status('標準の見た目をプレビューしています。キャンセルで戻せます。');
+    if (!draft || !previewStage) return; invalidate(); draft = {studio:normalizeStudio(),theme:'',ratio:draft.ratio,byRatio:Object.fromEntries(RATIOS.map(r => [r, normalizeOverlays()]))}; draft.overlays = draft.byRatio[draft.ratio]; compiledCSS = ''; selected = ''; fields(); studioFields(); draw(); status('標準の見た目をプレビューしています。キャンセルで戻せます。');
   };
   $('apply-design').onclick = async () => {
     if (!draft || pending || !previewStage) return;
@@ -274,19 +309,26 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       if (stale || designStore.revision !== baseline.revision) throw new Error('別の画面で見た目が変更されました。キャンセルして開き直してください。');
       if (JSON.stringify(visual(getStudio())) !== JSON.stringify(baseline.studio) || themeEditor.getTheme() !== baseline.theme) throw new Error('編集開始後に見た目が変更されました。キャンセルして開き直してください。');
       compileTheme(draft.theme);
-      const next = normalizeStudio(draft.studio,imageOptions()), nextOverlays = normalizeOverlays(draft.overlays,assetOptions());
-      const design = designStore.design;
-      // One design.json write: studio, theme and overlays change together or not at all.
-      await designStore.save({ ...design, studio: next, theme: draft.theme,
-        ratios: { ...design.ratios, [ACTIVE_RATIO]: { layout: design.ratios[ACTIVE_RATIO]?.layout ?? null, overlays: nextOverlays } } });
+      const next = normalizeStudio(draft.studio,imageOptions());
+      draft.byRatio[draft.ratio] = draft.overlays;
+      // One design.json write: studio, theme and every ratio's additions change together or not at all.
+      let design = { ...designStore.design, studio: next, theme: draft.theme };
+      for (const r of RATIOS) {
+        const overlaysForRatio = normalizeOverlays(draft.byRatio[r],assetOptions());
+        if (JSON.stringify(overlaysForRatio) !== JSON.stringify(talkOverlays(design, r))) design = withTalk(design, r, { overlays: overlaysForRatio });
+      }
+      await designStore.save(design);
       if (!isCurrent(token)) return;
       // All validation and persistence finishes before changing the live stage.
-      themeEditor.reflectTheme(draft.theme); commitStudio(next); overlays = nextOverlays; renderOverlays(live,resolveOverlayAssets(overlays)); close(); $('preview-result').textContent = 'デザインを適用・保存しました。';
+      themeEditor.reflectTheme(draft.theme); commitStudio(next); showLive(); close(); $('preview-result').textContent = 'デザインを適用・保存しました。';
     } catch (error) { if (isCurrent(token)) status(`適用できませんでした：${error.message}`); }
     finally { if (isCurrent(token)) { pending--; buttons(); } }
   };
+  function showLive() { overlays = storedOverlays(); renderOverlays(live,resolveOverlayAssets(overlays)); }
   return {
     reset() { if (draft) close(); overlays = normalizeOverlays(); renderOverlays(live,overlays); },
+    // The talk screen switched ratio: show that ratio's additions.
+    showLive,
     getOverlays: () => clone(overlays),
     // Another page saved the design: show it, and refuse to apply an older draft.
     // A failed save only restores the saved design; an open draft stays usable.

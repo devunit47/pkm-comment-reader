@@ -28,7 +28,7 @@ async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [],
   page.setDefaultTimeout(8000);
   page.on('pageerror', error => errors.push(error.message));
   if (maxVisible !== null) await saveStudio(url, { maxVisible });
-  await page.goto(url);
+  await page.goto(url); await appReady(page);
   return { context, page, url, errors };
 }
 // A same-origin page without output.js: a producer running the output itself
@@ -42,7 +42,7 @@ browserTest('preview clipping follows direction, scrolling, frame size and CSS c
   const { page, errors } = await fixture(t, { maxVisible: null });
   await page.locator('.nav[data-page="studio"]').click();
   await page.locator('#open-design-preview').click();
-  await page.locator('#preview-width').selectOption('640');
+  await page.locator('#preview-width').selectOption('640x360');
   const list = page.frameLocator('#design-preview-frame').locator('#stage-chat-list');
   await list.locator('.stage-comment').nth(9).waitFor({ state: 'attached' });
   const assertClipping = async reason => {
@@ -66,9 +66,9 @@ browserTest('preview clipping follows direction, scrolling, frame size and CSS c
   await assertClipping('top reclassifies the newest edge');
   await list.evaluate(element => { element.scrollTop = 50; element.dispatchEvent(new Event('scroll')); });
   await assertClipping('scroll reclassifies partial cards');
-  await page.locator('#preview-width').selectOption('1280');
+  await page.locator('#preview-width').selectOption('1280x720');
   await assertClipping('frame resize reclassifies cards');
-  await page.locator('#preview-width').selectOption('640');
+  await page.locator('#preview-width').selectOption('640x360');
   await page.getByText('追加CSSをプレビュー', { exact: true }).click();
   await page.locator('#draft-css').fill('.pokome-workspace #stage-chat-list { height: 180px; flex: none; } .pokome-workspace .stage-comment { min-height: 90px; }');
   await assertClipping('CSS shortening the list reclassifies cards');
@@ -381,7 +381,7 @@ browserTest('closing the followed control page hands the output to a remaining o
   await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '13 COMMENTS');
   const second = await context.newPage();
   second.setDefaultTimeout(8000);
-  await second.goto(url);
+  await second.goto(url); await appReady(second);
   await second.locator('#comment-list .username').nth(11).waitFor();
   // The output keeps following A while A is alive.
   await output.waitForTimeout(2500);

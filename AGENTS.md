@@ -27,13 +27,14 @@
 
 - 外部パッケージのインストールは不要（依存なし）。
 - CI（`.github/workflows/ci.yml`）は PR で `npm run check`・`npm test`（Ubuntu）と `build:local`（Windows）を実行する。
-- 2026-10-03 時点（P1-B1 フォルダー保存の後）では、全 208 件中 203 件成功・5 件スキップ（シンボリックリンク権限 4 件と非 Windows 専用 1 件）。
+- 2026-10-04 時点（P1-B2 比率ごとの配置の後）では、全 220 件中 215 件成功・5 件スキップ（シンボリックリンク権限 4 件と非 Windows 専用 1 件）。
 
 ## コードの約束事
 
 - 画面の文言・文書は日本語。コード中のコメントは英語で、「なぜ」を短く書く。
 - 受け取ったコメントや設定は必ず正規化してから使う。描画は `textContent` のみで、`innerHTML` に利用者のデータを入れない。
 - 見た目（配信デザイン・テーマCSS・雑談画面の配置・追加の文字と画像・出力の大きさ）は `customization/current/design.json` と画像ファイルに保存し、`design-client.js` の `createDesignStore` を通して読み書きする。localStorage に見た目を書かない。localStorage に残すのは接続先・音声・ユーザー管理・ホームの配置・履歴件数（`pokome-history-limit`）・配信出力の背景だけ。
+- 雑談画面の配置と追加の文字・画像は比率（16:9・9:16・4:3）ごとに持つ。読み書きは `design-model.js` の `talkLayout`・`talkOverlays`・`withTalk` を使う（未作成の比率はその比率の標準。ほかの比率を流用しない）。雑談モードは「出力の大きさ」の比率、配信出力は自分の大きさに最も近い比率（`nearestRatio`）、配置の編集中は「編集する比率」を表示する。
 - design.json の画像は `images/<SHA-256>.<拡張子>` の参照。正規化は `design-model.js` の `normalizeDesign`（画像目録で検査）を使い、`normalizeStudio`・`normalizeOverlays` を design.json に使うときは `studioOptions`・`overlayOptions` を渡す（渡さないと画像参照が消える）。保存済みの設計オブジェクトは直接書き換えず、複製してから編集する。
 - 提供するのはローカル版だけ（Windows 配布版と開発版）。GitHub Pages は静的な移転案内（`pages/index.html`）だけを公開し、アプリは置かない。
 - Windows 配布版は Twitch 専用。Kick は開発版だけで有効（Twitch 版の完成後に配布版へ追加する予定）。カメラ・マイクは扱わない。
