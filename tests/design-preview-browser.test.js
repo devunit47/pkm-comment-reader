@@ -364,9 +364,9 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   await editor.getByText('追加CSSをプレビュー', { exact: true }).click();
   await editor.locator('#draft-css').fill('.pokome-workspace .pokome-comment__author { color: #123456; }');
   assert.equal(await frame.locator('#talk-stage').getAttribute('data-theme'), 'rose');
-  assert.equal(await frame.locator('.stage-comment.pokome-comment').count(), 2);
+  assert.equal(await frame.locator('.stage-comment.pokome-comment').count(), 10);
   assert.equal(await frame.locator('.pokome-comment__author').first().evaluate(element => getComputedStyle(element).color), 'rgb(18, 52, 86)');
-  assert.equal(await frame.locator('.pokome-comment__body').count(), 2);
+  assert.equal(await frame.locator('.pokome-comment__body').count(), 10);
   assert.equal(await frame.locator('script,iframe,object,embed,link').count(), 0);
   assert.equal(await page.locator(frameSelector).getAttribute('sandbox'), 'allow-same-origin');
   assert.match(await frame.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'), /connect-src 'none'/);

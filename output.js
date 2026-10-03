@@ -2,7 +2,7 @@ import { readStudio } from './studio.js';
 import { compileTheme } from './theme.js';
 import { readOverlays, OVERLAYS_KEY } from './overlay-model.js';
 import { WORKSPACE_KEY, normalizeWorkspace } from './workspace-model.js';
-import { renderStageAppearance, renderOverlays, renderStageComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
+import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from './output-protocol.js';
 
 // The stream output only renders. It has no chat connection, no audio and no
@@ -11,7 +11,7 @@ import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessag
 const options = parseOutputOptions(location.search, typeof window.obsstudio === 'object' && window.obsstudio !== null);
 document.body.dataset.background = options.background;
 document.body.style.setProperty('--output-key', options.key);
-let storage;
+let storage, studio;
 try { storage = window.localStorage; } catch { /* Appearance falls back to defaults. */ }
 const APPEARANCE_KEYS = ['pokome-studio', 'pokome-theme-v1', WORKSPACE_KEY, OVERLAYS_KEY];
 const id = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -33,7 +33,8 @@ document.head.append(theme);
 const $ = elementId => stage.querySelector(`#${elementId}`);
 
 function renderAppearance() {
-  renderStageAppearance(stage, readStudio(storage));
+  studio = readStudio(storage);
+  renderStageAppearance(stage, studio);
   renderOverlays(stage, readOverlays(storage));
   try { theme.textContent = compileTheme(storage?.getItem('pokome-theme-v1') || ''); } catch { theme.textContent = ''; }
   let layout = null;
@@ -43,11 +44,23 @@ function renderAppearance() {
 }
 
 const view = createOutputView();
+let expiryTimer;
+function alignNewest() {
+  const list = $('stage-chat-list');
+  list.scrollTop = studio.newestPosition === 'top' ? 0 : list.scrollHeight;
+  markClippedComments(list);
+}
 function renderChat() {
   const list = $('stage-chat-list');
-  renderStageComments(list, view.messages);
-  list.scrollTop = list.scrollHeight;
-  markClippedComments(list);
+  clearTimeout(expiryTimer);
+  const now = Date.now();
+  const selected = selectOutputComments(view.messages, studio, now);
+  renderStageComments(list, selected);
+  alignNewest();
+  if (studio.holdSeconds && selected.length) {
+    const next = Math.min(...selected.map(message => message.receivedAt + studio.holdSeconds * 1000));
+    expiryTimer = setTimeout(renderChat, Math.max(1, Math.min(2147483647, next - now)));
+  }
   $('stage-count').textContent = `${view.received} COMMENTS`;
 }
 function renderSpeech() {
@@ -70,9 +83,7 @@ function scheduleAppearance() {
 window.addEventListener('storage', event => { if (event.key === null || APPEARANCE_KEYS.includes(event.key)) scheduleAppearance(); });
 // Nobody can scroll the output, so a resize must keep the newest comment in view.
 new ResizeObserver(() => {
-  const list = $('stage-chat-list');
-  list.scrollTop = list.scrollHeight;
-  markClippedComments(list);
+  alignNewest();
 }).observe($('stage-chat-list'));
 renderAppearance();
 renderSpeech();
@@ -87,7 +98,7 @@ if (typeof BroadcastChannel === 'function') {
   };
   presence('hello');
   setInterval(() => presence('heartbeat'), HEARTBEAT_MS);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') presence('hello'); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { renderAppearance(); presence('hello'); } });
   window.addEventListener('resize', () => presence('heartbeat'));
   window.addEventListener('pagehide', () => presence('bye'));
 }

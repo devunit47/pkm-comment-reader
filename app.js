@@ -619,6 +619,9 @@ function renderStudio() {
   $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
   $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
   $('studio-list-count').value = studio.listCount;
+  $('studio-max-visible').value = studio.maxVisible;
+  $('studio-hold-seconds').value = studio.holdSeconds;
+  $('studio-newest-position').value = studio.newestPosition;
   $('history-limit-label').textContent = `サービスごとに直近${studio.listCount}件 · ユーザー名・コメントから操作`;
   $('studio-decoration').checked = studio.decoration;
   $('studio-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
@@ -711,6 +714,8 @@ function updateStudio() {
     speechFontSize: Number($('studio-speech-font-size').value),
     speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
     speechTextColor: $('studio-speech-text-color').value,
+    maxVisible: Number($('studio-max-visible').value), holdSeconds: Number($('studio-hold-seconds').value),
+    newestPosition: $('studio-newest-position').value,
     listCount: Number($('studio-list-count').value),
     decoration: $('studio-decoration').checked, source,
     commentPanel: $('studio-comment-panel').value, commentPanelOpacity: commentOpacityInput(),
@@ -729,7 +734,7 @@ function updateStudio() {
   renderStudio();
   render();
 }
-for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'decoration', 'source',
+for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'list-count', 'max-visible', 'hold-seconds', 'newest-position', 'decoration', 'source',
   'comment-panel', 'comment-panel-opacity', 'comment-text-mode', 'comment-text', 'comment-author-mode', 'comment-author',
   'comment-outline', 'comment-outline-color', 'comment-line-height', 'comment-gap', 'comment-divider', 'comment-label']) {
   $(`studio-${id}`).onchange = updateStudio;

@@ -1,6 +1,7 @@
 export const THEME_ACCENTS = Object.freeze({ mint: '#ace5cd', rose: '#efb4c5', violet: '#c8b4f1', paper: '#527250' });
 export const DEFAULT_STUDIO = Object.freeze({
   theme: 'mint', accentMode: 'theme', accent: '#ace5cd', title: 'お茶でも飲みながら、', subtitle: 'みんなと、のんびり雑談。',
+  maxVisible: 0, holdSeconds: 0, newestPosition: 'bottom',
   fontSize: 20, listCount: 300, commentStyle: 'stacked', layout: 'right', actorWidth: 42, decoration: true, source: 'space', image: '',
   speechTitle: 'いま、届いた声', speechFontSize: 22,
   speechStyle: 'image', speechBackground: '#f3f1dc', speechImage: '', speechTextColor: '#25382f',
@@ -59,6 +60,9 @@ export function normalizeStudio(value = {}) {
   }
   if (Number.isInteger(value.fontSize) && value.fontSize >= 16 && value.fontSize <= 28) options.fontSize = value.fontSize;
   if (Number.isInteger(value.speechFontSize) && value.speechFontSize >= 16 && value.speechFontSize <= 32) options.speechFontSize = value.speechFontSize;
+  if (Number.isInteger(value.maxVisible) && value.maxVisible >= 0 && value.maxVisible <= 30) options.maxVisible = value.maxVisible;
+  if ([0, 5, 15, 30].includes(value.holdSeconds)) options.holdSeconds = value.holdSeconds;
+  if (['bottom', 'top'].includes(value.newestPosition)) options.newestPosition = value.newestPosition;
   if (Number.isInteger(value.listCount) && value.listCount >= 1 && value.listCount <= 300) options.listCount = value.listCount;
   if (Number.isInteger(value.actorWidth) && value.actorWidth >= 30 && value.actorWidth <= 60) options.actorWidth = value.actorWidth;
   if (typeof value.decoration === 'boolean') options.decoration = value.decoration;
