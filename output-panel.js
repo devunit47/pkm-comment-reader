@@ -56,6 +56,12 @@ export function initializeOutputPanel({ storage, publisher }) {
     const output = window.open(outputUrl(location.href, preferences), 'pokome-output', `popup,width=${width},height=${height}`);
     if (!output) { message = 'ポップアップがブロックされました。ブラウザのアドレスバーからポップアップを許可して、もう一度押してください。'; setStatus(publisher.status()); return; }
     message = '';
+    // A reused named window ignores the size features, so resize it to the
+    // chosen viewport size, accounting for its own frame and address bar.
+    if (output.innerWidth && output.innerHeight && (output.innerWidth !== width || output.innerHeight !== height)) {
+      try { output.resizeTo(width + output.outerWidth - output.innerWidth, height + output.outerHeight - output.innerHeight); }
+      catch { /* The status shows the actual size reported by the output. */ }
+    }
     output.focus();
   };
   for (const [button, input] of [['copy-control-url', 'output-control-url'], ['copy-source-url', 'output-source-url']]) {

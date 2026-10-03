@@ -8,8 +8,8 @@ import { chromium, executablePath, browserAvailable } from './browser-support.js
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
-async function fixture(t) {
-  const browser = await chromium.launch({ headless: true, executablePath });
+async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [] } = {}) {
+  const browser = await chromium.launch({ headless: true, executablePath, args });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-output-browser-'));
   const server = createServer({ customizationDirectory: directory });
   t.after(async () => {
@@ -19,7 +19,7 @@ async function fixture(t) {
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ viewport });
   await context.route('https://fonts.googleapis.com/**', route => route.abort());
   await context.route('https://fonts.gstatic.com/**', route => route.abort());
   const errors = [];
@@ -95,5 +95,41 @@ browserTest('transparent output stays empty and transparent without a control pa
   await output.goto(`${url}/output.html`);
   await output.locator('#talk-stage').waitFor();
   assert.deepEqual(await backgrounds(output), Array(4).fill('rgba(0, 0, 0, 0)'));
+  assert.deepEqual(errors, []);
+});
+
+browserTest('output keeps the newest comment visible after shrinking', async t => {
+  const { context, page, errors } = await fixture(t);
+  await page.locator('.nav[data-page="studio"]').click();
+  const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
+  output.setDefaultTimeout(8000);
+  await output.setViewportSize({ width: 1280, height: 720 });
+  await output.locator('.stage-comment').nth(11).waitFor({ state: 'attached' });
+  const atBottom = () => output.evaluate(() => {
+    const list = document.querySelector('#stage-chat-list');
+    return list.scrollHeight - list.scrollTop - list.clientHeight < 2;
+  });
+  await output.waitForFunction(() => document.querySelector('#stage-chat-list').scrollTop > 0);
+  await output.setViewportSize({ width: 1280, height: 300 });
+  await output.waitForFunction(() => { const list = document.querySelector('#stage-chat-list'); return list.scrollHeight - list.scrollTop - list.clientHeight < 2; });
+  assert.equal(await atBottom(), true);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('reopening the output window applies a newly chosen size', async t => {
+  // Without viewport emulation, window.open sizes and resizeTo take effect.
+  // A large virtual screen keeps the window manager from clamping the sizes.
+  const { context, page, errors } = await fixture(t, { viewport: null, args: ['--screen-info={0,0 3000x2400}'] });
+  await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#output-size').selectOption('1280x720');
+  const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
+  output.setDefaultTimeout(8000);
+  await output.waitForLoadState();
+  const size = () => output.evaluate(() => [innerWidth, innerHeight]);
+  assert.deepEqual(await size(), [1280, 720]);
+  await page.locator('#output-size').selectOption('1080x1920');
+  await page.locator('#open-output-window').click();
+  await output.waitForFunction(() => innerWidth === 1080 && innerHeight === 1920);
+  await page.locator('#output-status').filter({ hasText: '1080 × 1920' }).waitFor();
   assert.deepEqual(errors, []);
 });

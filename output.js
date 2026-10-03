@@ -68,7 +68,12 @@ function scheduleAppearance() {
   appearanceTimer = setTimeout(renderAppearance, 50);
 }
 window.addEventListener('storage', event => { if (event.key === null || APPEARANCE_KEYS.includes(event.key)) scheduleAppearance(); });
-new ResizeObserver(() => { markClippedComments($('stage-chat-list')); }).observe($('stage-chat-list'));
+// Nobody can scroll the output, so a resize must keep the newest comment in view.
+new ResizeObserver(() => {
+  const list = $('stage-chat-list');
+  list.scrollTop = list.scrollHeight;
+  markClippedComments(list);
+}).observe($('stage-chat-list'));
 renderAppearance();
 renderSpeech();
 
