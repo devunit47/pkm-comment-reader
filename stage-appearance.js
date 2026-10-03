@@ -10,6 +10,7 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
   stage.style.setProperty('--stage-accent', studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent);
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
+  renderCommentLook(stage, studio);
   $('stage-speech-user').hidden = studio.commentStyle === 'anonymous';
   stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
   stage.style.setProperty('--speech-background', studio.speechBackground);
@@ -115,4 +116,25 @@ export function applyTalkLayout(stage, layout) {
     const minimum = parseFloat(getComputedStyle(speech).minHeight) || 0;
     speech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
   }
+}
+
+// Comment list look. A value left at the theme's own setting removes its
+// attribute or variable, so the stylesheet and theme CSS apply unchanged.
+export function renderCommentLook(stage, studio) {
+  const set = (name, value) => value === null || value === '' ? stage.style.removeProperty(name) : stage.style.setProperty(name, value);
+  const flag = (name, value) => value === null ? delete stage.dataset[name] : stage.dataset[name] = value;
+  flag('commentPanel', studio.commentPanel === 'theme' ? null : studio.commentPanel);
+  set('--stage-comment-opacity', ['light', 'dark'].includes(studio.commentPanel) ? String(studio.commentPanelOpacity / 100) : null);
+  flag('commentText', studio.commentTextColor ? '' : null);
+  set('--stage-comment-text', studio.commentTextColor);
+  flag('commentAuthor', studio.commentAuthorColor ? '' : null);
+  set('--stage-comment-author', studio.commentAuthorColor);
+  flag('commentOutline', studio.commentOutline === 'none' ? null : studio.commentOutline);
+  set('--stage-comment-outline', studio.commentOutline === 'none' ? null : studio.commentOutlineColor);
+  flag('commentLineHeight', studio.commentLineHeight === null ? null : '');
+  set('--stage-comment-line-height', studio.commentLineHeight === null ? null : String(studio.commentLineHeight));
+  flag('commentGap', studio.commentGap === null ? null : '');
+  set('--stage-comment-gap', studio.commentGap === null ? null : `${studio.commentGap / 2}px`);
+  flag('commentDivider', studio.commentDivider ? null : 'false');
+  flag('commentLabel', studio.commentLabel ? null : 'false');
 }
