@@ -1,4 +1,6 @@
-import { renderStageAppearance } from './stage-appearance.js';
+import { renderStageAppearance, renderStageComments, markClippedComments } from './stage-appearance.js';
+import { OutputPublisher } from './output-protocol.js';
+import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
 import { OVERLAYS_KEY, normalizeOverlays } from './overlay-model.js';
 import { initializeCustomization } from './customization.js';
@@ -41,6 +43,9 @@ for (const platform of Object.keys(states)) states[platform].voice = savedVoices
 let studio = readStudio(storage);
 for (const state of Object.values(states)) state.historyLimit = studio.listCount;
 let currentSpeech = null;
+let stageCredit = '';
+let outputPanel;
+const outputPublisher = new OutputPublisher({ onStatus: status => outputPanel?.setStatus(status) });
 // null means the preview shows a selection; a string snapshots played audio.
 let previewSpeechCredit = null;
 let speechDisplayTimer;
@@ -190,6 +195,7 @@ function add(platform, user, text, createdAt, login = user, readAutomatically = 
   const state = states[platform];
   const message = addMessage(state, user, text, ++session, createdAt, login);
   if (!message) return;
+  message.receivedAt = Date.now();
   if (platform === active) {
     render();
     if (readAutomatically && state.autoSpeech && !userRule(state, user).hidden && !userRule(state, user).muted) speak(message, true);
@@ -544,30 +550,16 @@ function renderStageChat() {
   const messages = state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden);
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-  list.replaceChildren();
-  for (const message of messages) {
-    const card = make('div', 'stage-comment pokome-comment', '');
-    card.title = `${message.user}: ${message.text}`;
-    card.append(make('strong', 'pokome-comment__author', message.user), make('p', 'pokome-comment__body', message.text));
-    list.append(card);
-  }
+  renderStageComments(list, messages);
   if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
   if (bottom) list.scrollTop = list.scrollHeight;
   updateStageCommentVisibility();
   $('stage-count').textContent = `${state.received} COMMENTS`;
+  // Hidden users and comments are filtered here, so they never reach outputs.
+  outputPublisher.update({ platform: active, received: state.received, messages });
 }
 
-function updateStageCommentVisibility() {
-  const list = $('stage-chat-list');
-  if (!list.clientHeight) return;
-  const bounds = list.getBoundingClientRect();
-  for (const comment of list.querySelectorAll('.stage-comment')) {
-    const rect = comment.getBoundingClientRect();
-    // Long comments remain scrollable even when they cannot fit in one view.
-    const clipped = rect.height <= list.clientHeight && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1);
-    comment.classList.toggle('stage-comment-clipped', clipped);
-  }
-}
+function updateStageCommentVisibility() { markClippedComments($('stage-chat-list')); }
 $('stage-chat-list').addEventListener('scroll', updateStageCommentVisibility, { passive: true });
 new ResizeObserver(updateStageCommentVisibility).observe($('stage-chat-list'));
 
@@ -581,7 +573,10 @@ function renderSpeechCredits() {
     $(id).textContent = credit;
     $(id).hidden = !credit;
   }
+  stageCredit = credits.stage;
+  publishSpeech();
 }
+function publishSpeech() { outputPublisher.speech({ speech: currentSpeech, credit: stageCredit }); }
 
 function renderStageSpeech() {
   renderSpeechCredits();
@@ -589,6 +584,7 @@ function renderStageSpeech() {
   $('stage-speech-user').textContent = currentSpeech?.user || '';
   $('stage-speech-text').textContent = currentSpeech?.text || '次のコメントを待っています。';
   $('stage-speech-text').closest('.stage-speech').dataset.speaking = String(!!currentSpeech?.speaking);
+  publishSpeech();
 }
 
 function renderStudio() {
@@ -906,7 +902,9 @@ initializeCustomization({ publication, platforms: enabledPlatforms, themeEditor,
     } catch { return false; }
   },
 });
+outputPanel = initializeOutputPanel({ storage, publisher: outputPublisher });
 window.addEventListener('beforeunload', () => {
+  outputPublisher.close();
   stop();
   for (const connection of Object.values(connections)) connection.disconnect(false);
 });
