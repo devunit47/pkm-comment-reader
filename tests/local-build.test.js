@@ -25,7 +25,7 @@ test('local asset staging packages the backend and empty user folders without co
   assert.ok(!BROWSER_ASSETS.includes('local-customization.js'));
   assert.ok(LOCAL_FILES.every(file => !file.startsWith('customization/')));
   const config = await readFile(join(folder, 'app-config.js'), 'utf8');
-  assert.match(config, /publication = 'local'/);
+  assert.match(config, /enabledPlatforms = Object\.freeze\(\['twitch'\]\)/);
   assert.doesNotMatch(config, /kick/);
   const html = await readFile(join(folder, 'index.html'), 'utf8');
   assert.equal((html.match(/data-service="kick" hidden/g) || []).length, 3);

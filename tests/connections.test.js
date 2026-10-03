@@ -144,3 +144,26 @@ test('sender account identity survives different display names on both services'
   assert.equal(parseKickMessage(event, 'chatrooms.123.v2').login, 'owner');
   assert.equal(parseKickMessage(kickMessage(), 'chatrooms.123.v2').login, 'same_user');
 });
+
+test('Twitch uses browser WebSocket without a local server', async () => {
+  let socket;
+  const statuses = [];
+  class FakeSocket {
+    constructor(url) { socket = this; this.url = url; this.sent = []; }
+    send(value) { this.sent.push(value); }
+    close() {}
+  }
+  const connection = new ChatConnection('twitch', {
+    WebSocketClass: FakeSocket,
+    fetchImpl() { throw new Error('Twitch must not need a server'); },
+    onStatus: value => statuses.push(value), onMessage() {}, onConnected() {},
+  });
+  try {
+    await connection.connect('test_channel');
+    assert.equal(socket.url, 'wss://irc-ws.chat.twitch.tv:443');
+    socket.onopen();
+    assert.ok(socket.sent.includes('JOIN #test_channel'));
+    socket.onmessage({ data: ':server 366 anon #test_channel :End of names\r\n' });
+    assert.equal(statuses.at(-1), '接続中');
+  } finally { connection.disconnect(false); }
+});

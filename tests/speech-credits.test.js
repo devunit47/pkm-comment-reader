@@ -59,5 +59,5 @@ test('platform selections and existing backups retain IDs but never persist cach
   assert.deepEqual(readSpeechEngines(storage), normalized);
   assert.equal(speechDisplayCredits(normalized.twitch, voices).stage, 'VOICEVOX:ずんだもん');
   assert.equal(speechDisplayCredits(normalized.kick, [{ id: uuid + ':0', speakerName: 'つくよみちゃん' }]).stage, 'COEIROINK:つくよみちゃん');
-  assert.equal(speechDisplayCredits(readSpeechEngines(storage, false).twitch, voices).stage, '');
+  assert.equal(speechDisplayCredits({ ...normalized.twitch, engine: 'browser' }, voices).stage, '');
 });

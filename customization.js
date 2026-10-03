@@ -1,11 +1,10 @@
-// Shared UI: Pages never requests the local file API.
-export function editionInfo(publication, platforms) {
-  const pages = publication === 'pages';
+// Every edition runs on the local server; only the enabled services differ.
+export function editionInfo(platforms) {
   return {
-    title: pages ? 'GitHub Pages 公開版' : platforms.includes('kick') ? 'ローカル開発版' : 'Windows ローカル配布版',
+    title: platforms.includes('kick') ? 'ローカル開発版' : 'Windows ローカル配布版',
     services: platforms.includes('kick') ? 'Twitch・Kick（個別のチャット）' : 'Twitchのみ。Kickはローカル開発版のみ対応',
-    speech: pages ? 'ブラウザ標準音声のみ。VOICEVOX・COEIROINK v2は利用できません' : 'ブラウザ標準音声、VOICEVOX・COEIROINK v2（別途インストール・起動が必要）',
-    files: pages ? 'PCのフォルダー一覧は取得できません。CSS・画像はファイル選択で個別に読み込めます' : 'customizationフォルダーのCSS・画像を一覧から選べます。ファイル選択での個別読み込みもできます',
+    speech: 'ブラウザ標準音声、VOICEVOX・COEIROINK v2（別途インストール・起動が必要）',
+    files: 'customizationフォルダーのCSS・画像を一覧から選べます。ファイル選択での個別読み込みもできます',
   };
 }
 
@@ -38,8 +37,8 @@ export async function runCustomizationApply(status, { loading, read, apply, succ
   }
 }
 
-export function initializeCustomization({ publication, platforms, themeEditor, beginImageChange, applyImageFile, resetAppearance }) {
-  const edition = editionInfo(publication, platforms);
+export function initializeCustomization({ platforms, themeEditor, beginImageChange, applyImageFile, resetAppearance }) {
+  const edition = editionInfo(platforms);
   let localStatus;
   const capabilities = document.createElement('section');
   capabilities.className = 'panel studio-form';
@@ -48,7 +47,7 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
   const heading = document.createElement('h2'); heading.textContent = `この版でできること：${edition.title}`;
   const list = document.createElement('ul');
   for (const text of [edition.services, edition.speech, edition.files,
-    '両版とも配色・画像・CSS・配置の変更、設定の保存／復元ができます。設定はブラウザ内に保存され、公開URLとlocalhostでは別です',
+    '配色・画像・CSS・配置の変更、設定の保存／復元ができます。設定はこのブラウザ内に保存されます',
     'コメントの送信・配信サービス側のBAN、カメラ／マイクの取得はできません。チャット接続にはインターネットが必要です']) {
     const item = document.createElement('li'); item.textContent = text; list.append(item);
   }
@@ -56,9 +55,6 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
   document.getElementById('settings-page').prepend(capabilities);
   document.getElementById('edition-label').textContent = `ぽこめ Reader / ${edition.title}`;
   document.getElementById('platform-help').textContent = `${edition.title} · ${platforms.includes('kick') ? 'Twitch・Kick' : 'Twitch専用'}`;
-  document.getElementById('setup-speech-help').textContent = publication === 'pages'
-    ? '公開版はブラウザ標準音声で使えます。VOICEVOX・COEIROINKを使う場合はローカル版をご利用ください。'
-    : '最初はブラウザ標準で使えます。VOICEVOX・COEIROINKは音声ソフトを起動してから声を取得します。';
 
   // Outside the theme's permitted scope, with a Shadow DOM and modal top layer:
   // even a theme hiding main/sidebar cannot hide the recovery controls.
@@ -83,13 +79,6 @@ export function initializeCustomization({ publication, platforms, themeEditor, b
   const updateRecovery = () => { recovery.style.display = document.body.classList.contains('talk-mode') ? 'none' : 'block'; };
   new MutationObserver(updateRecovery).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   updateRecovery();
-
-  if (publication === 'pages') {
-    const note = document.createElement('p'); note.id = 'pages-customization-help'; note.className = 'studio-note';
-    note.textContent = 'GitHub Pages公開版ではPCのカスタマイズフォルダーを一覧表示できません。下のファイル選択でCSS・画像を個別に読み込めます。フォルダー一覧とローカル音声ソフトはローカル版で使えます。';
-    document.getElementById('studio-page').prepend(note);
-    return;
-  }
 
   const panel = document.createElement('section'); panel.id = 'local-customization'; panel.className = 'panel studio-form';
   panel.innerHTML = `<div class="studio-fields"><h2>ローカルのカスタマイズファイル</h2>

@@ -5,8 +5,6 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "build:pages": "node build-pages.js",
-    "preview:pages": "node preview-pages.js",
     "test": "node --test",
     "check": "node check-js.js",
     "build:local": "node build-local.js"
