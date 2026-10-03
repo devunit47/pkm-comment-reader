@@ -488,6 +488,26 @@ browserTest('latest image wins without waiting for superseded decode, and deleti
   assert.deepEqual(errors, []);
 });
 
+browserTest('an image chosen for one ratio stays in that ratio when the preview switches before it finishes', async t => {
+  const { page, editor, errors } = await fixture(t);
+  await openPreview(page);
+  await editor.locator('#preview-width').selectOption('1080x1920');
+  await beginImageGate(page);
+  await editor.locator('#overlay-image').setInputFiles(imageFile('portrait.png'));
+  await page.waitForFunction(() => window.__imageGate.entered === 1);
+  await editor.locator('#preview-width').selectOption('1920x1080');
+  await releaseImageGate(page); await ready(page);
+  await countItems(page, 0);
+  assert.match(await editor.locator('#design-status').textContent(), /9:16/);
+  await editor.locator('#preview-width').selectOption('1080x1920');
+  await countItems(page, 1);
+  await applyDesign(editor);
+  const design = await readDesign(new URL(page.url()).origin);
+  assert.equal(design.ratios['9:16'].overlays.items.length, 1);
+  assert.equal(design.ratios['16:9'], null, 'the landscape ratio stays uncreated');
+  assert.deepEqual(errors, []);
+});
+
 browserTest('a design saved elsewhere reaches the page live and an older open draft cannot overwrite it', async t => {
   const { page, editor, url, errors } = await fixture(t);
   await openPreview(page); await editor.locator('#add-text').click();

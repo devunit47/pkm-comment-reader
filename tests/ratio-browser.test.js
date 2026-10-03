@@ -49,7 +49,9 @@ browserTest('the chosen ratio is edited inside its own frame and saved only to t
   assert.equal(framed.editing, true);
   assert.ok(Math.abs(framed.width / framed.height - 9 / 16) < .01, `framed to 9:16, got ${framed.width}x${framed.height}`);
   // An uncreated portrait ratio starts from the portrait default, not the landscape grid.
-  assert.deepEqual(await panelStyle(page, '.stage-chat'), { left: '4%', top: '64%', width: '92%', height: '29%' });
+  const chat = await panelStyle(page, '.stage-chat');
+  assert.deepEqual({ left: chat.left, width: chat.width }, { left: '4%', width: '92%' });
+  assert.match(chat.top, /^max\(64%/); assert.match(chat.height, /93%/);
   const move = page.locator('.stage-chat [data-layout-handle] button').first();
   await move.press('ArrowUp'); await move.press('ArrowUp');
   const saved = await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y === 60);
@@ -89,6 +91,22 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   assert.equal((await stageBox(page)).ratio, '16:9');
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0, 'portrait additions stay in 9:16');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('the portrait default keeps the speech minimum off the comments on a short talk screen', async t => {
+  const { page, url, errors } = await fixture(t, { width: 1280, height: 720 });
+  await page.locator('[data-page="studio"]').click();
+  await page.locator('#output-size').selectOption('1080x1920');
+  await waitForDesign(url, design => design.outputSize === '1080x1920');
+  await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
+  const boxes = await page.locator('#talk-stage').evaluate(stage => Object.fromEntries(['.stage-speech', '.stage-chat', '.stage-footer'].map(selector => {
+    const box = stage.querySelector(selector).getBoundingClientRect(); return [selector, { top: box.top, bottom: box.bottom, height: box.height }];
+  })));
+  assert.ok(boxes['.stage-speech'].height >= 220, 'the speech minimum still applies');
+  assert.ok(boxes['.stage-speech'].bottom <= boxes['.stage-chat'].top + 1, `speech ends at ${boxes['.stage-speech'].bottom}, comments start at ${boxes['.stage-chat'].top}`);
+  assert.ok(boxes['.stage-chat'].bottom <= boxes['.stage-footer'].top + 1, 'the comments keep their bottom edge');
+  assert.ok(boxes['.stage-chat'].height > 100, 'the comments stay usable');
   assert.deepEqual(errors, []);
 });
 
@@ -154,7 +172,8 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   // The draw runs on the next frame after the size changes.
   await frame.locator('.pokome-overlay').first().waitFor({ state: 'detached' });
   assert.equal(await frame.locator('.pokome-overlay').count(), 0, '9:16 starts without the 16:9 additions');
-  assert.equal(await frame.locator('#talk-stage .stage-chat').evaluate(element => element.style.top), '64%');
+  // At 1920px tall the speech minimum fits, so the comments sit at their saved 64%.
+  assert.equal(await frame.locator('#talk-stage .stage-chat').evaluate(element => { const stage = element.closest('#talk-stage').getBoundingClientRect(); return Math.round((element.getBoundingClientRect().top - stage.top) / stage.height * 100); }), 64);
   assert.equal(await frame.locator('#safe-guides .guide-shade').count(), 2);
   assert.deepEqual(await frame.locator('#safe-guides .guide-shade').evaluateAll(nodes => nodes.map(node => node.style.height)), ['6%', '10%']);
   await preview.locator('#preview-guides').uncheck();

@@ -1,4 +1,4 @@
-import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
+import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout, talkSpeechStyles } from './workspace-model.js';
 import { nearestRatio, talkLayout, defaultTalkLayout, talkOverlays, withTalk } from './design-model.js';
 import { OUTPUT_SIZES } from './output-protocol.js';
 export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
@@ -73,9 +73,9 @@ export function initializeWorkspace(storage, designStore, { onTalkRatioChange = 
   const talkSpeech = panels.talk.find(element => element.dataset.panelType === 'speech');
   function clampTalkSpeech() {
     if (!layouts.talk) return;
-    const p = layouts.talk.panels.speech;
     const minimum = parseFloat(getComputedStyle(talkSpeech).minHeight) || 0;
-    talkSpeech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
+    const styles = talkSpeechStyles(layouts.talk.panels, minimum);
+    for (const element of panels.talk) for (const [property, value] of Object.entries(styles[element.dataset.panelType] || {})) element.style.setProperty(property, value);
   }
   function interactionStart(mode, element, resize, axes = [1, 1]) {
     const p = { ...layouts[mode].panels[element.dataset.panelType] };

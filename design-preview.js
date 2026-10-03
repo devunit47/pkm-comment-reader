@@ -275,7 +275,9 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   $('overlay-image').onchange = async () => {
     const file = $('overlay-image').files[0]; $('overlay-image').value = '';
     if (!file || !draft || draft.overlays.items.length >= MAX_OVERLAYS) return;
-    const token = epoch, request = Symbol();
+    // The image belongs to the ratio shown when it was chosen, even if the view switches meanwhile.
+    const token = epoch, request = Symbol(), ratio = draft.ratio;
+    const target = () => ratio === draft.ratio ? draft.overlays : draft.byRatio[ratio];
     if (requests.has('add-image')) pending--;
     requests.set('add-image',request); pending++; buttons(); status('画像を確認しています…');
     try {
@@ -284,9 +286,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       // The file is stored now, but stays unused until the draft is applied.
       const { ref } = await designStore.uploadImage(file);
       if (!isCurrent(token) || requests.get('add-image') !== request) return;
-      if (draft.overlays.items.length >= MAX_OVERLAYS) throw new Error('追加できる項目は20個までです。');
-      const asset = addOverlayAsset(draft.overlays,ref,undefined,assetOptions()), item = createOverlay('image',{assetId:asset.assetId},draft.overlays.items);
-      revision++; draft.overlays = normalizeOverlays({...asset.state,items:[...asset.state.items,item]},assetOptions()); selected = item.id; fields(); draw(); status('画像を追加しました。適用するまでは見た目に反映されません。');
+      const state = target();
+      if (state.items.length >= MAX_OVERLAYS) throw new Error('追加できる項目は20個までです。');
+      const asset = addOverlayAsset(state,ref,undefined,assetOptions()), item = createOverlay('image',{assetId:asset.assetId},state.items);
+      const next = normalizeOverlays({...asset.state,items:[...asset.state.items,item]},assetOptions()); revision++;
+      if (ratio !== draft.ratio) { draft.byRatio[ratio] = next; status(`画像を${ratio}の配置に追加しました。適用するまでは見た目に反映されません。`); return; }
+      draft.overlays = next; selected = item.id; fields(); draw(); status('画像を追加しました。適用するまでは見た目に反映されません。');
     } catch (error) { if (isCurrent(token) && requests.get('add-image') === request) status(error.message); }
     finally { if (isCurrent(token) && requests.get('add-image') === request) { requests.delete('add-image'); pending--; buttons(); } }
   };

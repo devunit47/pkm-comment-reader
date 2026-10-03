@@ -37,3 +37,20 @@ export function normalizeWorkspace(value) {
   }
   return result;
 }
+
+// The speech panel's CSS minimum height can exceed its saved percentage on a
+// short screen. Its top is clamped to stay on screen, and panels that start
+// below it (overlapping horizontally) give up the space it grows into, keeping
+// their bottom edge, so the minimum never covers them. Saved data is unchanged.
+export function talkSpeechStyles(panels, minimum) {
+  const s = panels?.speech;
+  if (!s) return {};
+  const styles = { speech: { top: `min(${s.y}%, max(0px, calc(100% - max(${s.h}%, ${minimum}px))))` } };
+  if (s.hidden || !(minimum > 0)) return styles;
+  for (const [id, p] of Object.entries(panels)) {
+    if (id === 'speech' || p.y < s.y + s.h - 1e-6 || p.x >= s.x + s.w || p.x + p.w <= s.x) continue;
+    const top = `max(${p.y}%, calc(${s.y}% + ${minimum}px))`;
+    styles[id] = { top, height: `max(0px, calc(${p.y + p.h}% - ${top}))` };
+  }
+  return styles;
+}
