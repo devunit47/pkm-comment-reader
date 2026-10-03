@@ -200,6 +200,20 @@ test('overlay reconciliation preserves identity, updates text/style/visibility a
   assert.ok(stage.querySelector('#stage-title'));
 });
 
+test('reordering equal-z overlays preserves stacking before and after reconstruction', () => {
+  const { stage } = fixture();
+  const first = createOverlay('text', { id: 'first', text: 'First', z: 3 });
+  const second = createOverlay('text', { id: 'second', text: 'Second', z: 3 });
+  renderOverlays(stage, overlayState([first, second]));
+  const [firstNode, secondNode] = directOverlays(stage);
+  const reordered = overlayState([second, first]);
+  renderOverlays(stage, reordered);
+  assert.deepEqual(directOverlays(stage), [secondNode, firstNode]);
+  const reloaded = fixture().stage;
+  renderOverlays(reloaded, reordered);
+  assert.deepEqual(directOverlays(stage).map(node => node.dataset.overlayId), directOverlays(reloaded).map(node => node.dataset.overlayId));
+});
+
 test('image overlays resolve safe asset IDs, reuse image nodes and can switch between image and text', () => {
   const { stage, ownerDocument } = fixture();
   const imageItem = createOverlay('image', { id: 'one', assetId: 'raster' });

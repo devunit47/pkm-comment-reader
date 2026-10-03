@@ -38,6 +38,7 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
 
 export function renderOverlays(stage, state) {
   const existing = new Map([...stage.querySelectorAll(':scope > .pokome-overlay')].map(element => [element.dataset.overlayId, element]));
+  const ordered = [];
   for (const item of state.items) {
     let element = existing.get(item.id);
     if (!element) {
@@ -46,6 +47,7 @@ export function renderOverlays(stage, state) {
       stage.append(element);
     }
     existing.delete(item.id);
+    ordered.push(element);
     element.hidden = item.hidden;
     for (const [property, value] of Object.entries({ left: item.x, top: item.y, width: item.w, height: item.h })) element.style.setProperty(property, `${value}%`);
     element.style.zIndex = item.z;
@@ -60,4 +62,8 @@ export function renderOverlays(stage, state) {
     }
   }
   for (const element of existing.values()) element.remove();
+  // Equal-z elements stack in DOM order. Imports may reorder retained IDs,
+  // so keep the live order identical to reconstruction from saved items.
+  const current = stage.querySelectorAll(':scope > .pokome-overlay');
+  if (ordered.some((element, index) => current[index] !== element)) stage.append(...ordered);
 }
