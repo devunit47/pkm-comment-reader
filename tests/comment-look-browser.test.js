@@ -210,6 +210,31 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
   assert.deepEqual(errors, []);
 });
 
+browserTest('a hidden label collapses identically in the preview and the output over a theme !important', async t => {
+  const { context, page, errors } = await fixture(t);
+  await page.evaluate(() => localStorage.setItem('pokome-theme-v1', '.pokome-workspace .stage-panel-label { display: flex !important; } .pokome-workspace #stage-chat-list { padding-top: 0 !important; }'));
+  await page.reload();
+  await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#studio-comment-preset').selectOption('outline');
+  const geometry = target => target.evaluate(() => {
+    const chat = document.querySelector('.stage-chat'), list = document.querySelector('#stage-chat-list');
+    return { label: getComputedStyle(chat.querySelector('.stage-panel-label')).display, paddingTop: getComputedStyle(list).paddingTop, listOffset: list.getBoundingClientRect().top - chat.getBoundingClientRect().top };
+  });
+  const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
+  output.setDefaultTimeout(8000);
+  await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
+  await page.bringToFront();
+  await page.locator('#open-design-preview').click();
+  const frame = page.frameLocator('#design-preview-frame');
+  await frame.locator('#talk-stage .stage-comment').first().waitFor({ state: 'attached' });
+  // Evaluate inside the preview document, like the output page.
+  const preview = await geometry({ evaluate: read => frame.locator('html').evaluate(read) }), streamed = await geometry(output);
+  assert.deepEqual(preview, { label: 'none', paddingTop: '20px', listOffset: preview.listOffset });
+  assert.deepEqual(streamed, preview);
+  await page.locator('#cancel-design').click();
+  assert.deepEqual(errors, []);
+});
+
 browserTest('a chroma key output warns about a half-transparent comment panel', async t => {
   const { page, errors } = await fixture(t);
   const status = page.locator('#output-status');

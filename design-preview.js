@@ -194,13 +194,13 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
       if (!isCurrent(token)) return;
       await new Promise(resolve => {
         frame.onload = resolve;
-        frame.srcdoc = '<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src \'none\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'"></head><body class="talk-mode"></body></html>';
+        frame.srcdoc = '<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src \'none\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'"></head><body class="talk-mode pokome-preview"></body></html>';
       });
       if (!isCurrent(token)) return;
       frameDoc = frame.contentDocument;
       const css = frameDoc.createElement('style'); css.textContent = previewCSS;
       const theme = frameDoc.createElement('style'); theme.id = 'preview-theme';
-      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,.stage-font-controls,[data-layout-handle]{visibility:hidden!important}#talk-stage[data-comment-label=false] .stage-chat .stage-panel-label{display:none}#talk-stage[data-comment-label=false] #stage-chat-list{padding-top:20px}#talk-stage button{pointer-events:none}.overlay-hit{position:absolute;border:1px dashed #ace5cd;box-sizing:border-box;pointer-events:none}.overlay-hit[data-selected=true]{outline:2px solid #fff}.overlay-hit button{font:14px system-ui;padding:5px;background:#fff;color:#10291e;border:1px solid #174b39;cursor:move;touch-action:none;pointer-events:auto}.overlay-hit button:last-child{position:absolute;right:0;bottom:0;cursor:nwse-resize}.overlay-hit button:focus-visible{outline:3px solid #ffcc6f}`;
+      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,.stage-font-controls,[data-layout-handle]{visibility:hidden!important}#talk-stage button{pointer-events:none}.overlay-hit{position:absolute;border:1px dashed #ace5cd;box-sizing:border-box;pointer-events:none}.overlay-hit[data-selected=true]{outline:2px solid #fff}.overlay-hit button{font:14px system-ui;padding:5px;background:#fff;color:#10291e;border:1px solid #174b39;cursor:move;touch-action:none;pointer-events:auto}.overlay-hit button:last-child{position:absolute;right:0;bottom:0;cursor:nwse-resize}.overlay-hit button:focus-visible{outline:3px solid #ffcc6f}`;
       frameDoc.head.append(css, theme, controls);
       previewStage = frameDoc.importNode(live,true); previewStage.hidden = false;
       for (const element of previewStage.querySelectorAll('dialog,[popover],[data-layout-handle],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
