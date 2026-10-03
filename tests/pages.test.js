@@ -19,7 +19,7 @@ test('Pages output is Twitch-only, works below a repository path, and excludes l
   await buildPages(destination);
   assert.deepEqual(enabledPlatforms, ['twitch', 'kick']);
   const files = await readdir(folder);
-  assert.deepEqual(files.sort(), ['.nojekyll', 'app-config.js', 'app.js', 'chat-state.js', 'connections.js', 'customization.js', 'index.html', 'speech-options.js', 'speech-engine.js', 'studio.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'style.css', 'settings-backup.js', 'speech-background.svg'].sort());
+  assert.deepEqual(files.sort(), ['.nojekyll', 'app-config.js', 'app.js', 'chat-state.js', 'connections.js', 'customization.js', 'index.html', 'speech-options.js', 'speech-engine.js', 'studio.js', 'overlay-model.js', 'appearance-draft.js', 'stage-appearance.js', 'design-preview.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'style.css', 'settings-backup.js', 'speech-background.svg'].sort());
   const config = await import(new URL('app-config.js', destination));
   assert.deepEqual(config.enabledPlatforms, ['twitch']);
   assert.equal(config.publication, 'pages');

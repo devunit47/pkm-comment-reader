@@ -201,3 +201,6 @@ footer{color:var(--muted);font-size:12px}
   #talk-stage .stage-speech{max-height:none}
   #talk-stage .stage-actor{min-height:80px}
 }
+
+/* User additions are presentation-only outside the isolated editor. */
+.pokome-overlay{position:absolute;box-sizing:border-box;pointer-events:none;white-space:pre-wrap;overflow-wrap:anywhere;overflow:hidden;line-height:1.3;text-align:left;font-family:inherit}.pokome-overlay[hidden]{display:none}.pokome-overlay img{display:block;width:100%;height:100%;object-fit:contain}

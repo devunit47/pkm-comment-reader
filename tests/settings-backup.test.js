@@ -67,3 +67,15 @@ test('storage failure rolls back previously applied entries', () => {
   assert.throws(() => restoreSettings(target, after));
   assert.deepEqual(exportSettings(target), before);
 });
+
+test('legacy backups restore without overlay data and new backups preserve the separate overlay store', () => {
+  const data = exportSettings(storage()); delete data.settings['pokome-overlays-v1'];
+  const parsed = parseSettings(JSON.stringify(data));
+  assert.equal(parsed['pokome-overlays-v1'], null);
+  const source = storage();
+  source.setItem('pokome-overlays-v1', JSON.stringify({ version: 1, items: [], assets: {} }));
+  const restored = storage(); restoreSettings(restored, parseSettings(JSON.stringify(exportSettings(source))));
+  assert.equal(restored.getItem('pokome-overlays-v1'), source.getItem('pokome-overlays-v1'));
+  const unknown = exportSettings(storage()); unknown.settings['unknown-key'] = '{}';
+  assert.throws(() => parseSettings(JSON.stringify(unknown)));
+});
