@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -193,7 +193,7 @@ browserTest('output defaults to unlimited comments and switching eight and unlim
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
   await page.locator('#studio-max-visible').selectOption('0');
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
   await page.locator('#open-design-preview').click();
@@ -215,7 +215,7 @@ browserTest('output defaults to unlimited comments and switching eight and unlim
   await page.locator('#studio-newest-position').selectOption('bottom');
   await output.waitForFunction(first => document.querySelector('.stage-comment').textContent !== first, bottom[0]);
   assert.deepEqual(await comments(output), bottom.reverse());
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '3');
   await page.locator('#studio-list-count').fill('2');
@@ -273,7 +273,7 @@ browserTest('output expires without messages, preserves speech and restores reta
 
 browserTest('top output keeps a long newest card scrollable and preview applies or cancels display settings', async t => {
   const { context, page, url, errors } = await fixture(t, { maxVisible: 8 });
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   const output = await context.newPage();
   await output.goto(`${url}/output.html`);
@@ -298,7 +298,7 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 1);
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '1');
   assert.equal(await page.locator('#studio-hold-seconds').inputValue(), '15');
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal(await page.locator('#studio-newest-position').inputValue(), 'top');
   assert.equal(await page.locator('#studio-hold-seconds').inputValue(), '15');

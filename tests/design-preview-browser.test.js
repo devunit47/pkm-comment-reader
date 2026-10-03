@@ -8,7 +8,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../studio.js';
 import { createOverlay } from '../overlay-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -205,7 +205,7 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.equal(Object.keys(saved.assets).length, 1, 'deleting an image drops its unreferenced reference');
   assert.equal(await page.locator('#talk-stage > .pokome-overlay img').getAttribute('src'), servedImage(redPNG));
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 2);
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
   assert.deepEqual(await savedOverlays(page), saved);
   assert.equal(await page.locator(`#talk-stage .pokome-overlay[data-overlay-id="${first}"]`).textContent(), text);
@@ -228,7 +228,7 @@ browserTest('numeric resizing keeps anchors and displays clamped dimensions thro
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
   await number(editor, 'w', 30); await number(editor, 'h', 30);
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
-  await applyDesign(editor); await page.reload();
+  await applyDesign(editor); await page.reload(); await appReady(page);
   assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 88, y: 85, w: 12, h: 15 });
   await openPreview(page);
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
@@ -251,7 +251,7 @@ browserTest('keyboard resizing keeps its position at canvas edges and minimum si
   assert.deepEqual(await geometry(), { x: 0, y: 0, w: 2, h: 2 });
   await resize.press('ArrowRight'); await move.press('Shift+ArrowDown');
   assert.deepEqual(await geometry(), { x: 0, y: 0, w: 3, h: 3 });
-  await applyDesign(editor); await page.reload();
+  await applyDesign(editor); await page.reload(); await appReady(page);
   assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 0, y: 0, w: 3, h: 3 });
   assert.deepEqual(errors, []);
 });
@@ -276,7 +276,7 @@ browserTest('pointer resizing clamps size without moving the anchor at both prev
     for (const key of ['x','y']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 80);
     for (const key of ['w','h']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 2);
   }
-  await applyDesign(editor); await page.reload();
+  await applyDesign(editor); await page.reload(); await appReady(page);
   const saved = (await savedOverlays(page)).items[0];
   assert.deepEqual({ x: saved.x, y: saved.y, w: saved.w, h: saved.h }, { x: 80, y: 80, w: 2, h: 2 });
   assert.deepEqual(errors, []);
@@ -295,7 +295,7 @@ browserTest('reordered equal-z overlays saved elsewhere keep live, preview and r
   assert.deepEqual(await order(frame), ['second', 'first']);
   await applyDesign(editor);
   assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
-  await page.reload();
+  await page.reload(); await appReady(page);
   // The design arrives from the server after the page script starts.
   await page.locator('#talk-stage > .pokome-overlay').nth(1).waitFor({ state: 'attached' });
   assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
@@ -319,7 +319,7 @@ browserTest('overlay UI enforces the item limit and stores images as files that 
   const saved = await savedOverlays(page);
   assert.equal(saved.items.length, 20);
   assert.deepEqual(Object.values(saved.assets), [`images/${createHash('sha256').update(redPNG).digest('hex')}.png`]);
-  await page.reload();
+  await page.reload(); await appReady(page);
   // The design arrives from the server after the page script starts.
   await page.locator('#talk-stage > .pokome-overlay').nth(19).waitFor({ state: 'attached' });
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 20);
@@ -365,6 +365,29 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   await page.evaluate(() => { history.pushState({ previewTest: true }, ''); history.back(); });
   await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
   assert.deepEqual(await appearance(page), before);
+  assert.deepEqual(errors, []);
+});
+
+// Regression (PR #9 review): the failed draft stayed in the save state and was
+// stored with the next ordinary setting change.
+browserTest('a draft whose save failed and was cancelled is never saved by a later change', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  await openPreview(page);
+  await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('キャンセルした文字');
+  await page.route('**/api/design/current', route => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'customizationフォルダーに書き込めません。' }) })
+    : route.continue(), { times: 1 });
+  await editor.locator('#apply-design').click();
+  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('書き込めません'), ROOT);
+  assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
+  await editor.locator('#cancel-design').click();
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
+  await page.locator('#studio-theme').selectOption('rose');
+  const saved = await waitForDesign(url, design => design.studio.theme === 'rose');
+  assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');
+  await page.reload(); await appReady(page);
+  await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
   assert.deepEqual(errors, []);
 });
 

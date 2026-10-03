@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -132,7 +132,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('#talk-stage').isVisible(), true);
     assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
     await page.keyboard.press('Escape');
-    await page.reload();
+    await page.reload(); await appReady(page);
     assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
     await page.locator('[data-page="studio"]').click();
     await page.locator('#studio-list-count').fill('3');
@@ -172,7 +172,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     const home = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).home);
     assert.ok(home.panels.comments.x > 10);
     assert.ok(home.panels.comments.w > 45);
-    await page.reload();
+    await page.reload(); await appReady(page);
     assert.equal(await session.isVisible(), false);
     assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
     await page.locator('[data-page="studio"]').click();
@@ -202,7 +202,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1'))), { version: 1, home, talk: null });
     assert.equal(await page.locator('#design-export').count(), 0, 'the old design file export is gone');
     assert.equal(await page.locator('#theme-import').getAttribute('accept'), '.css,text/css');
-    await page.reload();
+    await page.reload(); await appReady(page);
     assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(1, 2, 3\)/);
     assert.equal(await page.locator('.stage-header').evaluate(element => element.style.display), 'none');
     assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
@@ -310,7 +310,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
     await page.locator('[data-platform="twitch"]').click();
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#speech-status').textContent(), '待機中');
-    await page.reload(); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+    await page.reload(); await appReady(page); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#voice').inputValue(), '3');
     await page.route('**/api/speech/voicevox/voices', route => route.fulfill({ status: 502, json: { error: '音声ソフトを起動してください。' } }));
@@ -410,7 +410,7 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#confirm-restore').isDisabled(), true);
     await page.locator('#restore-settings').setInputFiles({ name: 'settings.json', mimeType: 'application/json', buffer: backup });
     assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
-    await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
+    await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     await page.locator('[data-page="studio"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
     assert.equal(await page.locator('#studio-theme').inputValue(), 'rose', 'restoring settings leaves the folder design alone');
@@ -426,7 +426,7 @@ test('first setup guide and full settings backup restore work through the UI', {
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
     assert.match(await page.locator('#backup-status').textContent(), /取り込みます/);
-    await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
+    await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     const imported = await waitForDesign(base, design => design.studio.theme === 'violet');
     assert.equal(imported.studio.title, '旧版のタイトル');
     assert.match(imported.studio.image, /^images\/[0-9a-f]{64}\.png$/);

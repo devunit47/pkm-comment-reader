@@ -21,73 +21,96 @@ export async function checkImageFile(file, { Image: ImageClass = globalThis.Imag
 }
 
 // The applied design, read from and written to customization/current through
-// the local server. Saves are serialized; the newest requested design wins.
+// the local server. `confirmed` is what the server last acknowledged; `shown`
+// is what this page displays: confirmed plus edits that are still being saved.
+// Saves are serialized and the newest requested design wins.
 export async function createDesignStore({ fetchImpl = (...args) => globalThis.fetch(...args), EventSourceClass = globalThis.EventSource, watch = true } = {}) {
-  let state = { design: defaultDesign(), images: {}, revision: '' }, available = false, warning = '';
-  let desired = null, flushing = null, latestRevision = '', saves = 0;
-  // Revisions this page wrote: their change events need no reload.
-  const ownRevisions = new Set();
+  let confirmed = { design: defaultDesign(), images: {}, revision: '' }, shown = confirmed.design;
+  let available = false, warning = '';
+  // `latest` is the newest design passed to save(); `desired` is the next one to send.
+  let desired = null, latest = null, flushing = null, announced = '';
+  // Every request that can replace `confirmed` takes a ticket. An answer to a
+  // request issued before the last applied one is stale and is ignored.
+  let issued = 0, applied = 0;
+  // Images uploaded here stay usable even if a save answer lists an older catalog.
+  let uploaded = {};
   const listeners = new Set();
+  const emit = detail => { for (const listener of listeners) listener(detail); };
+  const images = () => ({ ...confirmed.images, ...uploaded });
+
+  function accept(value, ticket) {
+    if (ticket <= applied) return false;
+    applied = ticket;
+    confirmed = { design: normalizeDesign(value.design, { ...value.images, ...uploaded }), images: value.images, revision: value.revision };
+    return true;
+  }
 
   async function load({ force = false } = {}) {
-    const savesBefore = saves;
+    const ticket = ++issued;
     const response = await fetchImpl('/api/design/current', { cache: 'no-store' });
     if (!response.ok) throw new Error(await failureMessage(response, '見た目を読み込めません。'));
     const value = await response.json();
-    // A save that finished (or started) meanwhile is newer than this response.
-    if (!force && (saves !== savesBefore || flushing)) return;
-    state = { design: normalizeDesign(value.design, value.images), images: value.images, revision: value.revision };
+    // While edits are being saved, their own answer will be newer than this one.
+    if (!force && flushing) return false;
+    if (!accept(value, ticket)) return false;
+    shown = confirmed.design;
     warning = value.warning || '';
     available = true;
+    return true;
   }
   try { await load(); }
   catch (error) { warning = `${error.message} 標準の見た目を表示しています。ローカルサーバーから開いているか確認してください。`; }
 
-  const emit = detail => { for (const listener of listeners) listener(detail); };
   async function reloadExternal(force = false) {
-    const before = state.revision;
-    try { await load({ force }); } catch { return; /* The next change event retries. */ }
-    if (state.revision !== before) emit({ external: true });
+    const before = confirmed.revision;
+    let changed;
+    try { changed = await load({ force }); } catch { return; /* The next change event retries. */ }
+    if (changed && confirmed.revision !== before) emit({ external: true });
   }
 
   async function put(design) {
+    const ticket = ++issued;
     const response = await fetchImpl('/api/design/current', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': state.revision || 'default' }, body: JSON.stringify(design),
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': confirmed.revision || 'default' }, body: JSON.stringify(design),
     });
     if (response.status === 409) {
-      desired = null;
+      desired = null; latest = null;
       // The server already holds a newer design; show it instead of this save.
       await reloadExternal(true);
-      throw new Error('別の画面で見た目が変更されたため、最新の内容に切り替えました。もう一度操作してください。');
+      shown = confirmed.design;
+      throw Object.assign(new Error('別の画面で見た目が変更されたため、最新の内容に切り替えました。もう一度操作してください。'), { conflict: true });
     }
     if (!response.ok) throw new Error(await failureMessage(response, '見た目を保存できません。'));
-    const value = await response.json();
-    state = { design: normalizeDesign(value.design, value.images), images: value.images, revision: value.revision };
-    saves++;
-    ownRevisions.add(value.revision);
-    if (ownRevisions.size > 50) ownRevisions.delete(ownRevisions.values().next().value);
+    accept(await response.json(), ticket);
+    // Newer edits still waiting stay on screen; otherwise show what was stored.
+    if (design === latest) { shown = confirmed.design; latest = null; }
   }
   async function flush() {
     try { while (desired) { const next = desired; desired = null; await put(next); } }
+    catch (error) {
+      // Unsaved edits are dropped, so a cancelled draft cannot ride along with
+      // a later save. Pages rerender from the saved design.
+      if (!error.conflict) { desired = null; latest = null; shown = confirmed.design; emit({ reverted: true }); }
+      throw error;
+    }
     finally {
       flushing = null;
       // A change announced while saving may come from another page.
-      if (latestRevision && !ownRevisions.has(latestRevision) && latestRevision !== state.revision) reloadExternal();
+      if (announced && announced !== confirmed.revision) reloadExternal();
     }
   }
 
   const store = {
-    get design() { return state.design; },
-    get images() { return state.images; },
-    get revision() { return state.revision; },
+    get design() { return shown; },
+    get images() { return images(); },
+    get revision() { return confirmed.revision; },
     get available() { return available; },
     get warning() { return warning; },
     // Resolves once this design, or a newer one requested meanwhile, is stored.
     save(design) {
       if (!available) return Promise.reject(new Error('見た目を保存できません。ローカルサーバーから開いているか確認してください。'));
-      const normalized = normalizeDesign(design, state.images);
-      state = { ...state, design: normalized };
-      desired = normalized;
+      const normalized = normalizeDesign(design, images());
+      shown = normalized; desired = normalized; latest = normalized;
       if (!flushing) flushing = flush();
       return flushing;
     },
@@ -96,7 +119,7 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
       const response = await fetchImpl('/api/design/images', { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       if (!response.ok) throw new Error(await failureMessage(response, '画像を保存できません。'));
       const { ref, ...info } = await response.json();
-      state = { ...state, images: { ...state.images, [ref]: info } };
+      uploaded = { ...uploaded, [ref]: info };
       return { ref, ...info };
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
@@ -105,8 +128,10 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
   if (watch && typeof EventSourceClass === 'function') {
     const events = new EventSourceClass('/api/design/events');
     events.addEventListener('change', event => {
-      try { latestRevision = JSON.parse(event.data).revision; } catch { return; }
-      if (!flushing && !ownRevisions.has(latestRevision) && latestRevision !== state.revision) reloadExternal();
+      try { announced = JSON.parse(event.data).revision; } catch { return; }
+      // Revisions are content hashes, so only the current one can be skipped:
+      // another page may return to content this page saved earlier.
+      if (!flushing && announced !== confirmed.revision) reloadExternal();
     });
     // A server restart may have missed events; reread when the stream returns.
     let opened = false;

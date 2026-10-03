@@ -944,13 +944,13 @@ initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageCh
   },
 });
 outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio });
-// Another tab, the folder or a restart changed the design: show it here too.
-designStore.subscribe(() => {
+// Another page changed the design, or a failed save was undone: show the saved design.
+designStore.subscribe(detail => {
   imageGeneration++; speechImageGeneration++;
   studio = designStore.design.studio;
   themeEditor.reflectTheme(designStore.design.theme);
   workspaceEditor.reload();
-  designPreview.reload();
+  designPreview.reload(detail);
   outputPanel.reload();
   renderStudio(); render();
 });

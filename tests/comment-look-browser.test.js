@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveDesign } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, appReady } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -105,7 +105,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
   await page.locator('#studio-comment-label').check();
 
   // Reload keeps the settings; returning to the theme restores every value.
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
   // Returning to the theme preset restores every value, names included.
@@ -119,7 +119,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
 browserTest('theme CSS applies at theme values and an explicit setting takes precedence', async t => {
   const { page, errors, url } = await fixture(t);
   await saveDesign(url, { theme: '.pokome-workspace .pokome-comment__author { color: rgb(1, 2, 3); }' });
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
   await page.locator('#studio-comment-author-mode').selectOption('custom');
@@ -134,7 +134,7 @@ browserTest('theme CSS applies at theme values and an explicit setting takes pre
 browserTest('an explicit outline reaches the name and body over a theme text-shadow', async t => {
   const { context, page, errors, url } = await fixture(t);
   await saveDesign(url, { theme: '.pokome-workspace .pokome-comment__body { text-shadow: none; } .pokome-workspace .pokome-comment__author { text-shadow: none; }' });
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   const shadows = target => target.evaluate(() => {
     const comment = document.querySelector('#stage-chat-list .stage-comment');
@@ -169,7 +169,7 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
     '.pokome-workspace .stage-chat { --stage-comment-ink: rgb(16, 17, 18) !important; --stage-comment-name: rgb(19, 20, 21) !important; }',
   ].join(' ');
   await saveDesign(url, { theme });
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   const read = target => target.evaluate(() => {
     const comment = document.querySelector('#stage-chat-list .stage-comment');
@@ -212,7 +212,7 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
 browserTest('a hidden label collapses identically in the preview and the output over a theme !important', async t => {
   const { context, page, errors, url } = await fixture(t);
   await saveDesign(url, { theme: '.pokome-workspace .stage-panel-label { display: flex !important; } .pokome-workspace #stage-chat-list { padding-top: 0 !important; }' });
-  await page.reload();
+  await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   await page.locator('#studio-comment-preset').selectOption('outline');
   const geometry = target => target.evaluate(() => {

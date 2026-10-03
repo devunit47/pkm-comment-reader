@@ -141,3 +141,104 @@ test('a slow reload never overwrites a newer save, so later saves are not refuse
   await store.save({ ...defaultDesign(), name: 'third' });
   assert.equal(server.current.design.name, 'third');
 });
+
+// --- Review findings on PR #9: each reproduced a lost or stale design. ---
+
+// A server whose revisions are content hashes (like design-storage.js), with
+// hooks to fail or hold individual requests.
+function contentServer() {
+  const requests = [];
+  const revisionOf = design => `h:${JSON.stringify(design)}`;
+  let current = { design: defaultDesign(), images: {}, revision: 'default' };
+  const hooks = { put: [], get: [] };
+  const reply = (status, body) => ({ ok: status < 400, status, json: async () => body });
+  const fetchImpl = async (url, options = {}) => {
+    const method = options.method || 'GET';
+    requests.push({ url, method });
+    if (url !== '/api/design/current') return reply(404, {});
+    if (method === 'GET') {
+      const snapshot = structuredClone(current);
+      const hook = hooks.get.shift();
+      if (hook) await hook;
+      return reply(200, snapshot);
+    }
+    const hook = hooks.put.shift();
+    if (hook) { const outcome = await hook; if (outcome === 'fail') return reply(503, { error: '書き込めません。' }); }
+    if (options.headers['If-Match'] !== current.revision) return reply(409, { error: 'stale' });
+    const design = JSON.parse(options.body);
+    current = { design, images: current.images, revision: revisionOf(design) };
+    return reply(200, current);
+  };
+  // Another page saves directly on the server.
+  const external = design => { current = { design, images: current.images, revision: revisionOf(design) }; return current.revision; };
+  return { fetchImpl, requests, hooks, external, get current() { return current; } };
+}
+class FakeEvents {
+  static last;
+  constructor() { FakeEvents.last = this; this.listeners = {}; }
+  addEventListener(type, listener) { (this.listeners[type] ||= []).push(listener); }
+  emit(type, data) { for (const listener of this.listeners[type] || []) listener({ data: JSON.stringify(data) }); }
+}
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+const gate = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
+const withStudio = (design, studio) => ({ ...design, studio: { ...design.studio, ...studio } });
+
+test('a failed save is discarded instead of riding along with the next save', async () => {
+  const server = contentServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const events = [];
+  store.subscribe(detail => events.push(detail));
+  server.hooks.put.push(Promise.resolve('fail'));
+  await assert.rejects(store.save({ ...store.design, name: 'cancelled draft' }), /書き込めません/);
+  assert.equal(store.design.name, '', 'the page goes back to the saved design');
+  assert.deepEqual(events, [{ reverted: true }]);
+  await store.save(withStudio(store.design, { theme: 'rose' }));
+  assert.equal(server.current.design.name, '');
+  assert.equal(server.current.design.studio.theme, 'rose');
+});
+
+test('an older save response keeps the newer edits waiting to be saved', async () => {
+  const server = contentServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const first = gate(), second = gate();
+  server.hooks.put.push(first.promise, second.promise);
+  store.save({ ...store.design, theme: '.pokome-workspace{}' });
+  await tick();
+  store.save({ ...store.design, outputSize: '1920x1080' });
+  first.release(); await tick(); await tick();
+  assert.equal(store.design.outputSize, '1920x1080', 'the size change stays while its save is pending');
+  const last = store.save(withStudio(store.design, { theme: 'violet' }));
+  second.release();
+  await last;
+  assert.equal(server.current.design.outputSize, '1920x1080');
+  assert.equal(server.current.design.studio.theme, 'violet');
+  assert.equal(server.current.design.theme, '.pokome-workspace{}');
+});
+
+test('reloads answered out of order never go back to an older external design', async () => {
+  const server = contentServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, EventSourceClass: FakeEvents });
+  const slow = gate();
+  server.hooks.get.push(slow.promise);
+  FakeEvents.last.emit('change', { revision: server.external(withStudio(defaultDesign(), { theme: 'rose' })) });
+  await tick();
+  FakeEvents.last.emit('change', { revision: server.external(withStudio(defaultDesign(), { theme: 'violet' })) });
+  await tick(); await tick();
+  assert.equal(store.design.studio.theme, 'violet');
+  slow.release(); await tick(); await tick();
+  assert.equal(store.design.studio.theme, 'violet', 'the late answer for rose is ignored');
+});
+
+test('an external change back to content this page saved earlier is still applied', async () => {
+  const server = contentServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, EventSourceClass: FakeEvents });
+  const rose = withStudio(defaultDesign(), { theme: 'rose' });
+  await store.save(rose);
+  FakeEvents.last.emit('change', { revision: server.current.revision });
+  await store.save(withStudio(defaultDesign(), { theme: 'violet' }));
+  FakeEvents.last.emit('change', { revision: server.current.revision });
+  await tick();
+  FakeEvents.last.emit('change', { revision: server.external(rose) });
+  await tick(); await tick();
+  assert.equal(store.design.studio.theme, 'rose');
+});

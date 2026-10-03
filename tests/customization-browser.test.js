@@ -8,7 +8,7 @@ import { createServer } from '../server.js';
 import { createHash } from 'node:crypto';
 import { DEFAULT_STUDIO } from '../studio.js';
 import { defaultDesign } from '../design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, appReady } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const cssTwo = '.pokome-workspace .pokome-panel { border-radius: 11px; }';
@@ -164,7 +164,7 @@ test('local picker applies CSS and both image targets, rejects invalid files and
   await page.waitForFunction(() => !document.querySelector('#customization-style option[value="first.css"]'));
   assert.equal(await page.locator('#apply-customization-style').isDisabled(), true);
   await rm(join(directory, 'images/actor.png')); await rm(join(directory, 'images/background.png'));
-  await page.reload(); await studio(page);
+  await page.reload(); await appReady(page); await studio(page);
   assert.equal(await currentCSS(page), goodCSS);
   assert.deepEqual(await savedStudio(page), goodStudio);
   await page.waitForFunction(() => document.querySelector('#actor-image').complete && document.querySelector('#actor-image').naturalWidth === 16);
@@ -220,7 +220,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   await resetAppearance(page); await resetAppearance(page);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
   assert.equal(await page.locator('#appearance-recovery #open-reset').evaluate(button => button.matches(':focus')), true);
-  await page.reload(); await studio(page);
+  await page.reload(); await appReady(page); await studio(page);
   assert.equal(await page.locator('#studio-theme').inputValue(), DEFAULT_STUDIO.theme);
   assert.equal(await currentCSS(page), '');
   await screenshot(page, 'local-restored-default');

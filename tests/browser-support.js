@@ -57,3 +57,7 @@ export async function waitForDesign(base, predicate, timeout = 8000) {
   }
   throw new Error(`design did not reach the expected state: ${JSON.stringify({ theme: design?.theme, ratios: design?.ratios, studio: design?.studio }).slice(0, 3000)}`);
 }
+
+// The page loads the design from the server before it finishes starting. The
+// recovery button is created last, so its presence means the page is ready.
+export const appReady = page => page.locator('#appearance-recovery').waitFor({ state: 'attached' });

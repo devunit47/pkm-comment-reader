@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
 // The talk (stream) layout is saved in customization/current, not in the browser.
 const savedSpeech = async base => (await readDesign(base)).ratios['16:9']?.layout?.panels.speech;
@@ -96,7 +96,7 @@ test('credits follow voice, style, engine and platform, survive reload and appea
   await choose(page, 'voicevox'); await credits(page, 'VOICEVOX:ずんだもん');
   await page.locator('#voice').selectOption('1'); await credits(page, 'VOICEVOX:ずんだもん');
   await page.locator('#voice').selectOption('2'); await credits(page, 'VOICEVOX:四国めたん');
-  await page.reload(); await credits(page, 'VOICEVOX:四国めたん');
+  await page.reload(); await appReady(page); await credits(page, 'VOICEVOX:四国めたん');
   assert.equal(await page.locator('#voice').inputValue(), '2');
   for (const style of ['panel', 'bubble', 'image']) {
     await page.locator('[data-page="studio"]').click();
@@ -219,7 +219,7 @@ test('saved bottom-aligned speech stays in the unscrolled viewport after reload 
   const { page, errors } = await open(t, base);
   for (const engine of ['voicevox', 'coeiroink']) {
     await choose(page, engine);
-    await page.reload();
+    await page.reload(); await appReady(page);
     await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     await page.locator('#enter-talk').click();
     for (const viewport of [{ width: 1280, height: 720 }, { width: 640, height: 360 }, { width: 960, height: 540 }]) {
@@ -428,7 +428,7 @@ test('missing or failed metadata cannot retain an old name and markup remains li
   state.speakers = voicevoxSpeakers(); await refresh(page); await credits(page, 'VOICEVOX:ずんだもん');
   state.fail = true; await refresh(page); await credits(page, 'VOICEVOX:音声名未取得');
   assert.equal(await page.locator('#voice').isDisabled(), true);
-  await page.reload(); await credits(page, 'VOICEVOX:音声名未取得');
+  await page.reload(); await appReady(page); await credits(page, 'VOICEVOX:音声名未取得');
   state.fail = false; await refresh(page); await credits(page, 'VOICEVOX:ずんだもん');
   await choose(page, 'browser'); await credits(page, '');
   assert.deepEqual(errors, []);

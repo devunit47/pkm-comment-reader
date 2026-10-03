@@ -289,9 +289,10 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
     reset() { if (draft) close(); overlays = normalizeOverlays(); renderOverlays(live,overlays); },
     getOverlays: () => clone(overlays),
     // Another page saved the design: show it, and refuse to apply an older draft.
-    reload() {
+    // A failed save only restores the saved design; an open draft stays usable.
+    reload(detail = { external: true }) {
       overlays = storedOverlays(); renderOverlays(live,resolveOverlayAssets(overlays));
-      if (draft) { stale = true; status('別の画面で見た目が変更されました。キャンセルして開き直してください。'); }
+      if (draft && detail.external) { stale = true; status('別の画面で見た目が変更されました。キャンセルして開き直してください。'); }
     },
   };
 }
