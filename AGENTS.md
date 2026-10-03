@@ -27,7 +27,7 @@
 
 - 外部パッケージのインストールは不要（依存なし）。
 - CI（`.github/workflows/ci.yml`）は PR で `npm run check`・`npm test`（Ubuntu）と `build:local`（Windows）を実行する。
-- 2026-10-03 時点（GitHub Pages 版の削除後）では、全 185 件中 181 件成功・4 件スキップ（シンボリックリンク権限 3 件と非 Windows 専用 1 件）。
+- 2026-10-03 時点（GitHub Pages 版の削除後）では、全 187 件中 183 件成功・4 件スキップ（シンボリックリンク権限 3 件と非 Windows 専用 1 件）。
 
 ## コードの約束事
 
