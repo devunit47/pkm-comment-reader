@@ -133,6 +133,9 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
     draft.overlays = normalizeOverlays({ ...draft.overlays, items: draft.overlays.items.map(item => item.id === id ? {...item,...patch} : item) });
     draw(); fields();
   }
+  const resizePatch = (item, dx, dy) => ({
+    w: Math.min(item.w + dx, 100 - item.x), h: Math.min(item.h + dy, 100 - item.y),
+  });
   function startMove(event, id, resize) {
     if (!draft || event.button !== 0) return;
     event.preventDefault(); dragCleanup?.(); selected = id; fields(); draw();
@@ -145,7 +148,7 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
     const move = e => {
       if (!isCurrent(token)) return;
       const dx = (e.clientX-event.clientX)/width*100, dy = (e.clientY-event.clientY)/height*100;
-      changedItem(id, resize ? {w:original.w+dx,h:original.h+dy} : {x:original.x+dx,y:original.y+dy});
+      changedItem(id, resize ? resizePatch(original, dx, dy) : {x:original.x+dx,y:original.y+dy});
     };
     const finish = e => { cleanup(); if (e.type === 'pointercancel' && isCurrent(token)) changedItem(id, original); };
     const cleanup = () => { button.removeEventListener('pointermove',move); button.removeEventListener('pointerup',finish); button.removeEventListener('pointercancel',finish); dragCleanup = null; };
@@ -155,7 +158,7 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
     const delta = {ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];
     if (!delta || !draft) return;
     event.preventDefault(); selected = id; const item = currentItem(), size = resize || event.shiftKey;
-    changedItem(id, size ? {w:item.w+delta[0],h:item.h+delta[1]} : {x:item.x+delta[0],y:item.y+delta[1]});
+    changedItem(id, size ? resizePatch(item, ...delta) : {x:item.x+delta[0],y:item.y+delta[1]});
   }
   function invalidate() { epoch++; requests.clear(); pending = 0; dragCleanup?.(); }
   function close() {

@@ -223,6 +223,53 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.deepEqual(errors, []);
 });
 
+browserTest('keyboard resizing keeps its position at canvas edges and minimum sizes', async t => {
+  const item = createOverlay('text', { id: 'edge', x: 90, y: 90, w: 10, h: 10 });
+  const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify({ version: 1, items: [item], assets: {} }) });
+  const frame = await openPreview(page);
+  const move = frame.locator('.overlay-hit button[data-resize="false"]');
+  const resize = frame.locator('.overlay-hit button[data-resize="true"]');
+  const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator(`#overlay-${key}`).inputValue())])));
+  for (let index = 0; index < 3; index++) { await move.press('Shift+ArrowRight'); await resize.press('ArrowDown'); }
+  assert.deepEqual(await geometry(), { x: 90, y: 90, w: 10, h: 10 });
+  await move.press('Shift+ArrowLeft'); await resize.press('ArrowUp');
+  assert.deepEqual(await geometry(), { x: 90, y: 90, w: 9, h: 9 });
+  await number(editor, 'x', 0); await number(editor, 'y', 0);
+  for (let index = 0; index < 10; index++) { await resize.press('ArrowLeft'); await move.press('Shift+ArrowUp'); }
+  assert.deepEqual(await geometry(), { x: 0, y: 0, w: 2, h: 2 });
+  await resize.press('ArrowRight'); await move.press('Shift+ArrowDown');
+  assert.deepEqual(await geometry(), { x: 0, y: 0, w: 3, h: 3 });
+  await editor.locator('#apply-design').click(); await page.reload();
+  assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 0, y: 0, w: 3, h: 3 });
+  assert.deepEqual(errors, []);
+});
+
+browserTest('pointer resizing clamps size without moving the anchor at both preview scales', async t => {
+  const { page, editor, errors } = await fixture(t);
+  const frame = await openPreview(page);
+  await editor.locator('#add-text').click();
+  for (const resolution of ['1280', '640']) {
+    await editor.locator('#preview-width').selectOption(resolution);
+    for (const [key, value] of Object.entries({ w: 10, h: 10, x: 80, y: 80 })) await number(editor, key, value);
+    const resize = frame.locator('.overlay-hit button[data-resize="true"]');
+    const handle = await resize.boundingBox(), canvas = await frame.locator('#talk-stage').boundingBox();
+    const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(x + canvas.width * .15, y + canvas.height * .15);
+    for (const key of ['x','y']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 80);
+    for (const key of ['w','h']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 20);
+    await page.mouse.move(x - canvas.width * .05, y - canvas.height * .05);
+    for (const key of ['w','h']) assert.ok(Math.abs(Number(await editor.locator(`#overlay-${key}`).inputValue()) - 5) < .2);
+    await page.mouse.move(x - canvas.width * .5, y - canvas.height * .5); await page.mouse.up();
+    for (const key of ['x','y']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 80);
+    for (const key of ['w','h']) assert.equal(Number(await editor.locator(`#overlay-${key}`).inputValue()), 2);
+  }
+  await editor.locator('#apply-design').click(); await page.reload();
+  const saved = (await savedOverlays(page)).items[0];
+  assert.deepEqual({ x: saved.x, y: saved.y, w: saved.w, h: saved.h }, { x: 80, y: 80, w: 2, h: 2 });
+  assert.deepEqual(errors, []);
+});
+
 browserTest('importing reordered equal-z overlays keeps preview, Apply and reload stacking consistent', async t => {
   const first = createOverlay('text', { id: 'first', text: 'First', z: 3 });
   const second = createOverlay('text', { id: 'second', text: 'Second', z: 3 });
