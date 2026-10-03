@@ -39,7 +39,7 @@ const look = target => target.evaluate(() => {
     panelBorder: style(document.querySelector('.stage-chat')).borderTopColor,
     text: style(comment.querySelector('p')).color,
     author: style(comment.querySelector('strong')).color,
-    shadow: style(comment).textShadow,
+    shadow: style(comment.querySelector('p')).textShadow,
     lineHeight: style(comment.querySelector('p')).lineHeight,
     paddingTop: style(comment).paddingTop,
     divider: style(comment).borderTopWidth,
@@ -128,6 +128,33 @@ browserTest('theme CSS applies at theme values and an explicit setting takes pre
   assert.equal((await look(page)).author, 'rgb(255, 136, 0)');
   await page.locator('#studio-comment-author-mode').selectOption('theme');
   assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('an explicit outline reaches the name and body over a theme text-shadow', async t => {
+  const { context, page, errors } = await fixture(t);
+  await page.evaluate(() => localStorage.setItem('pokome-theme-v1', '.pokome-workspace .pokome-comment__body { text-shadow: none; } .pokome-workspace .pokome-comment__author { text-shadow: none; }'));
+  await page.reload();
+  await page.locator('.nav[data-page="studio"]').click();
+  const shadows = target => target.evaluate(() => {
+    const comment = document.querySelector('#stage-chat-list .stage-comment');
+    return [comment.querySelector('.pokome-comment__author'), comment.querySelector('.pokome-comment__body')].map(element => getComputedStyle(element).textShadow);
+  });
+  assert.deepEqual(await shadows(page), ['none', 'none']);
+  for (const [preset, width] of [['outline', '1px'], ['dark', '1px']]) {
+    await page.locator('#studio-comment-preset').selectOption(preset);
+    for (const shadow of await shadows(page)) assert.ok(shadow.startsWith(`rgb(0, 0, 0) ${width} 0px 0px`), `${preset}: ${shadow}`);
+  }
+  await page.locator('#studio-comment-outline').selectOption('thick');
+  for (const shadow of await shadows(page)) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
+  // The output applies the same outline to both elements.
+  const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
+  output.setDefaultTimeout(8000);
+  await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
+  for (const shadow of await shadows(output)) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
+  // Back at the theme value, the theme's own text-shadow applies again.
+  await page.locator('#studio-comment-preset').selectOption('theme');
+  assert.deepEqual(await shadows(page), ['none', 'none']);
   assert.deepEqual(errors, []);
 });
 
