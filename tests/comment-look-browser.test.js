@@ -158,6 +158,58 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
   assert.deepEqual(errors, []);
 });
 
+browserTest('explicit settings win over theme CSS marked !important, and the theme returns at theme values', async t => {
+  const { context, page, errors } = await fixture(t);
+  const theme = [
+    '.pokome-workspace .pokome-comment__body { text-shadow: none !important; color: rgb(1, 2, 3) !important; line-height: 3 !important; }',
+    '.pokome-workspace .pokome-comment__author { text-shadow: none !important; color: rgb(4, 5, 6) !important; }',
+    '.pokome-workspace .stage-chat { background: rgb(7, 8, 9) !important; }',
+    // Redefining the variables the settings write must not work either.
+    '.pokome-workspace { --stage-comment-text: rgb(10, 11, 12) !important; --stage-comment-outline: rgb(13, 14, 15) !important; --stage-comment-shadow: none !important; }',
+    '.pokome-workspace .stage-chat { --stage-comment-ink: rgb(16, 17, 18) !important; --stage-comment-name: rgb(19, 20, 21) !important; }',
+  ].join(' ');
+  await page.evaluate(css => localStorage.setItem('pokome-theme-v1', css), theme);
+  await page.reload();
+  await page.locator('.nav[data-page="studio"]').click();
+  assert.equal(await page.locator('#theme-status').textContent(), '見た目を反映・保存しました。');
+  const read = target => target.evaluate(() => {
+    const comment = document.querySelector('#stage-chat-list .stage-comment');
+    const body = getComputedStyle(comment.querySelector('.pokome-comment__body')), author = getComputedStyle(comment.querySelector('.pokome-comment__author'));
+    return { bodyShadow: body.textShadow, bodyColor: body.color, lineHeight: body.lineHeight, authorShadow: author.textShadow, authorColor: author.color, panel: getComputedStyle(document.querySelector('.stage-chat')).backgroundColor };
+  });
+  const themed = { bodyShadow: 'none', bodyColor: 'rgb(1, 2, 3)', lineHeight: '60px', authorShadow: 'none', authorColor: 'rgb(4, 5, 6)', panel: 'rgb(7, 8, 9)' };
+  assert.deepEqual(await read(page), themed);
+
+  await page.locator('#studio-comment-preset').selectOption('outline');
+  const outlined = await read(page);
+  for (const shadow of [outlined.bodyShadow, outlined.authorShadow]) assert.ok(shadow.startsWith('rgb(0, 0, 0) 1px 0px 0px'), shadow);
+  assert.deepEqual([outlined.bodyColor, outlined.authorColor, outlined.panel], ['rgb(255, 255, 255)', 'rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)']);
+  await page.locator('#studio-comment-line-height').selectOption('1.5');
+  assert.equal((await read(page)).lineHeight, '30px');
+  await page.locator('#studio-comment-panel').selectOption('light');
+  await page.locator('#studio-comment-text-mode').selectOption('theme');
+  // A light panel's readable default also beats the theme's important color.
+  assert.deepEqual([(await read(page)).panel, (await read(page)).bodyColor], ['rgba(255, 255, 255, 0.9)', 'rgb(31, 42, 36)']);
+  await page.locator('#studio-comment-author-mode').selectOption('theme');
+  assert.equal((await read(page)).authorColor, 'rgb(59, 110, 88)');
+  assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(31, 42, 36)');
+  // A color chosen on a light panel still wins over its readable default.
+  await page.locator('#studio-comment-text-mode').selectOption('custom');
+  await page.locator('#studio-comment-text').fill('#aa0000');
+  await page.locator('#studio-comment-text').dispatchEvent('change');
+  assert.equal((await read(page)).bodyColor, 'rgb(170, 0, 0)');
+  assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(170, 0, 0)');
+
+  const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
+  output.setDefaultTimeout(8000);
+  await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
+  assert.deepEqual(await read(output), await read(page));
+
+  await page.locator('#studio-comment-preset').selectOption('theme');
+  assert.deepEqual(await read(page), themed);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('a chroma key output warns about a half-transparent comment panel', async t => {
   const { page, errors } = await fixture(t);
   const status = page.locator('#output-status');

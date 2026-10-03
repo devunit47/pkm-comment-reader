@@ -20,6 +20,10 @@ test('theme validation with browser CSSOM', { skip: !browserAvailable }, async (
       { css: '@import url(https://example.com/theme.css); .pokome-workspace { color:red }', valid: false },
       { css: '.pokome-workspace { & + body { color:red } }', valid: false },
       { css: '@media screen { body { color: red } }', valid: false },
+      // Settings rely on an important first-declared layer; themes must not declare layers.
+      { css: '@layer pokome-settings { .pokome-workspace { color: red } }', valid: false },
+      { css: '@layer early, pokome-settings; .pokome-workspace { color: red }', valid: false },
+      { css: '@media (min-width: 1px) { @layer x { .pokome-workspace { color: red } } }', valid: false },
       { css: '@font-face { font-family: external; src: url(https://example.com/font.woff2) }', valid: false },
     ];
     const results = await page.evaluate(({ source, cases }) => {

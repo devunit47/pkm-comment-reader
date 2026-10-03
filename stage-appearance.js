@@ -121,7 +121,8 @@ export function applyTalkLayout(stage, layout) {
 // Comment list look. A value left at the theme's own setting removes its
 // attribute or variable, so the stylesheet and theme CSS apply unchanged.
 export function renderCommentLook(stage, studio) {
-  const set = (name, value) => value === null || value === '' ? stage.style.removeProperty(name) : stage.style.setProperty(name, value);
+  // Important inline values: theme CSS cannot redefine them, even with !important.
+  const set = (name, value) => value === null || value === '' ? stage.style.removeProperty(name) : stage.style.setProperty(name, value, 'important');
   const flag = (name, value) => value === null ? delete stage.dataset[name] : stage.dataset[name] = value;
   flag('commentPanel', studio.commentPanel === 'theme' ? null : studio.commentPanel);
   set('--stage-comment-opacity', ['light', 'dark'].includes(studio.commentPanel) ? String(studio.commentPanelOpacity / 100) : null);
