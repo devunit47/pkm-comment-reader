@@ -1,3 +1,6 @@
+import { renderStageAppearance } from './stage-appearance.js';
+import { initializeDesignPreview } from './design-preview.js';
+import { OVERLAYS_KEY, normalizeOverlays } from './overlay-model.js';
 import { initializeCustomization } from './customization.js';
 import { normalizeWorkspace } from './workspace-model.js';
 import { exportSettings, parseSettings, restoreSettings } from './settings-backup.js';
@@ -590,24 +593,8 @@ function renderStageSpeech() {
 
 function renderStudio() {
   const stage = $('talk-stage');
-  stage.dataset.theme = studio.theme;
-  stage.dataset.layout = studio.layout;
-  stage.dataset.decorated = String(studio.decoration);
-  stage.style.setProperty('--stage-accent', studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent);
-  stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
-  $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
+  renderStageAppearance(stage, studio);
   $('stage-comment-style').value = studio.commentStyle;
-  $('stage-speech-user').hidden = studio.commentStyle === 'anonymous';
-  stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
-  stage.style.setProperty('--speech-background', studio.speechBackground);
-  const luminance = studio.speechBackground.slice(1).match(/../g).map(hex => {
-    const channel = parseInt(hex, 16) / 255;
-    return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
-  }).reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0);
-  stage.style.setProperty('--speech-ink', luminance > .179 ? '#000000' : '#ffffff');
-  document.querySelector('.stage-speech').dataset.style = studio.speechStyle;
-  stage.style.setProperty('--speech-image', `url("${studio.speechImage || './speech-background.svg'}")`);
-  stage.style.setProperty('--speech-image-ink', studio.speechTextColor);
   const preview = document.querySelector('.speech-bubble');
   preview.dataset.style = studio.speechStyle;
   for (const property of ['--speech-background', '--speech-ink', '--speech-image', '--speech-image-ink']) {
@@ -618,12 +605,6 @@ function renderStudio() {
   preview.style.setProperty('--stage-text', stageColors.getPropertyValue('--stage-text'));
   preview.style.setProperty('--stage-border', stageColors.getPropertyValue('--stage-border'));
   preview.style.setProperty('--stage-accent', stageColors.getPropertyValue('--stage-accent'));
-  stage.style.setProperty('--actor-width', `${studio.actorWidth}fr`);
-  stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
-  $('stage-title').textContent = studio.title;
-  $('stage-subtitle').textContent = studio.subtitle;
-  $('stage-footer-text').textContent = studio.footer;
-  $('stage-speech-title').textContent = studio.speechTitle;
   $('studio-speech-font-size').value = studio.speechFontSize;
   $('studio-speech-style').value = studio.speechStyle;
   $('studio-speech-background').value = studio.speechBackground;
@@ -633,16 +614,6 @@ function renderStudio() {
   $('studio-speech-text-color').value = studio.speechTextColor;
   $('studio-speech-image-status').textContent = studio.speechImage ? 'ユーザーの背景画像を登録済みです。' : '標準の背景画像を使用します。';
   $('reset-speech-image').disabled = !studio.speechImage;
-  const hasImage = studio.source === 'image' && !!studio.image;
-  $('actor-image').hidden = !hasImage;
-  if ($('actor-image').getAttribute('src') !== (studio.image || null)) {
-    if (studio.image) $('actor-image').src = studio.image;
-    else $('actor-image').removeAttribute('src');
-  }
-  $('actor-placeholder').hidden = hasImage;
-  $('actor-placeholder').querySelector('small').textContent = studio.source === 'image'
-    ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
-  $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
   for (const key of ['theme', 'source']) $(`studio-${key}`).value = studio[key];
   $('stage-font-value').textContent = `${studio.fontSize}px`;
   $('stage-font-minus').disabled = studio.fontSize <= 16;
@@ -915,8 +886,14 @@ render();
 const themeEditor = initializeTheme(storage);
 const workspaceEditor = initializeWorkspace(storage);
 themeEditor.connectWorkspace(workspaceEditor);
+const designPreview = initializeDesignPreview({ storage, themeEditor,
+  beginDraft() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
+  getStudio: () => studio, getLayouts: () => workspaceEditor.getLayouts(),
+  commitStudio(next) { imageGeneration++; speechImageGeneration++; studio = next; renderStudio(); },
+});
 initializeCustomization({ publication, platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
   resetAppearance() {
+    designPreview.reset();
     imageGeneration++; speechImageGeneration++;
     themeEditor.resetTheme(); workspaceEditor.reset();
     studio = normalizeStudio();
@@ -924,7 +901,7 @@ initializeCustomization({ publication, platforms: enabledPlatforms, themeEditor,
     renderStudio(); render();
     try {
       if (!storage) return false;
-      for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-workspace-v1']) storage.removeItem(key);
+      for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-workspace-v1', OVERLAYS_KEY]) storage.removeItem(key);
       return true;
     } catch { return false; }
   },
@@ -963,6 +940,7 @@ $('restore-settings').onchange = async event => {
     const settings = parseSettings(await file.text());
     if (settings['pokome-theme-v1']) compileTheme(settings['pokome-theme-v1']);
     if (settings['pokome-workspace-v1']) normalizeWorkspace(JSON.parse(settings['pokome-workspace-v1']));
+    if (settings[OVERLAYS_KEY]) normalizeOverlays(JSON.parse(settings[OVERLAYS_KEY]));
     pendingSettings = settings;
     $('backup-status').textContent = '現在の接続先・音声・ユーザー設定・見た目を置き換えます。「復元する」で適用します。';
     $('confirm-restore').disabled = false;

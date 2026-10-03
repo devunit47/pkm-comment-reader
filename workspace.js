@@ -139,5 +139,5 @@ export function initializeWorkspace(storage) {
   // size without reapplying a layout. Updating top does not change panel size.
   new ResizeObserver(clampTalkSpeech).observe(talkSpeech);
   for (const mode of Object.keys(roots)) apply(mode); fields();
-  return { getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); } };
+  return { cancelPending() { layoutGeneration++; }, getLayouts: () => normalizeWorkspace(layouts), applyLayouts, reset: () => { editing = false; applyLayouts({ version: 1, home: null, talk: null }); } };
 }

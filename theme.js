@@ -75,13 +75,13 @@ export function initializeTheme(storage) {
     catch { return false; }
   };
   const beginChange = () => ++generation;
-  const apply = (css, expected = beginChange()) => {
+  const apply = (css, expected = beginChange(), { save = true } = {}) => {
     if (expected !== generation) return null;
     const compiled = compileTheme(css);
     style.textContent = compiled;
     current = css;
     input.value = css || DEFAULT_THEME_CSS;
-    const saved = persist(css);
+    const saved = !save || persist(css);
     status.textContent = saved ? '見た目を反映・保存しました。' : '見た目を反映しました。保存できないため、再読み込みすると元に戻ります。';
     return saved;
   };
@@ -118,5 +118,5 @@ export function initializeTheme(storage) {
     } catch (error) { status.textContent = `読み込み失敗: ${error.message}`; }
     event.target.value = '';
   };
-  return { resetTheme, applyTheme: apply, beginChange, connectWorkspace(value) { workspace = value; } };
+  return { resetTheme, applyTheme: apply, beginChange, getTheme: () => current, reflectTheme: css => apply(css, beginChange(), { save: false }), connectWorkspace(value) { workspace = value; } };
 }
