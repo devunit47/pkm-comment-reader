@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
@@ -49,7 +49,8 @@ async function fixture(t, initial = {}) {
   server = createServer({ customizationDirectory: directory });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
   page.setDefaultTimeout(8000);
   // External font availability is irrelevant to these deterministic UI checks.
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
@@ -219,6 +220,67 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.deepEqual(await savedOverlays(page), saved);
   assert.equal(await page.locator(`#talk-stage .pokome-overlay[data-overlay-id="${first}"]`).textContent(), text);
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').first().evaluate(element => getComputedStyle(element).pointerEvents), 'none');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('importing reordered equal-z overlays keeps preview, Apply and reload stacking consistent', async t => {
+  const first = createOverlay('text', { id: 'first', text: 'First', z: 3 });
+  const second = createOverlay('text', { id: 'second', text: 'Second', z: 3 });
+  const initial = { version: 1, items: [first, second], assets: {} };
+  const { page, editor, errors } = await fixture(t, { [OVERLAYS_KEY]: JSON.stringify(initial) });
+  const frame = await openPreview(page);
+  const order = root => root.locator('.pokome-overlay').evaluateAll(nodes => nodes.map(node => node.dataset.overlayId));
+  assert.deepEqual(await order(frame), ['first', 'second']);
+  await editor.locator('details').last().locator('summary').click();
+  await editor.locator('#import-overlays').setInputFiles(setFile(JSON.stringify({ ...initial, items: [second, first] })));
+  await page.waitForFunction(root => {
+    const doc = document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentDocument;
+    return doc.querySelector('.pokome-overlay')?.dataset.overlayId === 'second';
+  }, ROOT);
+  assert.deepEqual(await order(frame), ['second', 'first']);
+  await editor.locator('#apply-design').click();
+  assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
+  await page.reload();
+  assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('overlay UI enforces the item limit and roundtrips image assets through set exports and settings backup', async t => {
+  const { page, editor, errors } = await fixture(t);
+  await openPreview(page);
+  await editor.locator('#add-text').click();
+  await editor.locator('#overlay-text').fill('Backup text');
+  await editor.locator('#overlay-image').setInputFiles(imageFile('asset.png'));
+  await countItems(page, 2); await ready(page);
+  await editor.locator('details').last().locator('summary').click();
+  const exportEvent = page.waitForEvent('download');
+  await editor.locator('#export-overlays').click();
+  const exported = await readFile(await (await exportEvent).path());
+  const set = JSON.parse(exported);
+  assert.equal(set.items.length, 2);
+  assert.equal(Object.keys(set.assets).length, 1);
+  for (let index = 2; index < 20; index++) await editor.locator('#add-text').click();
+  assert.equal(await editor.locator('#add-text').isDisabled(), true);
+  assert.equal(await editor.locator('#overlay-image').isDisabled(), true);
+  await countItems(page, 20);
+  await editor.locator('#import-overlays').setInputFiles({ name: 'exported.json', mimeType: 'application/json', buffer: exported });
+  await countItems(page, 2); await ready(page);
+  await editor.locator('#apply-design').click();
+  assert.deepEqual(await savedOverlays(page), set);
+  await page.locator('[data-page="settings"]').click();
+  const backupEvent = page.waitForEvent('download');
+  await page.locator('#backup-settings').click();
+  const backup = await readFile(await (await backupEvent).path());
+  assert.deepEqual(JSON.parse(JSON.parse(backup).settings[OVERLAYS_KEY]), set);
+  await page.evaluate(key => localStorage.removeItem(key), OVERLAYS_KEY);
+  await page.reload();
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
+  await page.locator('[data-page="settings"]').click();
+  await page.locator('#restore-settings').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: backup });
+  assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
+  await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]);
+  assert.deepEqual(await savedOverlays(page), set);
+  assert.equal(await page.locator('#talk-stage > .pokome-overlay img').count(), 1);
   assert.deepEqual(errors, []);
 });
 
