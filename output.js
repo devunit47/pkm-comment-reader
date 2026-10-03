@@ -11,7 +11,7 @@ import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessag
 const options = parseOutputOptions(location.search, typeof window.obsstudio === 'object' && window.obsstudio !== null);
 document.body.dataset.background = options.background;
 document.body.style.setProperty('--output-key', options.key);
-let storage;
+let storage, studio;
 try { storage = window.localStorage; } catch { /* Appearance falls back to defaults. */ }
 const APPEARANCE_KEYS = ['pokome-studio', 'pokome-theme-v1', WORKSPACE_KEY, OVERLAYS_KEY];
 const id = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -33,7 +33,8 @@ document.head.append(theme);
 const $ = elementId => stage.querySelector(`#${elementId}`);
 
 function renderAppearance() {
-  renderStageAppearance(stage, readStudio(storage));
+  studio = readStudio(storage);
+  renderStageAppearance(stage, studio);
   renderOverlays(stage, readOverlays(storage));
   try { theme.textContent = compileTheme(storage?.getItem('pokome-theme-v1') || ''); } catch { theme.textContent = ''; }
   let layout = null;
@@ -46,13 +47,13 @@ const view = createOutputView();
 let expiryTimer;
 function alignNewest() {
   const list = $('stage-chat-list');
-  list.scrollTop = readStudio(storage).newestPosition === 'top' ? 0 : list.scrollHeight;
+  list.scrollTop = studio.newestPosition === 'top' ? 0 : list.scrollHeight;
   markClippedComments(list);
 }
 function renderChat() {
   const list = $('stage-chat-list');
   clearTimeout(expiryTimer);
-  const studio = readStudio(storage), now = Date.now();
+  const now = Date.now();
   const selected = selectOutputComments(view.messages, studio, now);
   renderStageComments(list, selected);
   alignNewest();

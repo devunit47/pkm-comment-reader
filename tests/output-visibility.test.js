@@ -6,9 +6,9 @@ import { createOutputView, applyOutputMessage, normalizeOutputMessage } from '..
 import { exportSettings, parseSettings, restoreSettings } from '../settings-backup.js';
 const messages = Array.from({length:100}, (_,i) => ({id:String(i),user:'u',text:'text',receivedAt:1000+i*100}));
 test('output defaults, boundaries and invalid settings recover safely', () => {
-  assert.deepEqual([normalizeStudio().maxVisible,normalizeStudio().holdSeconds,normalizeStudio().newestPosition],[8,0,'bottom']);
-  for (const maxVisible of [1,30]) assert.equal(normalizeStudio({maxVisible}).maxVisible,maxVisible);
-  for (const maxVisible of [0,31,-1,1.5,'8',null]) assert.equal(normalizeStudio({maxVisible}).maxVisible,8);
+  assert.deepEqual([normalizeStudio().maxVisible,normalizeStudio().holdSeconds,normalizeStudio().newestPosition],[0,0,'bottom']);
+  for (const maxVisible of [0,1,30]) assert.equal(normalizeStudio({maxVisible}).maxVisible,maxVisible);
+  for (const maxVisible of [31,-1,1.5,'8',null]) assert.equal(normalizeStudio({maxVisible}).maxVisible,0);
   for (const holdSeconds of [0,5,15,30]) assert.equal(normalizeStudio({holdSeconds}).holdSeconds,holdSeconds);
   for (const holdSeconds of [1,-1,Infinity,'15',null]) assert.equal(normalizeStudio({holdSeconds}).holdSeconds,0);
   assert.equal(normalizeStudio({newestPosition:'side'}).newestPosition,'bottom');
@@ -16,7 +16,7 @@ test('output defaults, boundaries and invalid settings recover safely', () => {
 test('latest eligible cards are selected without mutating history, including empty and hidden input', () => {
   const before=structuredClone(messages);
   assert.deepEqual(selectOutputComments([],{}),[]);
-  assert.equal(selectOutputComments(messages,{}).length,8);
+  assert.equal(selectOutputComments(messages,{}).length,100);
   assert.deepEqual(selectOutputComments(messages,{maxVisible:1}).map(m=>m.id),['99']);
   assert.deepEqual(selectOutputComments(messages,{maxVisible:2,newestPosition:'top'}).map(m=>m.id),['99','98']);
   const hidden=messages.map(m=>({...m,hidden:Number(m.id)>=95}));
@@ -60,5 +60,22 @@ test('settings survive backup roundtrip and look presets preserve independent li
     assert.deepEqual([applied.maxVisible,applied.holdSeconds,applied.newestPosition],[3,15,'top']);
   }
   storage.setItem('pokome-studio','{"listCount":12}');
-  assert.deepEqual([readStudio(storage).listCount,readStudio(storage).maxVisible,readStudio(storage).holdSeconds],[12,8,0]);
+  assert.deepEqual([readStudio(storage).listCount,readStudio(storage).maxVisible,readStudio(storage).holdSeconds],[12,0,0]);
+});
+
+
+test('unlimited selects all retained eligible messages and keeps expiration and order active', () => {
+  assert.equal(selectOutputComments(messages,{maxVisible:0,holdSeconds:0}).length,100);
+  assert.equal(selectOutputComments(messages,{maxVisible:8,holdSeconds:0}).length,8);
+  const expired=messages.map(message=>({...message,receivedAt:1000}));
+  assert.equal(selectOutputComments(expired,{maxVisible:0,holdSeconds:5},6000).length,0);
+  assert.deepEqual(selectOutputComments(messages.slice(-3),{maxVisible:0,newestPosition:'top'}).map(m=>m.id),['99','98','97']);
+  for (const value of [{}, {maxVisible:null}, {maxVisible:-1}]) assert.equal(readStudio({getItem:()=>JSON.stringify(value)}).maxVisible,0);
+});
+
+test('selection reads only the three normalized visibility fields, never embedded images', () => {
+  const settings={maxVisible:8,holdSeconds:0,newestPosition:'bottom'};
+  Object.defineProperty(settings,'image',{get(){throw new Error('image must not be normalized per comment');}});
+  Object.defineProperty(settings,'speechImage',{get(){throw new Error('speechImage must not be normalized per comment');}});
+  assert.equal(selectOutputComments(messages,settings).length,8);
 });

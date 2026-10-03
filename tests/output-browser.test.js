@@ -35,18 +35,183 @@ const comments = output => output.locator('.stage-comment').evaluateAll(cards =>
 const backgrounds = output => output.evaluate(() => ['html', 'body', 'main', '#talk-stage'].map(selector => getComputedStyle(document.querySelector(selector)).backgroundColor));
 const controls = output => output.evaluate(() => document.querySelectorAll('button,input,select,textarea,dialog,[popover],output').length);
 
-browserTest('output defaults to eight comments while talk history and saved settings remain independent', async t => {
+browserTest('preview clipping follows direction, scrolling, frame size and CSS changes without hiding tall cards', async t => {
+  const { page, errors } = await fixture(t, { maxVisible: null });
+  await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#open-design-preview').click();
+  await page.locator('#preview-width').selectOption('640');
+  const list = page.frameLocator('#design-preview-frame').locator('#stage-chat-list');
+  await list.locator('.stage-comment').nth(9).waitFor({ state: 'attached' });
+  const assertClipping = async reason => {
+    await page.waitForTimeout(100);
+    const result = await list.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      const cards = [...element.querySelectorAll('.stage-comment')];
+      return { height: element.clientHeight, clipped: cards.filter(card => card.classList.contains('stage-comment-clipped')).length,
+        mismatches: cards.flatMap((card, i) => {
+          const rect = card.getBoundingClientRect();
+          const expected = rect.height <= element.clientHeight && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1);
+          return expected !== card.classList.contains('stage-comment-clipped') ? [{ i, expected, height: rect.height }] : [];
+        }) };
+    });
+    assert.ok(result.height > 0, reason);
+    assert.deepEqual(result.mismatches, [], reason);
+    return result;
+  };
+  assert.ok((await assertClipping('640x360 bottom clips short cards outside the list')).clipped > 0);
+  await page.locator('#draft-newestPosition').selectOption('top');
+  await assertClipping('top reclassifies the newest edge');
+  await list.evaluate(element => { element.scrollTop = 50; element.dispatchEvent(new Event('scroll')); });
+  await assertClipping('scroll reclassifies partial cards');
+  await page.locator('#preview-width').selectOption('1280');
+  await assertClipping('frame resize reclassifies cards');
+  await page.locator('#preview-width').selectOption('640');
+  await page.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await page.locator('#draft-css').fill('.pokome-workspace #stage-chat-list { height: 180px; flex: none; } .pokome-workspace .stage-comment { min-height: 90px; }');
+  await assertClipping('CSS shortening the list reclassifies cards');
+  await page.locator('#draft-newestPosition').selectOption('bottom');
+  await assertClipping('bottom after CSS changes preserves clipping');
+  await page.locator('#draft-css').fill('.pokome-workspace #stage-chat-list { height: 180px; flex: none; } .pokome-workspace .stage-comment { min-height: 400px; }');
+  const tall = await assertClipping('cards taller than the list remain scrollable');
+  assert.equal(tall.clipped, 0);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('display count controls offer every integer from unlimited through thirty and cannot be blank', async t => {
+  const { page, errors } = await fixture(t, { maxVisible: null });
+  await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#open-design-preview').click();
+  for (const selector of ['#studio-max-visible', '#draft-maxVisible']) {
+    const field = page.locator(selector);
+    assert.equal(await field.evaluate(element => element.tagName), 'SELECT');
+    assert.deepEqual(await field.locator('option').evaluateAll(options => options.map(option => option.value)), Array.from({ length: 31 }, (_, i) => String(i)));
+    assert.match(await field.locator('option[value="0"]').textContent(), /制限なし/);
+    assert.equal(await field.locator('option[value=""]').count(), 0);
+  }
+  assert.deepEqual(errors, []);
+});
+
+browserTest('preview has ten persistent samples and count and direction changes are visible before apply', async t => {
+  const { page, errors } = await fixture(t, { maxVisible: null });
+  await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#open-design-preview').click();
+  const frame = page.frameLocator('#design-preview-frame');
+  await frame.locator('.stage-comment').first().waitFor({ state: 'attached' });
+  assert.equal(await frame.locator('.stage-comment').count(), 10);
+  const all = await frame.locator('.stage-comment').allTextContents();
+  await page.locator('#draft-maxVisible').selectOption('8');
+  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all.slice(-8));
+  await page.locator('#draft-maxVisible').selectOption('3');
+  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all.slice(-3));
+  await page.locator('#draft-newestPosition').selectOption('top');
+  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all.slice(-3).reverse());
+  await page.locator('#draft-maxVisible').selectOption('0');
+  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), [...all].reverse());
+  await page.locator('#draft-holdSeconds').selectOption('5');
+  await page.waitForTimeout(5100);
+  assert.equal(await frame.locator('.stage-comment').count(), 10);
+  await page.locator('#draft-newestPosition').selectOption('bottom');
+  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all);
+  await page.locator('#cancel-design').click();
+  assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('output caches studio reads and normalization across appends but refreshes settings and retained comments', async t => {
+  const { context, page, url, errors } = await fixture(t);
+  await page.close();
+  const producer = await context.newPage();
+  await producer.goto(`${url}/output.html`);
+  await producer.evaluate(() => {
+    localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 8, holdSeconds: 0 }));
+    window.testChannel = new BroadcastChannel('pokome-output-v1');
+    window.testChannel.onmessage = event => {
+      if (event.data.type === 'hello') window.testChannel.postMessage({ v: 1, type: 'snapshot', controllerId: 'cache-controller', seq: 0, received: 0, messages: [] });
+    };
+  });
+  const output = await context.newPage();
+  output.setDefaultTimeout(8000);
+  await output.route('**/studio.js', async route => {
+    const response = await route.fetch();
+    const source = await response.text();
+    assert.ok(source.includes('export function normalizeStudio(value = {}) {'));
+    await route.fulfill({ response, body: source.replace('export function normalizeStudio(value = {}) {', 'export function normalizeStudio(value = {}) { globalThis.studioNormalizations = (globalThis.studioNormalizations || 0) + 1;') });
+  });
+  await output.addInitScript(() => {
+    window.studioReads = 0;
+    const original = Storage.prototype.getItem;
+    Storage.prototype.getItem = function(key) { if (key === 'pokome-studio') window.studioReads++; return original.call(this, key); };
+  });
+  await output.goto(`${url}/output.html`);
+  await output.waitForFunction(() => document.querySelector('#stage-count')?.textContent === '0 COMMENTS');
+  await output.waitForTimeout(100);
+  const metrics = () => output.evaluate(() => ({ reads: window.studioReads, normalizations: window.studioNormalizations }));
+  const baseline = await metrics();
+  await producer.evaluate(() => {
+    for (let i = 1; i <= 40; i++) window.testChannel.postMessage({ v: 1, type: 'append', controllerId: 'cache-controller', seq: i, received: i,
+      message: { id: String(i), user: `user${i}`, text: `body${i}`, receivedAt: Date.now() } });
+  });
+  await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '40 COMMENTS');
+  assert.equal((await comments(output)).length, 8);
+  assert.deepEqual(await metrics(), baseline);
+  await producer.evaluate(() => localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 0, holdSeconds: 0, newestPosition: 'top' })));
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 40);
+  assert.equal(await output.locator('.stage-comment strong').first().textContent(), 'user40');
+  assert.ok((await metrics()).reads > baseline.reads);
+  const updated = await metrics();
+  await producer.evaluate(() => window.testChannel.postMessage({ v: 1, type: 'append', controllerId: 'cache-controller', seq: 41, received: 41,
+    message: { id: '41', user: 'user41', text: 'body41', receivedAt: Date.now() } }));
+  await output.waitForFunction(() => document.querySelector('.stage-comment strong').textContent === 'user41');
+  assert.equal((await comments(output)).length, 41);
+  assert.deepEqual(await metrics(), updated);
+  await producer.evaluate(() => { window.testChannel.onmessage = null; });
+  // The same-window write deliberately emits no storage event. Becoming visible
+  // must refresh appearance even if the browser missed cross-window events.
+  await output.evaluate(() => localStorage.setItem('pokome-studio', JSON.stringify({ maxVisible: 3, holdSeconds: 5, newestPosition: 'bottom' })));
+  assert.equal((await comments(output)).length, 41);
+  await output.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 3);
+  assert.equal(await output.locator('.stage-comment strong').last().textContent(), 'user41');
+  assert.ok((await metrics()).reads > updated.reads);
+  await producer.evaluate(() => window.testChannel.postMessage({ v: 1, type: 'append', controllerId: 'cache-controller', seq: 42, received: 42,
+    message: { id: '42', user: 'expired', text: 'expired body', receivedAt: Date.now() - 6000 } }));
+  await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '42 COMMENTS');
+  assert.equal(await output.locator('.stage-comment strong').last().textContent(), 'user41');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('output defaults to unlimited comments and switching eight and unlimited persists without changing history', async t => {
   const { context, page, url, errors } = await fixture(t, { maxVisible: null });
   const output = await context.newPage();
   await output.goto(`${url}/output.html`);
-  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
+  await output.waitForFunction(() => document.querySelector('#stage-count')?.textContent === '12 COMMENTS');
+  assert.equal((await comments(output)).length, 12);
   assert.equal(await page.locator('#comment-list .username').count(), 12);
   await page.locator('.nav[data-page="studio"]').click();
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '8');
+  assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
   assert.equal(await page.locator('#studio-hold-seconds').inputValue(), '0');
   assert.equal(await page.locator('#studio-newest-position').inputValue(), 'bottom');
-  await page.locator('#studio-max-visible').fill('3');
-  await page.locator('#studio-max-visible').dispatchEvent('change');
+  await page.locator('#studio-max-visible').selectOption('8');
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
+  await page.locator('#studio-max-visible').selectOption('0');
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
+  await page.reload();
+  await page.locator('.nav[data-page="studio"]').click();
+  assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
+  await page.locator('#open-design-preview').click();
+  assert.equal(await page.locator('#draft-maxVisible').inputValue(), '0');
+  await page.locator('#draft-maxVisible').selectOption('8');
+  await page.locator('#apply-design').click();
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
+  await page.locator('#open-design-preview').click();
+  await page.locator('#draft-maxVisible').selectOption('0');
+  await page.locator('#apply-design').click();
+  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
+  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-studio')).maxVisible), 0);
+  await page.locator('#studio-max-visible').selectOption('3');
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 3);
   const initialBottom = await comments(output);
   await page.locator('#studio-newest-position').selectOption('top');
@@ -111,14 +276,14 @@ browserTest('output expires without messages, preserves speech and restores reta
 });
 
 browserTest('top output keeps a long newest card scrollable and preview applies or cancels display settings', async t => {
-  const { context, page, url, errors } = await fixture(t, { maxVisible: null });
+  const { context, page, url, errors } = await fixture(t, { maxVisible: 8 });
+  await page.reload();
   await page.locator('.nav[data-page="studio"]').click();
   const output = await context.newPage();
   await output.goto(`${url}/output.html`);
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
   await page.locator('#open-design-preview').click();
-  await page.locator('#draft-maxVisible').fill('1');
-  await page.locator('#draft-maxVisible').dispatchEvent('change');
+  await page.locator('#draft-maxVisible').selectOption('1');
   await page.locator('#draft-holdSeconds').selectOption('5');
   await page.locator('#draft-newestPosition').selectOption('top');
   const frame = page.frameLocator('#design-preview-frame');
@@ -130,8 +295,7 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   await page.locator('#cancel-design').click();
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '8');
   await page.locator('#open-design-preview').click();
-  await page.locator('#draft-maxVisible').fill('1');
-  await page.locator('#draft-maxVisible').dispatchEvent('change');
+  await page.locator('#draft-maxVisible').selectOption('1');
   await page.locator('#draft-holdSeconds').selectOption('15');
   await page.locator('#draft-newestPosition').selectOption('top');
   await page.locator('#apply-design').click();

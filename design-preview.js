@@ -1,12 +1,20 @@
 import { normalizeStudio } from './studio.js';
 import { compileTheme } from './theme.js';
-import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments } from './stage-appearance.js';
+import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments } from './stage-appearance.js';
 import { OVERLAYS_KEY, MAX_OVERLAYS, normalizeOverlays, readOverlays, createOverlay, removeOverlay, addOverlayAsset, readOverlayImage } from './overlay-model.js';
 import { writeAppearanceAtomically } from './appearance-draft.js';
 
 const VISUAL_KEYS = Object.keys(normalizeStudio()).filter(key => key !== 'listCount');
 const visual = studio => Object.fromEntries(VISUAL_KEYS.map(key => [key, studio[key]]));
 const clone = value => structuredClone(value);
+// Stable numbered samples reveal ordering without copying private chat.
+const SAMPLE_COMMENTS = Object.freeze([
+  'こんにちは。表示の大きさを確認しています。', '文字と背景の組み合わせを試しています。',
+  '少し長めの文章でも読みやすい配置にできます。', '名前と本文の間隔を確認しましょう。',
+  '新しいコメントがどちらに出るかを試しています。', '画面の端に文字が寄りすぎないか確認します。',
+  'コメント欄の幅で折り返しが変わります。', '背景が明るい場面と暗い場面で確認しましょう。',
+  '表示件数は履歴の保持件数とは別の設定です。', 'これが最後に届いたサンプルコメントです。',
+].map((text, index) => ({ id: `sample-${index + 1}`, user: `サンプル${String(index + 1).padStart(2, '0')}`, text, receivedAt: index + 1 })));
 const resolutions = { 1280: 720, 960: 540, 640: 360 };
 
 // Imports are stricter than tolerant recovery of older browser state: a bad
@@ -23,7 +31,7 @@ export function parseOverlaySet(text) {
 export function initializeDesignPreview({ storage, themeEditor, getStudio, commitStudio, getLayouts = () => null, beginDraft = () => {} }) {
   const live = document.getElementById('talk-stage');
   let overlays = readOverlays(storage), draft = null, baseline, selected = '', epoch = 0, pending = 0, stale = false, externalChange = false, revision = 0;
-  let previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', renderedStudio = null, dragCleanup;
+  let commentResizeObserver, previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', renderedStudio = null, dragCleanup;
   const requests = new Map();
   const appearanceKeys = ['pokome-studio','pokome-theme-v1','pokome-workspace-v1',OVERLAYS_KEY];
   const savedAppearance = () => appearanceKeys.map(key => storage?.getItem(key) ?? null);
@@ -36,7 +44,7 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
   </style><section><h2>文字・画像とデザインのプレビュー</h2><p>雑談画面に好きな文章や画像を複数追加できます。プレビュー内で移動・サイズ・重なりを調整し、「適用する」でまとめて保存します。</p><button id="open-design-preview" class="primary" type="button">プレビューでデザインを編集</button><p id="preview-result" role="status"></p><p><small>この編集画面での変更は適用まで配信画面に反映されません。下の従来の設定・配置操作は、これまでどおり即時反映されます。</small></p></section>
   <dialog id="design-dialog" aria-labelledby="design-title"><div class="bar"><h2 id="design-title">デザインを試す</h2><div class="actions"><button id="apply-design" class="primary" type="button">適用する</button><button id="cancel-design" type="button">キャンセル</button></div></div><p>サンプル表示です。チャット接続・音声再生は行いません。外部フォントを読み込まないため、文字の折り返しは適用後も確認してください。画面収録・ウィンドウキャプチャ中は、この編集画面自体も映るためOBSの別シーンなどで編集してください。</p><p id="design-status" role="status" aria-live="polite"></p><div class="editor"><div class="preview-pane"><label>確認する画面サイズ<select id="preview-width"><option value="1280">1280 × 720</option><option value="960">960 × 540</option><option value="640">640 × 360</option></select></label><div class="viewport" id="preview-viewport"><iframe id="design-preview-frame" title="雑談画面のデザインプレビュー" sandbox="allow-same-origin"></iframe></div><p><small>追加した文字・画像の「移動」「大きさ」をドラッグできます。矢印キーで移動、Shift＋矢印でサイズ変更。位置は画面に対する割合で保存します。</small></p></div><div class="controls"><h3>追加する文字・画像</h3><p><small>最大20個。画像はPNG・JPEG・WebP・GIF、1枚512KB・合計2MBまで。</small></p><div class="actions"><button id="add-text" type="button">文字を追加</button><button id="delete-overlay" type="button">選んだ項目を削除</button></div><label>画像を追加<input id="overlay-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label>編集する項目<select id="overlay-select"></select></label><label class="check"><input id="overlay-hidden" type="checkbox">この項目を非表示</label><div id="overlay-text-fields"><label>表示する文章<textarea id="overlay-text" maxlength="1000" rows="3"></textarea></label><label>文字の色<input id="overlay-color" type="color"></label><label>文字の大きさ（px）<input id="overlay-font-size" type="number" min="12" max="160"></label></div><div class="numbers">${[['x','横位置（%）'],['y','縦位置（%）'],['w','幅（%）'],['h','高さ（%）'],['z','重なり順 0〜99']].map(([key,label]) => `<label>${label}<input id="overlay-${key}" type="number" min="${['w','h'].includes(key)?2:0}" max="${key==='z'?99:100}" step="1"></label>`).join('')}</div><p><small>大きい重なり順の項目ほど手前に表示します。既存の枠は下の「画面の配置」で変更できます。</small></p>
   <details><summary>画面のデザインも試す</summary><label>テーマ<select id="draft-theme"><option value="mint">ミントの夜</option><option value="rose">ローズの夜</option><option value="violet">すみれの夜</option><option value="paper">お昼の喫茶室</option></select></label><label>配色モード<select id="draft-accentMode"><option value="theme">テーマに合わせる</option><option value="custom">自分で設定</option></select></label><label>アクセントカラー<input id="draft-accent" type="color"></label><label class="check"><input id="draft-decoration" type="checkbox">星やハートの装飾を表示</label>${[['title','タイトル',60],['subtitle','サブタイトル',100],['footer','画面下のひとこと',100],['speechTitle','読み上げ枠の見出し',40]].map(([key,label,max]) => `<label>${label}<input id="draft-${key}" type="text" maxlength="${max}"></label>`).join('')}<label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="28"></label><label>読み上げの文字サイズ<select id="draft-speechFontSize"><option value="16">16px</option><option value="22">22px</option><option value="28">28px</option><option value="32">32px</option></select></label><label>読み上げ枠<select id="draft-speechStyle"><option value="panel">通常のパネル</option><option value="bubble">セリフの吹き出し</option><option value="image">背景画像</option></select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label><label>コメントの表示<select id="draft-commentStyle"><option value="stacked">名前を上に表示</option><option value="anonymous">名前なし</option><option value="inline">名前と本文を横並び</option><option value="compact">1行コンパクト</option></select></label></details>
-  <label>配信出力の表示件数<input id="draft-maxVisible" type="number" min="1" max="30" step="1"></label><label>配信出力の表示時間<select id="draft-holdSeconds"><option value="0">時間では消さない</option><option value="5">5秒</option><option value="15">15秒</option><option value="30">30秒</option></select></label><label>配信出力の新着位置<select id="draft-newestPosition"><option value="bottom">下</option><option value="top">上</option></select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p><details><summary>追加CSSをプレビュー</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。</small></p></details><details><summary>追加した文字・画像を保存／読み込み</summary><button id="export-overlays" type="button">文字・画像セットを保存</button><label>文字・画像セットを読み込む<input id="import-overlays" type="file" accept="application/json,.json"></label><p><small>追加項目と画像だけが入ります。読み込みはこのプレビュー内を置き換えます。既存の配置・CSSファイルには追加画像は含まれません。</small></p></details><button id="draft-reset" type="button">追加項目・配色・文章・画像・CSSを標準に戻して試す</button><p><small>既存の枠の配置は変わりません。「適用する」までは元のデザインを保持します。</small></p></div></div></dialog>`;
+  <label>配信出力の表示件数<select id="draft-maxVisible"><option value="0">制限なし</option><option value="1">1件</option><option value="2">2件</option><option value="3">3件</option><option value="4">4件</option><option value="5">5件</option><option value="6">6件</option><option value="7">7件</option><option value="8">8件</option><option value="9">9件</option><option value="10">10件</option><option value="11">11件</option><option value="12">12件</option><option value="13">13件</option><option value="14">14件</option><option value="15">15件</option><option value="16">16件</option><option value="17">17件</option><option value="18">18件</option><option value="19">19件</option><option value="20">20件</option><option value="21">21件</option><option value="22">22件</option><option value="23">23件</option><option value="24">24件</option><option value="25">25件</option><option value="26">26件</option><option value="27">27件</option><option value="28">28件</option><option value="29">29件</option><option value="30">30件</option></select></label><label>配信出力の表示時間<select id="draft-holdSeconds"><option value="0">時間では消さない</option><option value="5">5秒</option><option value="15">15秒</option><option value="30">30秒</option></select></label><label>配信出力の新着位置<select id="draft-newestPosition"><option value="bottom">下</option><option value="top">上</option></select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p><details><summary>追加CSSをプレビュー</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。</small></p></details><details><summary>追加した文字・画像を保存／読み込み</summary><button id="export-overlays" type="button">文字・画像セットを保存</button><label>文字・画像セットを読み込む<input id="import-overlays" type="file" accept="application/json,.json"></label><p><small>追加項目と画像だけが入ります。読み込みはこのプレビュー内を置き換えます。既存の配置・CSSファイルには追加画像は含まれません。</small></p></details><button id="draft-reset" type="button">追加項目・配色・文章・画像・CSSを標準に戻して試す</button><p><small>既存の枠の配置は変わりません。「適用する」までは元のデザインを保持します。</small></p></div></div></dialog>`;
   const $ = id => shadow.getElementById(id), dialog = $('design-dialog'), frame = $('design-preview-frame');
   const status = message => { $('design-status').textContent = message; };
   const currentItem = () => draft?.overlays.items.find(item => item.id === selected);
@@ -83,11 +91,7 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
     if (renderedStudio !== draft.studio) { renderStageAppearance(previewStage, draft.studio, defaultImage); renderedStudio = draft.studio; }
     renderOverlays(previewStage, draft.overlays);
     const sampleList = previewStage.querySelector('#stage-chat-list');
-    renderStageComments(sampleList, selectOutputComments([
-      {user:'サンプルさん',text:'こんにちは！今日もよろしくお願いします。'},
-      {user:'ぽこめ',text:'文字と画像を重ねてデザインを確認できます。'}
-    ], draft.studio, 0, false));
-    sampleList.scrollTop = draft.studio.newestPosition === 'top' ? 0 : sampleList.scrollHeight;
+    renderStageComments(sampleList, selectOutputComments(SAMPLE_COMMENTS, draft.studio, 0, false));
     const themeStyle = frameDoc.getElementById('preview-theme');
     if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
     const old = new Map([...frameDoc.querySelectorAll('.overlay-hit')].map(element => [element.dataset.overlayId, element]));
@@ -117,6 +121,13 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
       const panel = baseline.speechPanel;
       if (panel) speech.style.top = `min(${panel.y}%, max(0px, calc(100% - max(${panel.h}%, ${parseFloat(frame.contentWindow.getComputedStyle(speech).minHeight)||0}px))))`;
     }
+    updateSampleVisibility(true);
+  }
+  function updateSampleVisibility(followNewest = false) {
+    if (!previewStage || !draft) return;
+    const list = previewStage.querySelector('#stage-chat-list');
+    if (followNewest) list.scrollTop = draft.studio.newestPosition === 'top' ? 0 : list.scrollHeight;
+    markClippedComments(list);
   }
   function positionHits() {
     if (!draft || !previewStage) return;
@@ -168,6 +179,7 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
   }
   function invalidate() { epoch++; requests.clear(); pending = 0; dragCleanup?.(); }
   function close() {
+    commentResizeObserver?.disconnect(); commentResizeObserver = null;
     invalidate(); draft = null; previewStage = null; renderedStudio = null; frameDoc = null; frame.removeAttribute('srcdoc');
     if (dialog.open) dialog.close(); $('open-design-preview').focus();
   }
@@ -211,15 +223,14 @@ export function initializeDesignPreview({ storage, themeEditor, getStudio, commi
       previewStage = frameDoc.importNode(live,true); previewStage.hidden = false;
       for (const element of previewStage.querySelectorAll('dialog,[popover],[data-layout-handle],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
       for (const element of previewStage.querySelectorAll('button,input,select,textarea,a')) { element.setAttribute('tabindex','-1'); element.removeAttribute('href'); }
-      // Samples make the draft stable and never copy private chat into exports.
-      const list = previewStage.querySelector('#stage-chat-list'); list.replaceChildren();
-      for (const [name,text] of [['サンプルさん','こんにちは！今日もよろしくお願いします。'],['ぽこめ','文字と画像を重ねてデザインを確認できます。']]) {
-        const article = frameDoc.createElement('div'); article.className = 'stage-comment pokome-comment'; const author = frameDoc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = name; const message = frameDoc.createElement('p'); message.className = 'pokome-comment__body'; message.textContent = text; article.append(author,message); list.append(article);
-      }
       previewStage.querySelector('#stage-speech-user').textContent = 'サンプルさん'; previewStage.querySelector('#stage-speech-text').textContent = '表示の色と大きさを確認しています。';
       previewStage.querySelector('#stage-speech-status').textContent = 'プレビュー'; previewStage.querySelector('.stage-speech').dataset.speaking = 'false';
-      previewStage.querySelector('#stage-count').textContent = '2 COMMENTS';
+      previewStage.querySelector('#stage-count').textContent = `${SAMPLE_COMMENTS.length} COMMENTS`;
       const main = frameDoc.createElement('main'); main.className = 'pokome-workspace'; main.append(previewStage); frameDoc.body.append(main);
+      const sampleList = previewStage.querySelector('#stage-chat-list');
+      sampleList.addEventListener('scroll', () => updateSampleVisibility(), { passive: true });
+      commentResizeObserver = new ResizeObserver(() => updateSampleVisibility(true));
+      commentResizeObserver.observe(sampleList);
       previewStage.addEventListener('scroll', positionHits, {passive:true});
       // Escape inside a nested browsing context does not reach the parent.
       frameDoc.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
