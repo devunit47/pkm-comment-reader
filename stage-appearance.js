@@ -1,4 +1,4 @@
-import { THEME_ACCENTS } from './studio.js';
+import { THEME_ACCENTS, normalizeStudio } from './studio.js';
 
 // The live stage and script-free design preview share exactly the same visual
 // renderer. It cannot save settings, trim history, connect chat or play audio.
@@ -69,8 +69,16 @@ export function renderOverlays(stage, state) {
   if (ordered.some((element, index) => current[index] !== element)) stage.append(...ordered);
 }
 
-// The live stage and the stream output build comment cards identically so a
-// theme written for one applies to the other.
+// Keep synchronized history so relaxed settings can reveal it again.
+export function selectOutputComments(messages, settings, now = Date.now(), expire = true) {
+  const studio = normalizeStudio(settings);
+  const eligible = messages.filter(message => !message.hidden && (!expire || studio.holdSeconds === 0 ||
+    (Number.isFinite(message.receivedAt) && message.receivedAt > 0 && now < message.receivedAt + studio.holdSeconds * 1000)));
+  const selected = eligible.slice(-studio.maxVisible);
+  return studio.newestPosition === 'top' ? selected.reverse() : selected;
+}
+
+// The live stage and stream output share cards so themes apply identically.
 export function renderStageComments(list, messages) {
   const doc = list.ownerDocument;
   list.replaceChildren(...messages.map(message => {
