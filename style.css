@@ -207,4 +207,6 @@ footer{color:var(--muted);font-size:12px}
 /* Stream output (output.html): no controls, no guidance, background per mode. */
 html:has(>body.pokome-output){background:transparent}body.pokome-output{background:transparent;overflow:hidden;pointer-events:none;user-select:none}body.pokome-output main{margin:0;padding:0;max-width:none;background:transparent}body.pokome-output #talk-stage{height:100vh}body.pokome-output #actor-placeholder,body.pokome-output .stage-empty{display:none!important}
 body.pokome-output[data-background=transparent] #talk-stage,body.pokome-output[data-background=key] #talk-stage{background:transparent}body.pokome-output[data-background=key]{background:var(--output-key,#00ff00)}body.pokome-output[data-background=theme]{background:var(--bg)}
+/* A chroma key cannot remove half-transparent pixels, so the key background drops translucent decoration and the actor area's fill, border and ring. */
+body.pokome-output[data-background=key] .stage-decoration,body.pokome-output[data-background=key] .stage-actor:before{display:none}body.pokome-output[data-background=key] .stage-actor{background:none;border-color:transparent}
 .output-notes{margin:0;padding-left:1.4em;line-height:1.7}#stream-output-panel{margin-bottom:24px}#stream-output-panel input[readonly]{width:100%}

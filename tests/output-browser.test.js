@@ -50,6 +50,11 @@ browserTest('output window mirrors visible comments without controls and follows
   const [, body, , stage] = await backgrounds(output);
   assert.equal(body, 'rgb(255, 0, 255)');
   assert.equal(stage, 'rgba(0, 0, 0, 0)');
+  // Half-transparent decoration would leave key-colored fringes.
+  assert.deepEqual(await output.evaluate(() => {
+    const actor = getComputedStyle(document.querySelector('.stage-actor'));
+    return [getComputedStyle(document.querySelector('.stage-decoration')).display, getComputedStyle(document.querySelector('.stage-actor'), '::before').display, actor.backgroundImage, actor.borderTopColor];
+  }), ['none', 'none', 'none', 'rgba(0, 0, 0, 0)']);
   await page.locator('#output-status').filter({ hasText: '1個 接続中' }).waitFor();
 
   // Opening again reuses the named window instead of adding another output.
@@ -82,6 +87,8 @@ browserTest('transparent output stays empty and transparent without a control pa
   await output.locator('#talk-stage').waitFor();
   await output.waitForTimeout(300);
   assert.deepEqual(await backgrounds(output), Array(4).fill('rgba(0, 0, 0, 0)'));
+  // Only the key background removes decoration; transparency keeps it.
+  assert.equal(await output.evaluate(() => getComputedStyle(document.querySelector('.stage-decoration')).display), 'block');
   assert.deepEqual(await comments(output), []);
   assert.equal(await controls(output), 0);
   const text = await output.locator('body').innerText();
