@@ -2,7 +2,7 @@ import { normalizeStudio } from '../shared/studio.js';
 import { compileTheme } from '../shared/theme.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { MAX_OVERLAYS, normalizeOverlays, createOverlay, removeOverlay, addOverlayAsset } from '../shared/overlay-model.js';
-import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, withTalk } from '../shared/design-model.js';
+import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, talkActorImage, withTalk } from '../shared/design-model.js';
 import { checkImageFile } from './design-client.js';
 
 const VISUAL_KEYS = Object.keys(normalizeStudio());
@@ -28,7 +28,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   const storedOverlays = () => talkOverlays(designStore.design, getLiveRatio());
   const previewRatio = () => nearestRatio(...size($('preview-width').value));
   let overlays = storedOverlays(), draft = null, baseline, selected = '', epoch = 0, pending = 0, stale = false, revision = 0;
-  let commentResizeObserver, previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', renderedStudio = null, dragCleanup;
+  let commentResizeObserver, previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', renderedStudio = null, renderedActorImage = '', dragCleanup;
   const requests = new Map();
   renderOverlays(live, resolveOverlayAssets(overlays));
   const host = document.createElement('div'); host.id = 'design-preview-editor';
@@ -101,7 +101,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   }
   function draw() {
     if (!previewStage || !draft) return;
-    if (renderedStudio !== draft.studio) { renderStageAppearance(previewStage, resolveStudioImages(draft.studio, imageScope()), defaultImage); renderedStudio = draft.studio; }
+    const actorImage = talkActorImage(presetDraft?.design || designStore.design, draft.ratio), actorKey = draft.ratio + JSON.stringify(actorImage);
+    if (renderedStudio !== draft.studio || renderedActorImage !== actorKey) { renderStageAppearance(previewStage, resolveStudioImages(draft.studio, imageScope()), defaultImage, { actorImage }); renderedStudio = draft.studio; renderedActorImage = actorKey; }
     renderOverlays(previewStage, resolveOverlayAssets(draft.overlays, imageScope()));
     const sampleList = previewStage.querySelector('#stage-chat-list');
     renderStageComments(sampleList, selectOutputComments(SAMPLE_COMMENTS, draft.studio, 0, false));

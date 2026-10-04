@@ -1,6 +1,6 @@
 import { compileTheme } from '../shared/theme.js';
 import { createDesignStore } from './design-client.js';
-import { resolveStudioImages, resolveOverlayAssets, nearestRatio, talkLayout, talkOverlays } from '../shared/design-model.js';
+import { resolveStudioImages, resolveOverlayAssets, nearestRatio, talkLayout, talkOverlays, talkActorImage } from '../shared/design-model.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from '../shared/output-protocol.js';
 
@@ -39,7 +39,7 @@ function renderAppearance() {
   shownRatio = ratio;
   document.body.dataset.ratio = ratio;
   studio = design.studio;
-  renderStageAppearance(stage, resolveStudioImages(studio));
+  renderStageAppearance(stage, resolveStudioImages(studio), undefined, { actorImage: talkActorImage(design, ratio) });
   renderOverlays(stage, resolveOverlayAssets(talkOverlays(design, ratio)));
   try { theme.textContent = compileTheme(design.theme); } catch { theme.textContent = ''; }
   applyTalkLayout(stage, talkLayout(design, ratio));

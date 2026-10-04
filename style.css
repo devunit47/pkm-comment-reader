@@ -215,6 +215,14 @@ body.pokome-output[data-background=key] .stage-decoration,body.pokome-output[dat
    An explicit setting must win over theme CSS, including theme !important: important declarations in the first-declared
    layer beat unlayered ones regardless of specificity, and theme CSS cannot declare layers (src/shared/theme.js). */
 @layer pokome-settings{
+/* The logical canvas clips image overflow even if a theme or narrow viewport opens it. */
+body:is(.pokome-output,.pokome-preview) #talk-stage,body.talk-mode #talk-stage[data-frame-ratio]{overflow:hidden !important}
+#talk-stage[data-actor-image=custom] .stage-actor{overflow:hidden !important}
+#talk-stage[data-actor-image=custom][data-actor-image-overflow=true] .stage-actor{overflow:visible !important;container-type:size !important}
+#talk-stage[data-actor-image=custom][data-actor-image-overflow=true] .stage-actor:before{clip-path:inset(max(0px,calc(50% - 50cqh)) max(0px,calc(50% - 50cqw))) !important}
+#talk-stage[data-actor-image=custom][data-actor-image-overflow=true] .actor-caption{clip-path:inset(max(0px,calc(100% + 24px - 100cqh)) 0 0) !important}
+#talk-stage[data-actor-image=custom] #actor-image{position:absolute !important;inset:auto !important;left:var(--actor-image-left) !important;top:var(--actor-image-top) !important;width:var(--actor-image-size) !important;height:var(--actor-image-size) !important;min-width:0 !important;min-height:0 !important;max-width:none !important;max-height:none !important;margin:0 !important;object-fit:contain !important;object-position:var(--actor-image-position) !important;transform:none !important;translate:none !important;rotate:none !important;scale:none !important}
+#talk-stage[data-actor-image=custom] .actor-caption{overflow:hidden !important;max-width:100% !important;max-height:100% !important}
 #talk-stage[data-actor-appearance=none] .stage-actor{background:none !important;border:0 !important;border-radius:0 !important;box-shadow:none !important}#talk-stage[data-actor-appearance=none] .stage-actor:before,#talk-stage[data-actor-appearance=none] .actor-caption{display:none !important}
 #talk-stage[data-comment-item-background=none] #stage-chat-list .stage-comment{background:transparent !important;border-radius:0 !important;box-shadow:none !important}
 #talk-stage:is([data-comment-item-background=light],[data-comment-item-background=dark]) #stage-chat-list[data-comment-style] .stage-comment{border-radius:44px !important;padding:12px 24px !important}

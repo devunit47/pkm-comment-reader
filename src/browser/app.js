@@ -1,5 +1,5 @@
 import { renderStageAppearance, renderStageComments, markClippedComments } from './stage-appearance.js';
-import { OutputPublisher } from '../shared/output-protocol.js';
+import { OutputPublisher, OUTPUT_SIZES } from '../shared/output-protocol.js';
 import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
 import { initializeDesignPresets } from './design-presets.js';
@@ -7,7 +7,7 @@ import { initializeCustomization } from './customization.js';
 import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
 import { compileTheme } from '../shared/theme.js';
 import { createDesignStore, checkImageFile, LEGACY_RATIO } from './design-client.js';
-import { defaultDesign, resolveStudioImages, studioOptions } from '../shared/design-model.js';
+import { defaultDesign, resolveStudioImages, studioOptions, nearestRatio, talkActorImage } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
@@ -44,6 +44,7 @@ for (const platform of Object.keys(states)) states[platform].voice = savedVoices
 const designStore = await createDesignStore();
 const keepImages = () => studioOptions(designStore.images);
 let studio = designStore.design.studio;
+let shownTalkRatio = nearestRatio(...(OUTPUT_SIZES[designStore.design.outputSize] ?? OUTPUT_SIZES['1280x720']));
 let historyLimit = readHistoryLimit(storage);
 for (const state of Object.values(states)) state.historyLimit = historyLimit;
 function saveStudio() {
@@ -591,9 +592,13 @@ function renderStageSpeech() {
   publishSpeech();
 }
 
+function renderTalkAppearance() {
+  renderStageAppearance($('talk-stage'), resolveStudioImages(studio), undefined,
+    { actorImage: talkActorImage(designStore.design, shownTalkRatio) });
+}
 function renderStudio() {
   const stage = $('talk-stage');
-  renderStageAppearance(stage, resolveStudioImages(studio));
+  renderTalkAppearance();
   $('stage-comment-style').value = studio.commentStyle;
   const preview = document.querySelector('.speech-bubble');
   preview.dataset.style = studio.speechStyle;
@@ -942,7 +947,9 @@ render();
 const themeEditor = initializeTheme(designStore);
 // The talk screen may switch ratio before the preview exists; it catches up when created.
 let showLiveOverlays = () => {};
-const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioChange: () => showLiveOverlays() });
+const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioChange: ratio => {
+  shownTalkRatio = ratio; renderTalkAppearance(); showLiveOverlays();
+} });
 const designPreview = initializeDesignPreview({ designStore, themeEditor,
   beginDraft() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
   getStudio: () => studio, getLiveRatio: () => workspaceEditor.talkRatio(),
