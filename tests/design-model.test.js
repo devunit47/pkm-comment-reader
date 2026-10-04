@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MAX_THEME_CSS_BYTES, RATIOS, defaultDesign, normalizeDesign,
-  validImageRef, imageUrl, resolveStudioImages, resolveOverlayAssets, overlayOptions,
+  validImageRef, imageUrl, resolveStudioImages, resolveOverlayAssets, overlayOptions, normalizePresetName, validPresetId,
 } from '../src/shared/design-model.js';
 import { normalizeStudio, DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { normalizeOverlays, MAX_OVERLAYS } from '../src/shared/overlay-model.js';
@@ -12,6 +12,22 @@ const ref = (character, extension = 'png') => `images/${hash(character)}.${exten
 const entry = (bytes = 1000, type = 'image/png', width = 10, height = 10) => ({ type, bytes, width, height });
 const overlays = (items, assets) => ({ version: 1, items, assets });
 const imageItem = (id, assetId) => ({ id, type: 'image', assetId, x: 4, y: 2, w: 30, h: 10, z: 5 });
+
+test('preset names count graphemes without splitting families, flags, modifiers or combining marks', () => {
+  for (const grapheme of ['家', '👨‍👩‍👧‍👦', '🇯🇵', '👍🏽', 'e\u0301']) {
+    const exact = grapheme.repeat(40);
+    assert.equal(normalizePresetName(`  ${exact}  `), exact);
+    assert.throws(() => normalizePresetName(grapheme.repeat(41)), /1〜40/);
+    assert.equal(normalizeDesign({ ...defaultDesign(), name: grapheme.repeat(41) }).name, exact);
+  }
+  assert.equal(normalizePresetName('昼／夜: <画像>'), '昼／夜: <画像>');
+  for (const invalid of ['', '  ', '\n名前', '名\t前', '名\u0000前', '名\u0085前', '名\u2028前', '名\u2029前', null]) assert.throws(() => normalizePresetName(invalid));
+});
+
+test('preset IDs accept portable folder names and exclude traversal and Windows device names', () => {
+  for (const id of ['portrait-chips', 'a', 'a'.repeat(64), '45b9a95d-44e6-4315-a0e7-5a931b07920c']) assert.equal(validPresetId(id), true);
+  for (const id of ['', 'a'.repeat(65), '../current', 'a/b', 'a\\b', 'Portrait', 'con', 'nul', 'com1', 'lpt9', 'name:stream']) assert.equal(validPresetId(id), false);
+});
 
 test('file references for the actor, speech background and overlays survive normalization', () => {
   const images = { [ref('a')]: entry(), [ref('b', 'webp')]: entry(2000, 'image/webp'), [ref('c', 'jpg')]: entry(3000, 'image/jpeg') };

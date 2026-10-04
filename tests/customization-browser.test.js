@@ -226,7 +226,8 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   await screenshot(page, 'local-restored-default');
   for (const [file, bytes] of Object.entries(originalFiles)) assert.deepEqual(await readFile(join(directory, file)), bytes, file);
   // The applied design lives beside the user's own files, which stay untouched.
-  assert.deepEqual((await readdir(directory)).sort(), ['current', 'images', 'styles']);
+  assert.deepEqual((await readdir(directory)).sort(), ['current', 'images', 'presets', 'styles']);
+  assert.deepEqual(await readdir(join(directory, 'presets')), [], 'recovery keeps the preset folder');
   assert.ok(requests.some(url => new URL(url).pathname === '/style.css'));
   assert.ok(requests.some(url => new URL(url).pathname === '/speech-background.svg'));
   assert.equal((await fetch(base + '/style.css')).status, 200);

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -148,6 +148,7 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
   await page.locator('#studio-comment-outline').selectOption('thick');
   for (const shadow of await shadows(page)) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
   // The output applies the same outline to both elements.
+  await waitForDesign(url, design => design.studio.commentOutline === 'thick');
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });

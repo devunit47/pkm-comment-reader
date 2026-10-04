@@ -22,7 +22,9 @@ const size = value => value.split('x').map(Number);
 // ratio is shown and edited. getLiveRatio tells which ratio the talk screen shows.
 export function initializeDesignPreview({ designStore, themeEditor, getStudio, commitStudio, getLiveRatio = () => '16:9', beginDraft = () => {} }) {
   const live = document.getElementById('talk-stage');
-  const assetOptions = () => overlayOptions(designStore.images), imageOptions = () => studioOptions(designStore.images);
+  let presetDraft = null, presetApply = null, returnFocus = null;
+  const assetOptions = () => overlayOptions(presetDraft?.images || designStore.images), imageOptions = () => studioOptions(presetDraft?.images || designStore.images);
+  const imageScope = () => presetDraft ? `presets/${presetDraft.id}` : 'current';
   const storedOverlays = () => talkOverlays(designStore.design, getLiveRatio());
   const previewRatio = () => nearestRatio(...size($('preview-width').value));
   let overlays = storedOverlays(), draft = null, baseline, selected = '', epoch = 0, pending = 0, stale = false, revision = 0;
@@ -39,6 +41,9 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   <details><summary>画面のデザインも試す</summary><label>テーマ<select id="draft-theme"><option value="mint">ミントの夜</option><option value="rose">ローズの夜</option><option value="violet">すみれの夜</option><option value="paper">お昼の喫茶室</option></select></label><label>配色モード<select id="draft-accentMode"><option value="theme">テーマに合わせる</option><option value="custom">自分で設定</option></select></label><label>アクセントカラー<input id="draft-accent" type="color"></label><label class="check"><input id="draft-decoration" type="checkbox">星やハートの装飾を表示</label>${[['title','タイトル',60],['subtitle','サブタイトル',100],['footer','画面下のひとこと',100],['speechTitle','読み上げ枠の見出し',40]].map(([key,label,max]) => `<label>${label}<input id="draft-${key}" type="text" maxlength="${max}"></label>`).join('')}<label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="28"></label><label>読み上げの文字サイズ<select id="draft-speechFontSize"><option value="16">16px</option><option value="22">22px</option><option value="28">28px</option><option value="32">32px</option></select></label><label>読み上げ枠<select id="draft-speechStyle"><option value="panel">通常のパネル</option><option value="bubble">セリフの吹き出し</option><option value="image">背景画像</option></select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label><label>コメントの表示<select id="draft-commentStyle"><option value="stacked">名前を上に表示</option><option value="anonymous">名前なし</option><option value="inline">名前と本文を横並び</option><option value="compact">1行コンパクト</option></select></label></details>
   <label>配信出力の表示件数<select id="draft-maxVisible"><option value="0">制限なし</option><option value="1">1件</option><option value="2">2件</option><option value="3">3件</option><option value="4">4件</option><option value="5">5件</option><option value="6">6件</option><option value="7">7件</option><option value="8">8件</option><option value="9">9件</option><option value="10">10件</option><option value="11">11件</option><option value="12">12件</option><option value="13">13件</option><option value="14">14件</option><option value="15">15件</option><option value="16">16件</option><option value="17">17件</option><option value="18">18件</option><option value="19">19件</option><option value="20">20件</option><option value="21">21件</option><option value="22">22件</option><option value="23">23件</option><option value="24">24件</option><option value="25">25件</option><option value="26">26件</option><option value="27">27件</option><option value="28">28件</option><option value="29">29件</option><option value="30">30件</option></select></label><label>配信出力の表示時間<select id="draft-holdSeconds"><option value="0">時間では消さない</option><option value="5">5秒</option><option value="15">15秒</option><option value="30">30秒</option></select></label><label>配信出力の新着位置<select id="draft-newestPosition"><option value="bottom">下</option><option value="top">上</option></select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p><details><summary>追加CSSをプレビュー</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。</small></p></details><button id="draft-reset" type="button">追加項目・配色・文章・画像・CSSを標準に戻して試す</button><p><small>既存の枠の配置は変わりません。「適用する」までは元のデザインを保持します。</small></p></div></div></dialog>`;
   const $ = id => shadow.getElementById(id), dialog = $('design-dialog'), frame = $('design-preview-frame');
+  const modeCSS = document.createElement('style');
+  modeCSS.textContent = 'dialog[data-mode=preset] .controls,dialog[data-mode=preset] .preview-pane>.viewport+p{display:none}dialog[data-mode=preset] .editor{grid-template-columns:minmax(0,1fr)}';
+  shadow.append(modeCSS);
   const status = message => { $('design-status').textContent = message; };
   const currentItem = () => draft?.overlays.items.find(item => item.id === selected);
   const isCurrent = token => !!draft && token === epoch;
@@ -95,8 +100,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   }
   function draw() {
     if (!previewStage || !draft) return;
-    if (renderedStudio !== draft.studio) { renderStageAppearance(previewStage, resolveStudioImages(draft.studio), defaultImage); renderedStudio = draft.studio; }
-    renderOverlays(previewStage, resolveOverlayAssets(draft.overlays));
+    if (renderedStudio !== draft.studio) { renderStageAppearance(previewStage, resolveStudioImages(draft.studio, imageScope()), defaultImage); renderedStudio = draft.studio; }
+    renderOverlays(previewStage, resolveOverlayAssets(draft.overlays, imageScope()));
     const sampleList = previewStage.querySelector('#stage-chat-list');
     renderStageComments(sampleList, selectOutputComments(SAMPLE_COMMENTS, draft.studio, 0, false));
     const themeStyle = frameDoc.getElementById('preview-theme');
@@ -104,7 +109,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
     // The draft CSS can change the speech minimum, which moves the panels below it.
     applyTalkLayout(previewStage, baseline.layouts[draft.ratio]);
     const old = new Map([...frameDoc.querySelectorAll('.overlay-hit')].map(element => [element.dataset.overlayId, element]));
-    for (const item of draft.overlays.items) {
+    for (const item of presetDraft ? [] : draft.overlays.items) {
       let hit = old.get(item.id);
       if (!hit) {
         hit = frameDoc.createElement('div'); hit.className = 'overlay-hit'; hit.dataset.overlayId = item.id;
@@ -190,20 +195,26 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   function close() {
     commentResizeObserver?.disconnect(); commentResizeObserver = null;
     invalidate(); draft = null; previewStage = null; renderedStudio = null; frameDoc = null; frame.removeAttribute('srcdoc');
-    if (dialog.open) dialog.close(); $('open-design-preview').focus();
+    presetDraft = null; presetApply = null;
+    if (dialog.open) dialog.close(); (returnFocus || $('open-design-preview')).focus(); returnFocus = null;
   }
   dialog.addEventListener('cancel', event => { event.preventDefault(); close(); });
   dialog.addEventListener('close', () => { if (draft) close(); });
   $('cancel-design').onclick = close;
   window.addEventListener('popstate', () => { if (draft) close(); });
 
-  $('open-design-preview').onclick = async () => {
+  async function openPreview(preset = null, onApply = null) {
     if (draft) return;
-    beginDraft(); themeEditor.beginChange(); invalidate(); const token = epoch; stale = false;
-    const design = designStore.design, ratio = previewRatio();
+    beginDraft(); if (!preset) themeEditor.beginChange(); invalidate(); const token = epoch; stale = false;
+    presetDraft = preset; presetApply = onApply; returnFocus = document.activeElement;
+    while (returnFocus?.shadowRoot?.activeElement) returnFocus = returnFocus.shadowRoot.activeElement;
+    dialog.dataset.mode = preset ? 'preset' : 'editor';
+    $('design-title').textContent = preset ? `「${preset.design.name}」を確認` : 'デザインを試す';
+    $('preview-ratio-help').textContent = preset ? '比率を切り替えて配置と追加の文字・画像を確認してください。この画面では編集しません。「適用する」までは今のデザインを変えません。' : '比率ごとに、配置と追加の文字・画像を別々に保存します。サイズを変えると、その比率の内容を表示・編集します。';
+    const design = preset?.design || designStore.design, ratio = previewRatio();
     baseline = {studio:visual(getStudio()), theme:themeEditor.getTheme(), layouts:Object.fromEntries(RATIOS.map(r => [r, talkLayout(design, r)])), revision:designStore.revision};
     const byRatio = Object.fromEntries(RATIOS.map(r => [r, talkOverlays(design, r)]));
-    draft = {studio:clone(getStudio()),theme:baseline.theme,ratio,byRatio,overlays:byRatio[ratio]};
+    draft = {studio:clone(preset ? design.studio : getStudio()),theme:preset ? design.theme : baseline.theme,ratio,byRatio,overlays:byRatio[ratio]};
     selected = draft.overlays.items[0]?.id || ''; compiledCSS = compileTheme(draft.theme);
     dialog.showModal(); status('プレビューを準備しています…'); fields(); studioFields(); scale();
     try {
@@ -241,9 +252,10 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       previewStage.addEventListener('scroll', positionHits, {passive:true});
       // Escape inside a nested browsing context does not reach the parent.
       frameDoc.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); close(); } });
-      draw(); buttons(); status('プレビュー内だけの変更です。確認できたら「適用する」を押してください。');
+      draw(); buttons(); status(preset ? 'プリセットの下書きを表示しています。比率を確認して「適用する」を押してください。' : 'プレビュー内だけの変更です。確認できたら「適用する」を押してください。');
     } catch (error) { if (isCurrent(token)) status(`プレビューを開けませんでした：${error.message}`); }
-  };
+  }
+  $('open-design-preview').onclick = () => openPreview();
   $('preview-width').onchange = () => {
     dragCleanup?.(); scale();
     const ratio = previewRatio();
@@ -316,6 +328,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
       if (stale || designStore.revision !== baseline.revision) throw new Error('別の画面で見た目が変更されました。キャンセルして開き直してください。');
       if (JSON.stringify(visual(getStudio())) !== JSON.stringify(baseline.studio) || themeEditor.getTheme() !== baseline.theme) throw new Error('編集開始後に見た目が変更されました。キャンセルして開き直してください。');
       compileTheme(draft.theme);
+      if (presetDraft) {
+        if (!await presetApply(presetDraft, baseline.revision)) return;
+        if (!isCurrent(token)) return;
+        close(); $('preview-result').textContent = 'プリセットを適用・保存しました。';
+        return;
+      }
       const next = normalizeStudio(draft.studio,imageOptions());
       draft.byRatio[draft.ratio] = draft.overlays;
       // One design.json write: studio, theme and every ratio's additions change together or not at all.
@@ -333,6 +351,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
   };
   function showLive() { overlays = storedOverlays(); renderOverlays(live,resolveOverlayAssets(overlays)); }
   return {
+    openPreset(preset, onApply) { return openPreview(structuredClone(preset), onApply); },
     reset() { if (draft) close(); overlays = normalizeOverlays(); renderOverlays(live,overlays); },
     // The talk screen switched ratio: show that ratio's additions.
     showLive,
