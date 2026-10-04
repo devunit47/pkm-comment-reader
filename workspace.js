@@ -77,6 +77,14 @@ export function initializeWorkspace(storage, designStore, { onTalkRatioChange = 
     const styles = talkSpeechStyles(layouts.talk.panels, minimum);
     for (const element of panels.talk) for (const [property, value] of Object.entries(styles[element.dataset.panelType] || {})) element.style.setProperty(property, value);
   }
+  // Panels below the speech panel cannot rise into its minimum height. Stopping
+  // them there keeps their size instead of shrinking them from the bottom.
+  function limitTalkMove(mode, element, p) {
+    if (mode !== 'talk' || element === talkSpeech) return p;
+    const minimum = parseFloat(getComputedStyle(talkSpeech).minHeight) || 0, height = roots.talk.getBoundingClientRect().height;
+    if (!height || !talkSpeechStyles({ ...layouts.talk.panels, [element.dataset.panelType]: p }, minimum)[element.dataset.panelType]) return p;
+    return { ...p, y: Math.max(p.y, layouts.talk.panels.speech.y + minimum / height * 100) };
+  }
   function interactionStart(mode, element, resize, axes = [1, 1]) {
     const p = { ...layouts[mode].panels[element.dataset.panelType] };
     if (mode !== 'talk') return p;
@@ -134,11 +142,11 @@ export function initializeWorkspace(storage, designStore, { onTalkRatioChange = 
     for (const [index, button] of [...handleShadow.querySelectorAll('button')].entries()) {
       button.addEventListener('pointerdown', event => {
         if (event.button !== 0 || !editing || !available()) return; ensure(mode); selected = element.dataset.panelType; fields(); const original = { ...layouts[mode].panels[selected] }, start = interactionStart(mode, element, index), rect = roots[mode].getBoundingClientRect(); button.setPointerCapture(event.pointerId);
-        const move = e => { const dx = (e.clientX - event.clientX) / rect.width * 100, dy = (e.clientY - event.clientY) / rect.height * 100; const p = { ...(index ? original : start) }; for (const [field, delta] of index ? [['w', dx], ['h', dy]] : [['x', dx], ['y', dy]]) { if (index && delta === 0) continue; p[field] = snap ? Math.round((start[field] + delta) / 2) * 2 : start[field] + delta; } layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); };
+        const move = e => { const dx = (e.clientX - event.clientX) / rect.width * 100, dy = (e.clientY - event.clientY) / rect.height * 100; const p = { ...(index ? original : start) }; for (const [field, delta] of index ? [['w', dx], ['h', dy]] : [['x', dx], ['y', dy]]) { if (index && delta === 0) continue; p[field] = snap ? Math.round((start[field] + delta) / 2) * 2 : start[field] + delta; } layouts[mode].panels[selected] = index ? p : limitTalkMove(mode, element, p); layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); };
         const finish = e => { button.removeEventListener('pointermove', move); button.removeEventListener('pointerup', finish); button.removeEventListener('pointercancel', finish); if (e.type === 'pointercancel') { layouts[mode].panels[selected] = original; apply(mode); fields(); } else save(); };
         button.addEventListener('pointermove', move); button.addEventListener('pointerup', finish); button.addEventListener('pointercancel', finish);
       });
-      button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const resize = index || event.shiftKey, p = interactionStart(mode, element, resize, delta); p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode].panels[selected] = p; layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
+      button.addEventListener('keydown', event => { if (!editing || !available()) return; const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key]; if (!delta) return; event.preventDefault(); ensure(mode); selected = element.dataset.panelType; const resize = index || event.shiftKey, p = interactionStart(mode, element, resize, delta); p[resize ? 'w' : 'x'] += delta[0] * (snap ? 2 : 1); p[resize ? 'h' : 'y'] += delta[1] * (snap ? 2 : 1); layouts[mode].panels[selected] = resize ? p : limitTalkMove(mode, element, p); layouts[mode] = normalizeLayout(layouts[mode], PANEL_IDS[mode]); apply(mode); fields(); save(); });
     }
   }
   function finish() {

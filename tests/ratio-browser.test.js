@@ -134,6 +134,30 @@ browserTest('a comments panel pushed down by the speech minimum moves from where
   assert.deepEqual(errors, []);
 });
 
+browserTest('a pushed-down panel moved up into the speech minimum stays put and keeps its height', async t => {
+  const { page, editor, url, errors } = await fixture(t, { width: 1280, height: 720 });
+  await page.locator('[data-page="studio"]').click();
+  await editor.locator('#mode').selectOption('talk');
+  await editor.locator('#ratio').selectOption('9:16');
+  await editor.locator('#snap').evaluate(input => { input.checked = false; input.dispatchEvent(new Event('change')); });
+  await editor.locator('#edit').click();
+  const box = () => page.locator('#talk-stage .stage-chat').evaluate(element => { const { top, height } = element.getBoundingClientRect(); return { top, height }; });
+  const before = await box();
+  const move = page.locator('.stage-chat [data-layout-handle] button').first();
+  await move.press('ArrowUp');
+  await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y > 64);
+  const after = await box();
+  assert.ok(Math.abs(after.top - before.top) <= 1 && Math.abs(after.height - before.height) <= 1, `from ${JSON.stringify(before)} to ${JSON.stringify(after)}`);
+  await move.press('ArrowUp'); await move.press('ArrowUp');
+  const again = await box();
+  assert.ok(Math.abs(again.top - before.top) <= 1 && Math.abs(again.height - before.height) <= 1, `repeated presses: ${JSON.stringify(again)}`);
+  // Moving down still works from where it is shown.
+  await move.press('ArrowDown');
+  const down = await box();
+  assert.ok(down.top > before.top + 5 && Math.abs(down.height - before.height) <= 1, `down: ${JSON.stringify(down)}`);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('the preview moves the panels below the speech panel when draft CSS raises its minimum', async t => {
   const { page, preview, errors } = await fixture(t);
   await page.locator('[data-page="studio"]').click();
