@@ -29,7 +29,7 @@ export const COMMENT_PRESETS = Object.freeze({
   light: { label: '白パネル', values: { ...themeLook, commentPanel: 'light', commentPanelOpacity: 90, commentTextColor: '#1f2a24', commentAuthorColor: '#3b6e58' }, commentStyle: 'stacked' },
   dark: { label: '半透明の暗パネル', values: { ...themeLook, commentPanel: 'dark', commentPanelOpacity: 35, commentTextColor: '#ffffff', commentAuthorColor: '#ffffff', commentOutline: 'thin', commentOutlineColor: '#000000' }, commentStyle: 'stacked' },
   dense: { label: '本文だけ高密度', values: { ...themeLook, commentPanel: 'none', commentLineHeight: 1.35, commentGap: 4, commentDivider: false, commentLabel: false }, commentStyle: 'anonymous' },
-  chips: { label: '丸いチップ（本文2行）', values: { ...themeLook, commentPanel: 'none', commentItemBackground: 'light', commentItemOpacity: 92, commentMaxLines: 2, commentTextColor: '#24382e', commentLineHeight: 1.35, commentGap: 14, commentDivider: false, commentLabel: false }, commentStyle: 'anonymous' },
+  chips: { label: '丸いチップ（本文2行）', values: { ...themeLook, commentPanel: 'none', commentItemBackground: 'light', commentItemOpacity: 92, commentMaxLines: 2, commentLineHeight: 1.35, commentGap: 14, commentDivider: false, commentLabel: false }, commentStyle: 'anonymous' },
 });
 
 export function applyCommentPreset(studio, name, options) {

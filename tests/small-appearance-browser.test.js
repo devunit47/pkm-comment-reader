@@ -55,6 +55,7 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   await waitForDesign(url, design => design.studio.fontSize === 56 && design.studio.actorAppearance === 'none' && design.studio.commentMaxLines === 2);
   const live = await look(page);
   assert.deepEqual([live.font, live.background, live.radius, live.padding, live.margin, live.lines], ['56px', 'rgba(255, 255, 255, 0.92)', '44px', '12px 24px', '14px', '2']);
+  assert.equal(live.text, 'rgb(31, 42, 36)');
   assert.deepEqual([live.actorBackground, live.actorBorder, live.caption], ['none', '0px', 'none']);
   const output = await context.newPage();
   await output.goto(`${url}/output.html?background=transparent`);
@@ -91,6 +92,27 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   await page.locator('#apply-design').click();
   await waitForDesign(url, design => design.studio.commentItemBackground === 'dark' && design.studio.commentItemOpacity === 40 && design.studio.commentMaxLines === 3);
   assert.deepEqual([(await look(page)).background, (await look(page)).lines], ['rgba(0, 0, 0, 0.4)', '3']);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('chips preset follows item background colors after application', async t => {
+  const { context, page, url, errors } = await fixture(t);
+  await page.locator('#studio-comment-preset').selectOption('chips');
+  await page.locator('#studio-comment-item-background').selectOption('dark');
+  await waitForDesign(url, design => design.studio.commentItemBackground === 'dark');
+  const dark = await look(page);
+  assert.equal(dark.text, 'rgb(255, 255, 255)');
+  assert.equal(await page.locator('#studio-comment-text-mode').inputValue(), 'theme');
+  assert.deepEqual(await page.locator('#talk-stage').evaluate(element => [element.hasAttribute('data-comment-text'), element.style.getPropertyValue('--stage-comment-text')]), [false, '']);
+  const output = await context.newPage();
+  await output.goto(`${url}/output.html?background=transparent`);
+  await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
+  assert.deepEqual(await look(output), dark);
+  await page.locator('#studio-comment-item-background').selectOption('light');
+  const light = await look(page);
+  assert.equal(light.text, 'rgb(31, 42, 36)');
+  const geometry = appearance => [appearance.font, appearance.radius, appearance.padding, appearance.margin, appearance.lines];
+  assert.deepEqual(geometry(light), geometry(dark));
   assert.deepEqual(errors, []);
 });
 
