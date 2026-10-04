@@ -103,7 +103,7 @@ test('comment presets switch every look setting and are recognized until adjuste
     const applied = applyCommentPreset(base, name);
     assert.equal(matchCommentPreset(applied), name);
     assert.equal(applied.title, 'kept');
-    assert.equal(applied.commentStyle, name === 'dense' ? 'anonymous' : 'stacked');
+    assert.equal(applied.commentStyle, ['dense', 'chips'].includes(name) ? 'anonymous' : 'stacked');
     // Presets are complete: applying one after another leaves no residue.
     assert.equal(matchCommentPreset(applyCommentPreset(applyCommentPreset(base, 'dense'), name)), name);
   }
@@ -111,4 +111,37 @@ test('comment presets switch every look setting and are recognized until adjuste
   assert.deepEqual(applyCommentPreset(base, 'unknown'), base);
   // Returning from 本文だけ高密度 shows names again.
   assert.equal(applyCommentPreset(applyCommentPreset(base, 'dense'), 'theme').commentStyle, 'stacked');
+});
+
+test('comment font sizes include 56 and 64px without extending speech sizes', () => {
+  for (const fontSize of [16, 28, 56, 64]) assert.equal(normalizeStudio({ fontSize }).fontSize, fontSize);
+  for (const fontSize of [15, 65, 56.5, '56', null]) assert.equal(normalizeStudio({ fontSize }).fontSize, 20);
+  assert.equal(normalizeStudio({ fontSize: 56, speechFontSize: 33 }).speechFontSize, 22);
+  assert.equal(normalizeStudio({ fontSize: 56, speechFontSize: 32 }).speechFontSize, 32);
+});
+
+test('small appearance settings validate values and keep legacy designs at the theme', () => {
+  const legacy = normalizeStudio({ fontSize: 24, commentStyle: 'compact' });
+  assert.deepEqual([legacy.actorAppearance, legacy.commentItemBackground, legacy.commentItemOpacity, legacy.commentMaxLines], ['theme', 'theme', 92, null]);
+  const saved = normalizeStudio({ actorAppearance: 'none', commentItemBackground: 'light', commentItemOpacity: 92, commentMaxLines: 2, commentGap: 14 });
+  assert.deepEqual([saved.actorAppearance, saved.commentItemBackground, saved.commentItemOpacity, saved.commentMaxLines, saved.commentGap], ['none', 'light', 92, 2, 14]);
+  for (const commentMaxLines of [0, 1, 2, 3, 4, 5]) assert.equal(normalizeStudio({ commentMaxLines }).commentMaxLines, commentMaxLines);
+  for (const commentItemBackground of ['theme', 'none', 'light', 'dark']) assert.equal(normalizeStudio({ commentItemBackground }).commentItemBackground, commentItemBackground);
+  assert.deepEqual(normalizeStudio({ actorAppearance: true, commentItemBackground: 'url(x)', commentItemOpacity: 101, commentMaxLines: '2' }), DEFAULT_STUDIO);
+  for (const commentMaxLines of [-1, 6, 2.5, false]) assert.equal(normalizeStudio({ commentMaxLines }).commentMaxLines, null);
+  for (const commentItemOpacity of [-1, 101, 92.5, '92', null]) assert.equal(normalizeStudio({ commentItemOpacity }).commentItemOpacity, 92);
+});
+
+test('round chips keep font size and output behavior and old presets remove their appearance', () => {
+  const original = normalizeStudio({ fontSize: 56, speechFontSize: 32, maxVisible: 3, holdSeconds: 15, newestPosition: 'top', actorAppearance: 'none' });
+  const chips = applyCommentPreset(original, 'chips');
+  assert.equal(matchCommentPreset(chips), 'chips');
+  assert.deepEqual([chips.commentPanel, chips.commentItemBackground, chips.commentItemOpacity, chips.commentMaxLines, chips.commentGap, chips.commentStyle], ['none', 'light', 92, 2, 14, 'anonymous']);
+  for (const key of ['fontSize', 'speechFontSize', 'maxVisible', 'holdSeconds', 'newestPosition', 'actorAppearance']) assert.equal(chips[key], original[key]);
+  for (const name of ['theme', 'outline', 'light', 'dark', 'dense']) {
+    const restored = applyCommentPreset(chips, name);
+    assert.deepEqual([restored.commentItemBackground, restored.commentItemOpacity, restored.commentMaxLines], ['theme', 92, null]);
+    assert.equal(matchCommentPreset(restored), name);
+  }
+  assert.equal(matchCommentPreset({ ...chips, commentMaxLines: 3 }), '');
 });
