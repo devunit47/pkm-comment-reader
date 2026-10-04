@@ -61,8 +61,11 @@ test('Pages gallery has six local images with descriptions, dimensions and a sma
   assert.match(html, /ローカル版で作れる画面の例/);
   assert.match(html, /画面例の人物・背景は架空の素材です/);
   assert.equal([...html.matchAll(/<figcaption>/g)].length, 6);
-  assert.match(html, /机の位置はテーマCSSで調整/);
-  assert.match(html, /本文の2行制限はテーマCSSで調整/);
+  const intro = html.match(/<p class="gallery-intro">([^<]+)<\/p>/)?.[1];
+  assert.ok(intro);
+  assert.match(intro, /一部の画面は、テーマCSSで細かな見た目を調整しています。/);
+  assert.doesNotMatch(html, /立ち絵の下端はテーマCSSで調整。|机の位置はテーマCSSで調整。/);
+  assert.match(html, /投稿ごとの丸い背景と2行の表示は、テーマCSSで作っています。/);
 });
 
 test('Pages workflow publishes the notice for every path and never builds the app', async () => {
