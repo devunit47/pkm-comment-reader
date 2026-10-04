@@ -381,13 +381,7 @@ export function createDesignStorage(root) {
     await check();
     for (const entry of entries) {
       if (!deletedPattern.test(entry.name)) continue;
-      const folder = join(presets, entry.name), imageFolder = join(folder, 'images');
-      await check();
-      const checkImages = await guardDirectory(root, imageFolder);
-      await cleanup(defaultDesign(), imageFolder);
-      const remaining = await readdir(imageFolder);
-      await checkImages();
-      if (remaining.length === 0) await removeDirectory(folder, root);
+      await removeDirectory(join(presets, entry.name), root, check);
     }
   }
 
@@ -588,9 +582,8 @@ export function createDesignStorage(root) {
       await presetDirectories();
       const value = await loadPreset(id); checkRevision(expected, value);
       const deleted = join(presets, `.deleted-${randomUUID()}`);
-      await protectReleasedImages(value.design, defaultDesign(), join(presetPath(id), 'images'));
       await renamePresetFolder(presetPath(id), deleted);
-      await cleanupDeleted();
+      await removeDirectory(deleted, root);
       await cleanup((await load()).design);
       return { deleted: id };
     });

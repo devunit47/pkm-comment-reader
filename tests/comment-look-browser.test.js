@@ -200,6 +200,7 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
   assert.equal((await read(page)).bodyColor, 'rgb(170, 0, 0)');
   assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(170, 0, 0)');
 
+  await waitForDesign(url, design => design.studio.commentTextColor === '#aa0000');
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });

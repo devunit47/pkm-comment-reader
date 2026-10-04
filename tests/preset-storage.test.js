@@ -306,7 +306,7 @@ test('overlapping preset reads and overwrites never expose a missing or incomple
   assert.equal(preset.design.studio.title, '改訂 11');
 });
 
-test('reset, overwrite and delete give released images a full grace period and collect them afterwards', async t => {
+test('reset and overwrite give released images a full grace period and collect them afterwards', async t => {
   const app = await serve(t); await app.uploadFixture(); await app.save(fixtureDesign());
   let preset = await app.newPreset('片付け確認');
   const currentImages = join(app.directory, 'current', 'images'), presetImages = join(app.directory, 'presets', preset.id, 'images');
@@ -320,18 +320,47 @@ test('reset, overwrite and delete give released images a full grace period and c
   for (const ref of Object.keys(fixtureFiles)) { await utimes(join(currentImages, imageName(ref)), oldDate, oldDate); await utimes(join(presetImages, imageName(ref)), oldDate, oldDate); }
   await app.list();
   assert.deepEqual(await readdir(currentImages), []); assert.deepEqual(await readdir(presetImages), []);
-  await app.uploadFixture(); await app.save(fixtureDesign());
-  preset = await app.update(await app.getPreset(preset.id), { overwrite: true, currentRevision: (await app.current()).revision });
+});
+
+test('deleting a preset removes its entire folder immediately and preserves current copies', async t => {
+  const app = await serve(t); await app.uploadFixture(); await app.save(fixtureDesign());
+  const preset = await app.newPreset('すぐ削除'), before = await app.current();
   await app.remove(preset);
-  assert.equal((await app.list()).presets.length, 0);
-  const deletedName = (await readdir(join(app.directory, 'presets'))).find(name => /^\.deleted-/.test(name));
-  assert.ok(deletedName, 'deleted preset is unavailable while images retain their grace period');
-  const deletedImages = join(app.directory, 'presets', deletedName, 'images');
-  assert.deepEqual((await readdir(deletedImages)).sort(), Object.keys(fixtureFiles).map(imageName).sort());
-  for (const ref of Object.keys(fixtureFiles)) await utimes(join(deletedImages, imageName(ref)), oldDate, oldDate);
-  await app.save(fixtureDesign());
-  assert.equal((await readdir(join(app.directory, 'presets'))).length, 0, 'expired deleted image folder is collected');
-  assert.deepEqual((await readdir(currentImages)).sort(), Object.keys(fixtureFiles).map(imageName).sort(), 'current still references its independent copies');
+  assert.deepEqual(await readdir(join(app.directory, 'presets')), [], 'no deleted folder remains immediately after deletion');
+  assert.deepEqual(await app.current(), before);
+  for (const [ref, bytes] of Object.entries(fixtureFiles)) assert.deepEqual(await readFile(join(app.directory, 'current', ref)), bytes);
+});
+
+test('refresh removes a partially deleted preset after an immediate removal failure without waiting for age', async t => {
+  const app = await serve(t); await app.uploadFixture(); await app.save(fixtureDesign());
+  const preset = await app.newPreset('削除再試行'), original = fs.unlink;
+  let failed = false, response;
+  fs.unlink = async (path, ...options) => {
+    if (!failed && basename(String(path)) === imageName(actorRef) && basename(dirname(dirname(String(path)))).startsWith('.deleted-')) {
+      failed = true; throw Object.assign(new Error('removal failed'), { code: 'EIO' });
+    }
+    return original(path, ...options);
+  };
+  syncBuiltinESMExports();
+  try { response = await app.send(`/api/design/presets/${preset.id}`, 'DELETE', {}, { 'If-Match': preset.revision }); await response.arrayBuffer(); }
+  finally { fs.unlink = original; syncBuiltinESMExports(); }
+  assert.equal(failed, true, 'deletion attempts to remove newly stored images immediately');
+  assert.equal(response.status, 503);
+  assert.ok((await readdir(join(app.directory, 'presets'))).some(name => name.startsWith('.deleted-')));
+  assert.deepEqual((await app.list()).presets, []);
+  assert.deepEqual(await readdir(join(app.directory, 'presets')), [], 'refresh retries removal even when images are recent');
+});
+
+test('applying a preset protects images released from current for a full grace period', async t => {
+  const app = await serve(t), preset = await app.newPreset('標準のプリセット');
+  await app.uploadFixture(); await app.save(fixtureDesign());
+  const currentImages = join(app.directory, 'current', 'images'), oldDate = past();
+  for (const ref of Object.keys(fixtureFiles)) await utimes(join(currentImages, imageName(ref)), oldDate, oldDate);
+  await app.apply(preset);
+  assert.deepEqual((await readdir(currentImages)).sort(), Object.keys(fixtureFiles).map(imageName).sort());
+  for (const ref of Object.keys(fixtureFiles)) await utimes(join(currentImages, imageName(ref)), oldDate, oldDate);
+  await app.save(defaultDesign());
+  assert.deepEqual(await readdir(currentImages), []);
 });
 
 test('directory links and junctions are unavailable and cannot be written or opened', async t => {
