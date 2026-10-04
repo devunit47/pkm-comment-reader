@@ -20,7 +20,7 @@ const write = (url, headers, body) => new Promise((resolve, reject) => {
   req.on('error', reject); req.setTimeout(5000, () => req.destroy(new Error('write timed out'))); req.end(body);
 });
 
-async function serve(t, packaged, beforeClose = async () => {}) {
+async function serve(t, packaged) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-write-headers-'));
   let factory = createServer;
   if (packaged) {
@@ -30,8 +30,7 @@ async function serve(t, packaged, beforeClose = async () => {}) {
   const server = factory({ customizationDirectory: join(folder, 'customization') });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  // Stop the browser's SSE reconnection before closing its server.
-  t.after(async () => { await beforeClose(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await rm(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 30 }); });
+  t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 30 }); });
   return `http://127.0.0.1:${server.address().port}`;
 }
 
@@ -62,7 +61,8 @@ for (const packaged of [false, true]) {
 
   test(`${edition}: an actual browser supplies the required headers for design and image writes`, { skip: !browserAvailable, timeout: 30000 }, async t => {
     let browser;
-    const base = await serve(t, packaged, async () => browser?.close());
+    const base = await serve(t, packaged);
+    t.after(() => browser?.close());
     browser = await chromium.launch({ headless: true, executablePath, timeout: 10000 });
     const page = await browser.newPage();
     page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(10000);

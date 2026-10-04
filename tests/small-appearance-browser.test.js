@@ -91,6 +91,7 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   await page.locator('#draft-commentMaxLines').selectOption('3');
   await page.locator('#apply-design').click();
   await waitForDesign(url, design => design.studio.commentItemBackground === 'dark' && design.studio.commentItemOpacity === 40 && design.studio.commentMaxLines === 3);
+  await page.locator('#design-dialog').waitFor({ state: 'hidden' });
   assert.deepEqual([(await look(page)).background, (await look(page)).lines], ['rgba(0, 0, 0, 0.4)', '3']);
   assert.deepEqual(errors, []);
 });

@@ -75,7 +75,12 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   });
   // Open event streams would otherwise keep close() waiting forever.
   const close = server.close.bind(server);
-  server.close = callback => { design.closeEvents(); return close(callback); };
+  server.close = callback => {
+    design.closeEvents();
+    const result = close(callback);
+    server.closeIdleConnections();
+    return result;
+  };
   return server;
 }
 

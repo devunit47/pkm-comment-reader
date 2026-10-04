@@ -203,6 +203,7 @@ export function createDesignStorage(root) {
   const presets = join(root, 'presets');
   const catalogCache = new Map();
   const clients = new Set();
+  let stopping = false;
   let queue = Promise.resolve();
   // Saves and cleanup run one at a time so If-Match checks cannot interleave.
   const exclusive = task => { const run = queue.then(task, task); queue = run.catch(() => {}); return run; };
@@ -645,6 +646,12 @@ export function createDesignStorage(root) {
   }
 
   function events(req, res) {
+    // Active keep-alive connections can still deliver requests after close().
+    if (stopping) {
+      res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
+      res.end('サーバーを停止しています。');
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', Connection: 'keep-alive' });
     res.write('retry: 2000\n\n');
     clients.add(res);
@@ -741,7 +748,11 @@ export function createDesignStorage(root) {
   }
 
   // Event streams never finish on their own; end them so server.close() can.
-  function closeEvents() { for (const client of clients) client.end(); clients.clear(); }
+  function closeEvents() {
+    stopping = true;
+    for (const client of clients) client.end();
+    clients.clear();
+  }
 
   return { handle, load, save, addImage, listPresets, getPreset, newPreset, updatePreset, deletePreset, applyPreset, closeEvents };
 }
