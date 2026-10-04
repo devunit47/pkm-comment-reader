@@ -8,7 +8,7 @@ export { MAX_THEME_CSS_BYTES } from './theme.js';
 // design.json is shared by the server (which stores it) and every page (which
 // renders it). Images are file references, never data URLs.
 export const DESIGN_FORMAT = 'pokome-design';
-export const DESIGN_VERSION = 2;
+export const DESIGN_VERSION = 3;
 export const RATIOS = Object.freeze(['16:9', '9:16', '4:3']);
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_IMAGE_PIXELS = 16_000_000;
@@ -18,6 +18,7 @@ export const IMAGE_TYPES = Object.freeze({ png: 'image/png', jpg: 'image/jpeg', 
 const IMAGE_REF = /^images\/([0-9a-f]{64})\.(png|jpg|webp|gif)$/;
 const SCOPE = /^(?:current|presets\/[a-z0-9-]{1,64})$/;
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const bounded = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 const nameSegmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
 function nameParts(value, limit = MAX_DESIGN_NAME + 1) {
   const parts = [];
@@ -55,20 +56,36 @@ export const overlayOptions = images => ({
   maxTotalBytes: Infinity,
 });
 
-function normalizeRatio(entry, images) {
+export const defaultActorImage = () => ({ mode: 'theme', scale: 100, alignX: 'center', alignY: 'center', offsetX: 0, offsetY: 0, overflow: false });
+
+export function normalizeActorImage(value) {
+  if (!record(value)) return defaultActorImage();
+  return {
+    mode: value.mode === 'custom' ? 'custom' : 'theme',
+    scale: Math.round(bounded(value.scale, 100, 100, 200)),
+    alignX: ['left', 'center', 'right'].includes(value.alignX) ? value.alignX : 'center',
+    alignY: ['top', 'center', 'bottom'].includes(value.alignY) ? value.alignY : 'center',
+    offsetX: bounded(value.offsetX, 0, -100, 100), offsetY: bounded(value.offsetY, 0, -100, 100),
+    overflow: value.overflow === true,
+  };
+}
+
+function normalizeRatio(entry, images, version) {
   const layout = entry.layout == null ? null : normalizeLayout(entry.layout, PANEL_IDS.talk);
   let overlays;
   try { overlays = normalizeOverlays(entry.overlays ?? null, overlayOptions(images)); }
   catch { overlays = normalizeOverlays(); }
-  return { layout, overlays };
+  // Version 2 did not define actorImage, even if a hand-edited file contains it.
+  const actorImage = normalizeActorImage(version === DESIGN_VERSION ? entry.actorImage : null);
+  return { layout, overlays, actorImage };
 }
 
 export function normalizeDesign(value, images = {}) {
-  if (!record(value) || value.format !== DESIGN_FORMAT || value.version !== DESIGN_VERSION) throw new Error('対応するデザインの形式ではありません。');
+  if (!record(value) || value.format !== DESIGN_FORMAT || ![2, DESIGN_VERSION].includes(value.version)) throw new Error('対応するデザインの形式ではありません。');
   const ratios = {};
   for (const ratio of RATIOS) {
     const entry = record(value.ratios) && Object.hasOwn(value.ratios, ratio) ? value.ratios[ratio] : null;
-    ratios[ratio] = record(entry) ? normalizeRatio(entry, images) : null;
+    ratios[ratio] = record(entry) ? normalizeRatio(entry, images, value.version) : null;
   }
   return {
     format: DESIGN_FORMAT, version: DESIGN_VERSION,
@@ -125,17 +142,18 @@ export const defaultTalkLayout = ratio => ratio === '9:16' ? normalizeLayout(str
 const emptyOverlays = () => normalizeOverlays();
 export const talkLayout = (design, ratio) => structuredClone(design.ratios[ratio]?.layout ?? defaultTalkLayout(ratio));
 export const talkOverlays = (design, ratio) => structuredClone(design.ratios[ratio]?.overlays ?? emptyOverlays());
+export const talkActorImage = (design, ratio) => normalizeActorImage(design.ratios[ratio]?.actorImage);
 
-// Returns a design with one ratio's layout and/or overlays replaced. A ratio
-// back at its default layout with no overlays becomes uncreated (null) again.
-export function withTalk(design, ratio, { layout, overlays } = {}) {
+// A ratio becomes uncreated only when all its appearance and layout are default.
+export function withTalk(design, ratio, { layout, overlays, actorImage } = {}) {
   if (!RATIOS.includes(ratio)) throw new Error('対応しない画面の比率です。');
   const entry = design.ratios[ratio];
   let nextLayout = layout === undefined ? entry?.layout ?? null : layout;
   if (JSON.stringify(nextLayout) === JSON.stringify(defaultTalkLayout(ratio))) nextLayout = null;
   const nextOverlays = overlays ?? entry?.overlays ?? emptyOverlays();
-  const created = nextLayout !== null || nextOverlays.items.length > 0;
-  return { ...design, ratios: { ...design.ratios, [ratio]: created ? { layout: nextLayout, overlays: nextOverlays } : null } };
+  const nextActorImage = normalizeActorImage(actorImage === undefined ? entry?.actorImage : actorImage);
+  const created = nextLayout !== null || nextOverlays.items.length > 0 || JSON.stringify(nextActorImage) !== JSON.stringify(defaultActorImage());
+  return { ...design, ratios: { ...design.ratios, [ratio]: created ? { layout: nextLayout, overlays: nextOverlays, actorImage: nextActorImage } : null } };
 }
 
 // Edges that viewers' apps often cover (portrait) or that should stay clear of

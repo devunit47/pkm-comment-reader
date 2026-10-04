@@ -6,11 +6,11 @@ import { request } from 'node:http';
 import fs from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createServer } from '../server.js';
-import { defaultDesign, MAX_IMAGE_BYTES, RATIOS } from '../src/shared/design-model.js';
+import { defaultDesign, defaultActorImage, normalizeDesign, MAX_IMAGE_BYTES, RATIOS } from '../src/shared/design-model.js';
 import { replacePresetDirectory, UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles, fixtureImages, actorRef, backgroundRef } from './fixtures/preset-design.js';
 
@@ -93,6 +93,75 @@ test('saving a complete scene, resetting, previewing and applying preserves ever
   assert.deepEqual(await app.current(), restored);
   assert.equal(Object.hasOwn(restored.design, 'backgroundMode'), false);
   assert.equal(Object.hasOwn(restored.design, 'chromaColor'), false);
+});
+
+test('version 2 preset preview preserves its original, applying upgrades only current and renaming upgrades the preset', async t => {
+  const app = await serve(t), normalized = fixtureDesign();
+  const legacy = structuredClone(normalized); legacy.version = 2;
+  for (const ratio of RATIOS) delete legacy.ratios[ratio].actorImage;
+  const folder = await manualPreset(app.directory, 'legacy-scene', legacy);
+  const path = join(folder, 'design.json'), raw = await readFile(path, 'utf8'), before = await stat(path);
+  const imageTimes = {};
+  for (const ref of Object.keys(fixtureFiles)) {
+    const date = past(); await utimes(join(folder, ref), date, date);
+    imageTimes[ref] = (await stat(join(folder, ref))).mtimeMs;
+  }
+  const list = await app.list();
+  assert.equal(list.presets.find(item => item.id === 'legacy-scene').error, undefined);
+  const preview = await app.getPreset('legacy-scene');
+  assert.deepEqual(preview.design, normalized);
+  for (const ratio of RATIOS) assert.deepEqual(preview.design.ratios[ratio].actorImage, defaultActorImage());
+  assert.equal(await readFile(path, 'utf8'), raw);
+  assert.equal((await stat(path)).mtimeMs, before.mtimeMs);
+  for (const ref of Object.keys(fixtureFiles)) {
+    assert.deepEqual(await readFile(join(folder, ref)), fixtureFiles[ref]);
+    assert.equal((await stat(join(folder, ref))).mtimeMs, imageTimes[ref]);
+  }
+  const applied = await app.apply(preview);
+  assert.deepEqual(applied.design, normalized);
+  assert.equal(JSON.parse(await readFile(join(app.directory, 'current', 'design.json'), 'utf8')).version, 3);
+  assert.equal(await readFile(path, 'utf8'), raw, 'applying writes only current');
+  const renamed = await app.update(preview, { name: '旧デザインの名前変更' });
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).version, 3);
+  assert.deepEqual(renamed.design, { ...normalized, name: '旧デザインの名前変更' });
+});
+
+test('new actor image settings and off-canvas images round-trip through current and all preset writes', async t => {
+  const app = await serve(t); await app.uploadFixture();
+  const design = fixtureDesign();
+  for (const [index, ratio] of RATIOS.entries()) {
+    design.ratios[ratio].actorImage = { mode: index === 1 ? 'theme' : 'custom', scale: 110 + index * 45,
+      alignX: ['left', 'center', 'right'][index], alignY: ['bottom', 'center', 'top'][index],
+      offsetX: [-100, 1.125, 100][index], offsetY: [100, -3.125, -100][index], overflow: index !== 1 };
+    Object.assign(design.ratios[ratio].overlays.items[0], [
+      { x: -100, y: -100, w: 200, h: 200 }, { x: 0, y: 8.5, w: 100, h: 100 }, { x: 98, y: 98, w: 2, h: 2 },
+    ][index]);
+  }
+  const expected = normalizeDesign(design, fixtureImages);
+  assert.deepEqual((await app.save(design)).design, expected);
+  let preset = await app.newPreset(design.name);
+  assert.deepEqual(preset.design, expected);
+  assert.deepEqual((await app.getPreset(preset.id)).design, expected);
+  await app.save(defaultDesign());
+  assert.deepEqual((await app.apply(preset)).design, expected);
+  preset = await app.update(preset, { overwrite: true, currentRevision: (await app.current()).revision });
+  assert.deepEqual(preset.design, expected);
+  const renamed = await app.update(preset, { name: '画像配置の保存' });
+  assert.deepEqual(renamed.design, { ...expected, name: '画像配置の保存' });
+  assert.equal(JSON.parse(await readFile(join(app.directory, 'presets', preset.id, 'design.json'), 'utf8')).version, 3);
+  for (const ref of Object.keys(fixtureFiles)) assert.deepEqual(await readFile(join(app.directory, 'presets', preset.id, ref)), fixtureFiles[ref]);
+});
+
+test('creating a preset from version 2 current writes a new version 3 preset without converting current', async t => {
+  const app = await serve(t); await app.uploadFixture();
+  const normalized = fixtureDesign(), legacy = structuredClone(normalized); legacy.version = 2;
+  for (const ratio of RATIOS) delete legacy.ratios[ratio].actorImage;
+  const path = join(app.directory, 'current', 'design.json'), raw = JSON.stringify(legacy, null, 2) + '\n';
+  await writeFile(path, raw);
+  const preset = await app.newPreset(legacy.name);
+  assert.deepEqual(preset.design, normalized);
+  assert.equal(JSON.parse(await readFile(join(app.directory, 'presets', preset.id, 'design.json'), 'utf8')).version, 3);
+  assert.equal(await readFile(path, 'utf8'), raw);
 });
 
 test('current saves never read preset images', async t => {

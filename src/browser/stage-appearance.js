@@ -3,7 +3,7 @@ import { THEME_ACCENTS } from '../shared/studio.js';
 
 // The live stage and script-free design preview share exactly the same visual
 // renderer. It cannot save settings, trim history, connect chat or play audio.
-export function renderStageAppearance(stage, studio, defaultImage = './speech-background.svg') {
+export function renderStageAppearance(stage, studio, defaultImage = './speech-background.svg', { actorImage } = {}) {
   const $ = id => stage.querySelector(`#${id}`);
   stage.dataset.theme = studio.theme;
   stage.dataset.layout = studio.layout;
@@ -30,6 +30,7 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
   stage.style.setProperty('--chat-width', `${100 - studio.actorWidth}fr`);
   for (const [id, key] of Object.entries({ 'stage-title': 'title', 'stage-subtitle': 'subtitle', 'stage-footer-text': 'footer', 'stage-speech-title': 'speechTitle' })) $(id).textContent = studio[key];
   const hasImage = studio.source === 'image' && !!studio.image;
+  renderActorImage(stage, hasImage ? actorImage : null);
   $('actor-image').hidden = !hasImage;
   if ($('actor-image').getAttribute('src') !== (studio.image || null)) {
     if (studio.image) $('actor-image').src = studio.image;
@@ -39,6 +40,30 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
   $('actor-placeholder').querySelector('small').textContent = studio.source === 'image'
     ? '配信デザイン設定で画像を読み込んでください' : 'OBSで映像を重ねるための空き枠';
   $('actor-caption').textContent = hasImage ? 'WITH YOU ♡' : 'YOUR SPACE';
+}
+
+// The caller chooses and normalizes the ratio. Theme mode owns no CSS values,
+// so removing this feature's writes restores the saved theme exactly.
+function renderActorImage(stage, settings) {
+  const custom = settings?.mode === 'custom';
+  if (custom) {
+    stage.dataset.actorImage = 'custom';
+    stage.dataset.actorImageOverflow = String(settings.overflow);
+  } else {
+    delete stage.dataset.actorImage;
+    delete stage.dataset.actorImageOverflow;
+  }
+  const align = { left: 0, top: 0, center: .5, right: 1, bottom: 1 };
+  const values = custom ? {
+    '--actor-image-size': `${settings.scale}%`,
+    '--actor-image-left': `${(100 - settings.scale) * align[settings.alignX] + settings.offsetX}%`,
+    '--actor-image-top': `${(100 - settings.scale) * align[settings.alignY] + settings.offsetY}%`,
+    '--actor-image-position': `${settings.alignX} ${settings.alignY}`,
+  } : {};
+  for (const name of ['--actor-image-size', '--actor-image-left', '--actor-image-top', '--actor-image-position']) {
+    if (custom) stage.style.setProperty(name, values[name], 'important');
+    else stage.style.removeProperty(name);
+  }
 }
 
 export function renderOverlays(stage, state) {

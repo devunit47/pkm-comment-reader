@@ -3,14 +3,17 @@ import assert from 'node:assert/strict';
 import { renderStageAppearance, renderOverlays } from '../src/browser/stage-appearance.js';
 import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS, applyCommentPreset } from '../src/shared/studio.js';
 import { normalizeOverlays, createOverlay } from '../src/shared/overlay-model.js';
+import { normalizeActorImage } from '../src/shared/design-model.js';
 
 // A deliberately small behavioral DOM. It models ownership, descendant queries,
 // textContent replacing children, and attribute writes; HTML parsing is forbidden.
 class FakeStyle {
   values = new Map();
-  setProperty(name, value) { this.values.set(name, String(value)); }
+  priorities = new Map();
+  setProperty(name, value, priority = '') { this.values.set(name, String(value)); this.priorities.set(name, priority); }
   getPropertyValue(name) { return this.values.get(name) || ''; }
-  removeProperty(name) { this.values.delete(name); }
+  getPropertyPriority(name) { return this.priorities.get(name) || ''; }
+  removeProperty(name) { this.values.delete(name); this.priorities.delete(name); }
   set zIndex(value) { this.setProperty('z-index', value); }
   get zIndex() { return this.getPropertyValue('z-index'); }
   set color(value) { this.setProperty('color', value); }
@@ -164,6 +167,48 @@ test('actor and speech images reuse unchanged sources, reset cleanly and show th
   assert.equal(stage.style.getPropertyValue('--speech-image'), 'url("./speech-background.svg")');
   withoutGlobals(() => renderStageAppearance(stage, normalizeStudio()));
   assert.equal(get('actor-placeholder').querySelector('small').textContent, 'OBSで映像を重ねるための空き枠');
+});
+
+test('actor image theme values own no attributes or variables and remove only custom placement writes', () => {
+  const { stage } = fixture();
+  const studio = deepFreeze(normalizeStudio({ source: 'image', image: png }));
+  const options = actorImage => ({ actorImage: deepFreeze(normalizeActorImage(actorImage)) });
+  withoutGlobals(() => renderStageAppearance(stage, studio, undefined, options({ mode: 'theme', scale: 177, offsetX: 9 })));
+  const baseline = { dataset: { ...stage.dataset }, styles: new Map(stage.style.values) };
+  assert.equal(stage.dataset.actorImage, undefined);
+  assert.equal([...stage.style.values.keys()].some(name => name.startsWith('--actor-image-')), false);
+  withoutGlobals(() => renderStageAppearance(stage, studio, undefined, options({ mode: 'custom', scale: 110, alignX: 'right', alignY: 'bottom', offsetX: 3.5, offsetY: -2.25, overflow: true })));
+  assert.equal(stage.dataset.actorImage, 'custom');
+  assert.equal(stage.dataset.actorImageOverflow, 'true');
+  assert.deepEqual(['size', 'left', 'top', 'position'].map(key => stage.style.getPropertyValue(`--actor-image-${key}`)), ['110%', '-6.5%', '-12.25%', 'right bottom']);
+  assert.ok(['size', 'left', 'top', 'position'].every(key => stage.style.getPropertyPriority(`--actor-image-${key}`) === 'important'));
+  // A theme may own unrelated transform/overflow values; this renderer never edits them.
+  stage.style.setProperty('--unrelated-theme-value', 'kept');
+  withoutGlobals(() => renderStageAppearance(stage, studio, undefined, options({ mode: 'theme', scale: 110, overflow: true })));
+  assert.deepEqual(stage.dataset, baseline.dataset);
+  assert.equal(stage.style.getPropertyValue('--unrelated-theme-value'), 'kept');
+  stage.style.removeProperty('--unrelated-theme-value');
+  assert.deepEqual(new Map(stage.style.values), baseline.styles);
+});
+
+test('actor placement does not apply without an image or to the OBS empty slot, and returns with the image', () => {
+  const { stage, get } = fixture();
+  const options = deepFreeze({ actorImage: normalizeActorImage({ mode: 'custom', scale: 200, alignX: 'left', alignY: 'top', offsetX: -100, offsetY: 100 }) });
+  const imageStudio = normalizeStudio({ source: 'image', image: png });
+  renderStageAppearance(stage, imageStudio, undefined, options);
+  assert.equal(stage.style.getPropertyValue('--actor-image-size'), '200%');
+  for (const studio of [normalizeStudio({ source: 'image' }), normalizeStudio({ image: png })]) {
+    renderStageAppearance(stage, studio, undefined, options);
+    assert.equal(get('actor-image').hidden, true);
+    assert.equal(stage.dataset.actorImage, undefined);
+    assert.equal(stage.dataset.actorImageOverflow, undefined);
+    assert.equal([...stage.style.values.keys()].some(name => name.startsWith('--actor-image-')), false);
+  }
+  renderStageAppearance(stage, imageStudio, undefined, options);
+  assert.equal(stage.style.getPropertyValue('--actor-image-left'), '-100%');
+  assert.equal(stage.style.getPropertyValue('--actor-image-top'), '100%');
+  assert.equal(stage.dataset.actorImageOverflow, 'false');
+  assert.equal(options.actorImage.scale, 200, 'saved input stays unchanged');
 });
 
 test('overlay rendering creates owner-document nodes, preserves literal text and applies bounded styles', () => {

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { defaultTalkLayout } from '../src/shared/design-model.js';
+import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
@@ -181,9 +181,11 @@ browserTest('copying between ratios happens only on request and explains a grid 
   const { page, editor, url, errors } = await fixture(t);
   const portrait = defaultTalkLayout('9:16'); portrait.panels.header.h = 12;
   const note = createOverlay('text', { id: 'note', text: '横のメモ' });
+  const portraitImage = normalizeActorImage({ mode: 'custom', scale: 152, alignY: 'bottom', offsetX: 3.75 });
+  const landscapeImage = normalizeActorImage({ mode: 'theme', scale: 110, overflow: true });
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios,
-    '9:16': { layout: portrait, overlays: { version: 1, items: [], assets: {} } },
-    '16:9': { layout: null, overlays: { version: 1, items: [note], assets: {} } } } }));
+    '9:16': { layout: portrait, overlays: { version: 1, items: [], assets: {} }, actorImage: portraitImage },
+    '16:9': { layout: null, overlays: { version: 1, items: [note], assets: {} }, actorImage: landscapeImage } } }));
   await page.locator('[data-page="studio"]').click();
   await editor.locator('#mode').selectOption('talk');
   await editor.locator('#ratio').selectOption('4:3');
@@ -196,11 +198,14 @@ browserTest('copying between ratios happens only on request and explains a grid 
   let design = await waitForDesign(url, value => value.ratios['4:3']?.layout?.panels.header.h === 12);
   assert.deepEqual(design.ratios['4:3'].layout, portrait);
   assert.deepEqual(design.ratios['9:16'].layout, portrait, 'the source is unchanged');
+  assert.deepEqual(design.ratios['4:3'].actorImage, portraitImage);
   await editor.locator('#copy-source').selectOption('16:9');
   await editor.locator('#copy-ratio-button').click();
   assert.match(await editor.locator('#status').textContent(), /標準の並び/);
   design = await waitForDesign(url, value => value.ratios['4:3']?.overlays.items[0]?.text === '横のメモ');
-  assert.deepEqual(design.ratios['4:3'].layout, portrait, 'a grid source copies only the additions');
+  assert.deepEqual(design.ratios['4:3'].layout, portrait, 'a grid source keeps the target panel positions');
+  assert.deepEqual(design.ratios['4:3'].actorImage, landscapeImage, 'a grid source still copies saved image placement');
+  assert.deepEqual(design.ratios['9:16'].actorImage, portraitImage, 'the third ratio stays unchanged');
   assert.deepEqual(errors, []);
 });
 
@@ -280,6 +285,31 @@ browserTest('numeric fields and reset work on the ratio chosen for editing', asy
   assert.equal(design.ratios['16:9'], null);
   await editor.locator('#reset').click();
   design = await waitForDesign(url, value => value.ratios['9:16'] === null);
+  assert.equal(design.ratios['16:9'], null);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('normal panel edits preserve actor placement and layout reset clears only that ratio placement', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  const portrait = defaultTalkLayout('9:16'); portrait.panels.header.h = 6;
+  const actorImage = normalizeActorImage({ mode: 'custom', scale: 175, alignX: 'left', alignY: 'bottom', offsetY: 2.125, overflow: true });
+  const otherImage = normalizeActorImage({ mode: 'theme', scale: 125, offsetX: -3.5 });
+  const note = createOverlay('text', { id: 'keep-note', text: '配置を戻しても残す' });
+  await saveDesign(url, design => withTalk(withTalk(design, '9:16', { layout: portrait, actorImage, overlays: { version: 1, items: [note], assets: {} } }), '4:3', { actorImage: otherImage }));
+  await page.locator('[data-page="studio"]').click();
+  await editor.locator('#mode').selectOption('talk');
+  await editor.locator('#ratio').selectOption('9:16');
+  await editor.locator('.fields summary').click();
+  await editor.locator('#panel').selectOption('header');
+  await editor.locator('#h').fill('10'); await editor.locator('#h').dispatchEvent('change');
+  let design = await waitForDesign(url, value => value.ratios['9:16']?.layout?.panels.header.h === 10);
+  assert.deepEqual(design.ratios['9:16'].actorImage, actorImage);
+  assert.deepEqual(design.ratios['9:16'].overlays.items, [note]);
+  await editor.locator('#reset').click();
+  design = await waitForDesign(url, value => value.ratios['9:16']?.layout === null && value.ratios['9:16'].actorImage.mode === 'theme');
+  assert.deepEqual(design.ratios['9:16'].actorImage, defaultActorImage());
+  assert.deepEqual(design.ratios['9:16'].overlays.items, [note]);
+  assert.deepEqual(design.ratios['4:3'].actorImage, otherImage);
   assert.equal(design.ratios['16:9'], null);
   assert.deepEqual(errors, []);
 });
