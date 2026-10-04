@@ -40,7 +40,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if (Test-Path -LiteralPath 'dist-local/kick.js') { throw 'Kick must not be distributed.' }
+          if (Test-Path -LiteralPath 'dist-local/src/browser/kick.js') { throw 'Kick must not be distributed.' }
           Compress-Archive -Path 'dist-local/*' -DestinationPath "pokome-reader-$env:RELEASE_TAG-windows-x64.zip"
       - name: Publish GitHub Release
         shell: pwsh

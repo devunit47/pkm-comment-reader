@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChatState, addMessage, visibleMessages, clearMessages, userRule } from '../chat-state.js';
+import { createChatState, addMessage, visibleMessages, clearMessages, userRule } from '../src/browser/chat-state.js';
 
 test('retention removes oldest messages without changing received counts', () => {
   const state = createChatState(); state.historyLimit = 2;

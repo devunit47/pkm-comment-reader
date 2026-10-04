@@ -1,6 +1,6 @@
-import { HISTORY_LIMIT_KEY, normalizeStudio, normalizeHistoryLimit } from './studio.js';
-import { normalizeWorkspace } from './workspace-model.js';
-import { normalizeOverlays } from './overlay-model.js';
+import { HISTORY_LIMIT_KEY, normalizeStudio, normalizeHistoryLimit } from '../shared/studio.js';
+import { normalizeWorkspace } from '../shared/workspace-model.js';
+import { normalizeOverlays } from '../shared/overlay-model.js';
 
 // Backups hold operating settings only. The appearance lives in the
 // customization folder and is shared by copying that folder instead.

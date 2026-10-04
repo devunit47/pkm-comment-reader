@@ -81,7 +81,8 @@ export class ChatConnection {
       this.lookup = controller;
       this.timer = setTimeout(() => fail('チャンネル情報の取得タイムアウト'), this.timeoutMs);
       try {
-        kick = await import('./kick.js');
+        // Load Kick only for the development browser connection.
+        kick = await import('../browser/kick.js');
         if (!current()) return;
         const response = await this.fetchImpl(`/api/kick/channel/${encodeURIComponent(channel)}`, {
           signal: controller.signal,

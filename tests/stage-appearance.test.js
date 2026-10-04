@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderStageAppearance, renderOverlays } from '../stage-appearance.js';
-import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS, applyCommentPreset } from '../studio.js';
-import { normalizeOverlays, createOverlay } from '../overlay-model.js';
+import { renderStageAppearance, renderOverlays } from '../src/browser/stage-appearance.js';
+import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS, applyCommentPreset } from '../src/shared/studio.js';
+import { normalizeOverlays, createOverlay } from '../src/shared/overlay-model.js';
 
 // A deliberately small behavioral DOM. It models ownership, descendant queries,
 // textContent replacing children, and attribute writes; HTML parsing is forbidden.

@@ -1,5 +1,5 @@
-import { talkSpeechStyles } from './workspace-model.js';
-import { THEME_ACCENTS } from './studio.js';
+import { talkSpeechStyles } from '../shared/workspace-model.js';
+import { THEME_ACCENTS } from '../shared/studio.js';
 
 // The live stage and script-free design preview share exactly the same visual
 // renderer. It cannot save settings, trim history, connect chat or play audio.

@@ -1,20 +1,20 @@
 import { renderStageAppearance, renderStageComments, markClippedComments } from './stage-appearance.js';
-import { OutputPublisher } from './output-protocol.js';
+import { OutputPublisher } from '../shared/output-protocol.js';
 import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
 import { initializeCustomization } from './customization.js';
 import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
-import { compileTheme } from './theme.js';
+import { compileTheme } from '../shared/theme.js';
 import { createDesignStore, checkImageFile, LEGACY_RATIO } from './design-client.js';
-import { defaultDesign, resolveStudioImages, studioOptions } from './design-model.js';
-import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from './speech-engine.js';
+import { defaultDesign, resolveStudioImages, studioOptions } from '../shared/design-model.js';
+import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
-import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from './connections.js';
+import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from './studio.js';
-import { enabledPlatforms } from './app-config.js';
+import { normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
+import { enabledPlatforms } from '../shared/app-config.js';
 import { initializeWorkspace } from './workspace.js';
-import { initializeTheme } from './theme.js';
+import { initializeTheme } from '../shared/theme.js';
 
 const $ = id => document.getElementById(id);
 const names = { twitch: 'Twitch', kick: 'Kick' };

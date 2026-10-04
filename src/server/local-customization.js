@@ -3,12 +3,12 @@ import { lstat, mkdir, open, readdir, realpath } from 'node:fs/promises';
 import { extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MAX_IMAGE_BYTES, MAX_THEME_CSS_BYTES } from './design-model.js';
+import { MAX_IMAGE_BYTES, MAX_THEME_CSS_BYTES } from '../shared/design-model.js';
 
 // Applied files are copied into the design folder, not into browser storage.
 export const MAX_CUSTOM_CSS_BYTES = MAX_THEME_CSS_BYTES;
 export const MAX_CUSTOM_IMAGE_BYTES = MAX_IMAGE_BYTES;
-export const DEFAULT_CUSTOMIZATION_DIRECTORY = resolve(fileURLToPath(new URL('./customization/', import.meta.url)));
+export const DEFAULT_CUSTOMIZATION_DIRECTORY = resolve(fileURLToPath(new URL('../../customization/', import.meta.url)));
 const imageTypes = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
 
 function invalidFile() { return Object.assign(new Error('Unsupported customization file'), { code: 'INVALID_CUSTOMIZATION' }); }

@@ -1,25 +1,38 @@
-import { LOCAL_FILES } from './asset-manifest.js';
-import { ensureCustomizationDirectories } from './local-customization.js';
+import { LOCAL_FILES } from '../src/server/asset-manifest.js';
+import { ensureCustomizationDirectories, safeDirectory } from '../src/server/local-customization.js';
 import { mkdir, readdir, copyFile, writeFile, readFile, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
 // The asset-only phase is also testable on non-Windows hosts. Never copy user files
 // from the source customization directory into the distributable.
-export async function stageLocalFiles(destination = new URL('./dist-local/', import.meta.url)) {
+export async function stageLocalFiles(destination = new URL('../dist-local/', import.meta.url)) {
   const files = LOCAL_FILES;
   const extra = ['node.exe', 'node-LICENSE.txt', 'Start.cmd', 'Start.ps1', 'Readme.txt'];
+  const directories = ['src', 'src/browser', 'src/server', 'src/shared'];
+  const allowed = [...files, ...extra, ...directories, 'src/browser/kick.js', 'customization'];
   await mkdir(destination, { recursive: true });
-  if ((await readdir(destination)).some(file => ![...files, ...extra, 'kick.js', 'customization'].includes(file))) throw new Error('空の出力先を使用してください。');
+  for (const directory of ['', ...directories]) {
+    const prefix = directory ? directory + '/' : '';
+    let entries;
+    try { entries = await readdir(new URL(prefix || './', destination), { withFileTypes: true }); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    if (entries.some(entry => {
+      const path = prefix + entry.name;
+      return !allowed.includes(path) || entry.isSymbolicLink() ||
+        entry.isDirectory() !== [...directories, 'customization'].includes(path);
+    })) throw new Error('空の出力先を使用してください。');
+  }
   // Preserve this destination's user folder during rebuilds, but never follow links.
   await ensureCustomizationDirectories(new URL('customization/', destination));
-  for (const file of files) await copyFile(new URL(file, import.meta.url), new URL(file, destination));
-  await unlink(new URL('kick.js', destination)).catch(error => { if (error.code !== 'ENOENT') throw error; });
-  await writeFile(new URL('app-config.js', destination), "export const enabledPlatforms = Object.freeze(['twitch']);\n");
+  for (const directory of directories) await safeDirectory(new URL(directory + '/', destination), true);
+  for (const file of files) await copyFile(new URL('../' + file, import.meta.url), new URL(file, destination));
+  await unlink(new URL('src/browser/kick.js', destination)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+  await writeFile(new URL('src/shared/app-config.js', destination), "export const enabledPlatforms = Object.freeze(['twitch']);\n");
   const html = await readFile(new URL('index.html', destination), 'utf8');
   await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden'));
 }
 
-export async function buildLocal(destination = new URL('./dist-local/', import.meta.url)) {
+export async function buildLocal(destination = new URL('../dist-local/', import.meta.url)) {
   if (process.platform !== 'win32') throw new Error('Windows上でWindows配布版を作成してください。');
   await stageLocalFiles(destination);
   const runtime = await readFile(process.execPath);
@@ -27,7 +40,7 @@ export async function buildLocal(destination = new URL('./dist-local/', import.m
   let unchanged = false;
   try { unchanged = runtime.equals(await readFile(runtimePath)); } catch { /* First build. */ }
   if (!unchanged) await writeFile(runtimePath, runtime);
-  await writeFile(new URL('node-LICENSE.txt', destination), await readFile(new URL('./NODE-LICENSE.txt', import.meta.url)));
+  await writeFile(new URL('node-LICENSE.txt', destination), await readFile(new URL('../NODE-LICENSE.txt', import.meta.url)));
   await writeFile(new URL('Start.cmd', destination), '@echo off\r\npowershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Start.ps1"\r\n');
   await writeFile(new URL('Start.ps1', destination), `﻿$ErrorActionPreference = 'Stop'
 if (!$env:PORT) { $env:PORT = '5174' }
@@ -57,7 +70,7 @@ Write-Host ('ブラウザで ' + $readerBrowserUrl + ' を開きました。')
 Write-Host 'このウィンドウを閉じてもアプリは動作します。'
 Read-Host 'Enterでこのウィンドウを閉じる' | Out-Null
 `, 'utf8');
-  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n\r\nカスタマイズ素材は、このアプリと同じ場所のcustomization/stylesにCSS（UTF-8・1,000,000バイト以下）、customization/imagesにPNG・JPEG・WebP・GIF（20 MiB・1600万画素以下）を入れてください。直下の通常ファイルのみ対応します。\r\nアプリの一覧を更新し、素材を選択して適用してください。ファイル編集後は一覧を更新して再適用します。適用した見た目と画像はcustomization/currentにコピーされ、元ファイルを削除しても保持されます。新しい版へ更新するときは、customizationフォルダーごとコピーしてください。\r\n標準デザインのstyle.css・theme.js・studio.js・speech-background.svgはcustomizationの外にあります。変更せず、独自の素材だけをcustomizationに置いてください。\r\nソース側のcustomization内の素材は配布用フォルダーへコピーしません。再ビルド時は出力先に既にあるcustomizationの内容を保持します。出力先を他の人へ渡す前に、個人の素材が残っていないか確認してください。\r\n設定バックアップには接続先・ユーザー名が含まれるため、共有先にご注意ください。見た目と画像はバックアップに入らず、customization/currentにあります。\r\n', 'utf8');
+  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n\r\nカスタマイズ素材は、このアプリと同じ場所のcustomization/stylesにCSS（UTF-8・1,000,000バイト以下）、customization/imagesにPNG・JPEG・WebP・GIF（20 MiB・1600万画素以下）を入れてください。直下の通常ファイルのみ対応します。\r\nアプリの一覧を更新し、素材を選択して適用してください。ファイル編集後は一覧を更新して再適用します。適用した見た目と画像はcustomization/currentにコピーされ、元ファイルを削除しても保持されます。新しい版へ更新するときは、customizationフォルダーごとコピーしてください。\r\n標準デザインのstyle.css・src/shared/theme.js・src/shared/studio.js・speech-background.svgはcustomizationの外にあります。変更せず、独自の素材だけをcustomizationに置いてください。\r\nソース側のcustomization内の素材は配布用フォルダーへコピーしません。再ビルド時は出力先に既にあるcustomizationの内容を保持します。出力先を他の人へ渡す前に、個人の素材が残っていないか確認してください。\r\n設定バックアップには接続先・ユーザー名が含まれるため、共有先にご注意ください。見た目と画像はバックアップに入らず、customization/currentにあります。\r\n', 'utf8');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await buildLocal(); console.log('Windows local package: dist-local/');

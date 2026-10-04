@@ -7,8 +7,8 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, utimes, writeFile } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { MAX_IMAGE_BYTES, defaultDesign } from '../design-model.js';
-import { UNREFERENCED_IMAGE_GRACE_MS, inspectImageBytes } from '../design-storage.js';
+import { MAX_IMAGE_BYTES, defaultDesign } from '../src/shared/design-model.js';
+import { UNREFERENCED_IMAGE_GRACE_MS, inspectImageBytes } from '../src/server/design-storage.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 const gif = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
@@ -198,7 +198,7 @@ test('a broken design.json falls back to the default with a warning instead of f
 // Regression: on Windows a concurrent read made the replacing rename fail with
 // EPERM, the save returned 503 and the edit was lost.
 test('replacing design.json retries transient Windows sharing errors but not real failures', async () => {
-  const { renameWithRetry } = await import('../design-storage.js');
+  const { renameWithRetry } = await import('../src/server/design-storage.js');
   const calls = [];
   const flaky = failures => async (from, to) => {
     calls.push([from, to]);

@@ -1,4 +1,4 @@
-import { normalizeLocalVoices, validLocalVoiceId } from './speech-engine.js';
+import { normalizeLocalVoices, validLocalVoiceId } from '../shared/speech-engine.js';
 
 // JSON envelope limit includes escaped text and voice metadata; text has its own limit.
 const MAX_REQUEST_BYTES = 12000;

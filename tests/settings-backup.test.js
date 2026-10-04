@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SETTINGS_KEYS, LEGACY_APPEARANCE_KEYS, exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob } from '../settings-backup.js';
-import { HISTORY_LIMIT_KEY } from '../studio.js';
+import { SETTINGS_KEYS, LEGACY_APPEARANCE_KEYS, exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob } from '../src/browser/settings-backup.js';
+import { HISTORY_LIMIT_KEY } from '../src/shared/studio.js';
 
 test('quota rollback removes partial writes before restoring larger original values', () => {
   const target = storage();

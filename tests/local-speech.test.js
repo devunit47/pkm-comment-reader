@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import http from 'node:http';
 import { createServer } from '../server.js';
-import { readSpeechEngines, LocalSpeechPlayer } from '../speech-engine.js';
+import { readSpeechEngines, LocalSpeechPlayer } from '../src/shared/speech-engine.js';
 const wav = Buffer.from('RIFF0000WAVEdata');
 async function serve(t, fetchImpl) {
   const server = createServer({ fetchImpl }); server.listen(0, '127.0.0.1'); await once(server, 'listening');

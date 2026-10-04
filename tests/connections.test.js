@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ChatConnection, parseTwitchMessage, readSavedConnections, validChannel, connectionPresentation } from '../connections.js';
-import { parseKickMessage } from '../kick.js';
+import { ChatConnection, parseTwitchMessage, readSavedConnections, validChannel, connectionPresentation } from '../src/shared/connections.js';
+import { parseKickMessage } from '../src/browser/kick.js';
 
 test('connection labels distinguish actual subscriptions from demos, pending connections and failures', () => {
   for (const status of ['デモモード', '未接続', '接続準備中', '接続失敗', '接続エラー — 通信環境を確認してください', '切断されました — 再接続してください', '再接続が必要です']) {

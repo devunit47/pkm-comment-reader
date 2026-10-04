@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeLayout, normalizeWorkspace, PANEL_IDS, talkSpeechStyles } from '../workspace-model.js';
+import { normalizeLayout, normalizeWorkspace, PANEL_IDS, talkSpeechStyles } from '../src/shared/workspace-model.js';
 test('the speech minimum takes space only from panels starting below it', () => {
   const panel = (x, y, w, h, hidden = false) => ({ x, y, w, h, z: 1, hidden });
   const panels = { header: panel(4, 2, 92, 8), speech: panel(4, 42, 92, 20), chat: panel(4, 64, 92, 29), footer: panel(4, 94, 92, 4), actor: panel(4, 11, 92, 30) };

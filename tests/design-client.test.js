@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDesignStore, checkImageFile } from '../design-client.js';
-import { defaultDesign, MAX_IMAGE_BYTES } from '../design-model.js';
+import { createDesignStore, checkImageFile } from '../src/browser/design-client.js';
+import { defaultDesign, MAX_IMAGE_BYTES } from '../src/shared/design-model.js';
 
 // A fake server that records requests and can be told to reject a revision.
 function fakeServer({ revision = 'r0', conflictOnce = false, failLoad = false } = {}) {

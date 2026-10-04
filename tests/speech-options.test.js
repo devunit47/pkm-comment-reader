@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions, prepareSpeechText, createSpeechHistory, shouldAutoRead, rememberAutoRead, isSpeechUserExcluded, readSavedAutoSpeech } from '../speech-options.js';
-import { createChatState, addMessage } from '../chat-state.js';
+import { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions, prepareSpeechText, createSpeechHistory, shouldAutoRead, rememberAutoRead, isSpeechUserExcluded, readSavedAutoSpeech } from '../src/browser/speech-options.js';
+import { createChatState, addMessage } from '../src/browser/chat-state.js';
 
 test('auto speech defaults on and restores explicit off separately for each service', () => {
   assert.equal(createChatState().autoSpeech, true);

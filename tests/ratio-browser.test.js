@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { defaultTalkLayout } from '../design-model.js';
-import { createOverlay } from '../overlay-model.js';
+import { defaultTalkLayout } from '../src/shared/design-model.js';
+import { createOverlay } from '../src/shared/overlay-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.

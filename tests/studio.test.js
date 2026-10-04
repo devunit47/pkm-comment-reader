@@ -4,7 +4,7 @@ test('comment styles persist and unknown styles use the default', () => {
   for (const commentStyle of ['stacked', 'anonymous', 'inline', 'compact']) assert.equal(normalizeStudio({ commentStyle }).commentStyle, commentStyle);
   assert.equal(normalizeStudio({ commentStyle: 'unknown' }).commentStyle, 'stacked');
 });
-import { DEFAULT_STUDIO, normalizeStudio, readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit, COMMENT_PRESETS, applyCommentPreset, matchCommentPreset } from '../studio.js';
+import { DEFAULT_STUDIO, normalizeStudio, readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit, COMMENT_PRESETS, applyCommentPreset, matchCommentPreset } from '../src/shared/studio.js';
 
 test('studio settings validate styles, bounds and raster data without accepting arbitrary sources', () => {
   assert.deepEqual(normalizeStudio(null), DEFAULT_STUDIO);

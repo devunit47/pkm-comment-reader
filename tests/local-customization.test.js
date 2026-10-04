@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from '../server.js';
-import { DEFAULT_CUSTOMIZATION_DIRECTORY, MAX_CUSTOM_CSS_BYTES, MAX_CUSTOM_IMAGE_BYTES, ensureCustomizationDirectories } from '../local-customization.js';
+import { DEFAULT_CUSTOMIZATION_DIRECTORY, MAX_CUSTOM_CSS_BYTES, MAX_CUSTOM_IMAGE_BYTES, ensureCustomizationDirectories } from '../src/server/local-customization.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
 // Real 1×1 RGB JPEG, generated with Pillow; no image-library dependency is needed to run these tests.
@@ -227,10 +227,10 @@ test('all customization routes enforce local Host, same origin, and read-only me
 
 test('unknown routes, malformed names, and direct static accesses do not expose local files', async t => {
   const { base } = await serve(t);
-  for (const path of ['/local-customization.js', '/server.js', '/asset-manifest.js', '/package.json', '/.env', '/customization/styles/private.css', '/api/customizations/other/private.css', '/api/customizations/styles/nested/private.css', '/api/customizations/styles/']) {
+  for (const path of ['/src/server/local-customization.js', '/server.js', '/src/server/asset-manifest.js', '/package.json', '/.env', '/customization/styles/private.css', '/api/customizations/other/private.css', '/api/customizations/styles/nested/private.css', '/api/customizations/styles/']) {
     assert.equal((await fetch(base + path)).status, 404, path);
   }
   assert.equal((await fetch(base + '/api/customizations/styles/%E0%A4%A.css')).status, 400);
   assert.equal((await fetch(base + '/api/customizations/styles/missing.css')).status, 404);
-  assert.equal((await fetch(base + '/customization.js')).status, 200);
+  assert.equal((await fetch(base + '/src/browser/customization.js')).status, 200);
 });

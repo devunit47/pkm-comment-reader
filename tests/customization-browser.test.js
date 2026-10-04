@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { createHash } from 'node:crypto';
-import { DEFAULT_STUDIO } from '../studio.js';
-import { defaultDesign } from '../design-model.js';
+import { DEFAULT_STUDIO } from '../src/shared/studio.js';
+import { defaultDesign } from '../src/shared/design-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';

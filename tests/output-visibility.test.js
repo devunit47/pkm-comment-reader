@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeStudio, applyCommentPreset } from '../studio.js';
-import { selectOutputComments } from '../stage-appearance.js';
-import { createOutputView, applyOutputMessage, normalizeOutputMessage } from '../output-protocol.js';
+import { normalizeStudio, applyCommentPreset } from '../src/shared/studio.js';
+import { selectOutputComments } from '../src/browser/stage-appearance.js';
+import { createOutputView, applyOutputMessage, normalizeOutputMessage } from '../src/shared/output-protocol.js';
 const messages = Array.from({length:100}, (_,i) => ({id:String(i),user:'u',text:'text',receivedAt:1000+i*100}));
 test('output defaults, boundaries and invalid settings recover safely', () => {
   assert.deepEqual([normalizeStudio().maxVisible,normalizeStudio().holdSeconds,normalizeStudio().newestPosition],[0,0,'bottom']);

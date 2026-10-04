@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MAX_THEME_CSS_BYTES, RATIOS, defaultDesign, normalizeDesign,
   validImageRef, imageUrl, resolveStudioImages, resolveOverlayAssets, overlayOptions,
-} from '../design-model.js';
-import { normalizeStudio, DEFAULT_STUDIO } from '../studio.js';
-import { normalizeOverlays, MAX_OVERLAYS } from '../overlay-model.js';
+} from '../src/shared/design-model.js';
+import { normalizeStudio, DEFAULT_STUDIO } from '../src/shared/studio.js';
+import { normalizeOverlays, MAX_OVERLAYS } from '../src/shared/overlay-model.js';
 
 const hash = character => character.repeat(64);
 const ref = (character, extension = 'png') => `images/${hash(character)}.${extension}`;
@@ -126,9 +126,9 @@ test('references become same-origin URLs only through the validated pattern', ()
 });
 
 // --- P1-B2: per-ratio layouts ---
-import { nearestRatio, PREVIEW_SIZES, defaultTalkLayout, talkLayout, talkOverlays, withTalk, SAFE_AREAS } from '../design-model.js';
-import { PANEL_IDS, normalizeLayout } from '../workspace-model.js';
-import { OUTPUT_SIZES } from '../output-protocol.js';
+import { nearestRatio, PREVIEW_SIZES, defaultTalkLayout, talkLayout, talkOverlays, withTalk, SAFE_AREAS } from '../src/shared/design-model.js';
+import { PANEL_IDS, normalizeLayout } from '../src/shared/workspace-model.js';
+import { OUTPUT_SIZES } from '../src/shared/output-protocol.js';
 
 test('the nearest supported ratio is chosen from a width and height', () => {
   assert.equal(nearestRatio(1920, 1080), '16:9');
