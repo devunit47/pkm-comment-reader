@@ -128,3 +128,29 @@ browserTest('preset controls and confirmation fit PC and mobile widths in light 
   }
   assert.deepEqual(errors, []);
 });
+
+
+browserTest('preset confirmation renders ratio actor placement and disables its temporary inputs', async t => {
+  const { page, url, ui, editor } = await fixture(t);
+  await saveDesign(url, design => ({ ...design, ratios: Object.fromEntries(Object.entries(design.ratios).map(([ratio,entry],index) => [ratio, { ...entry, actorImage: { mode: 'custom', scale: 110 + index * 20, alignX: 'right', alignY: 'bottom', offsetX: -2.5, offsetY: 3.25, overflow: true } }])) }));
+  await page.reload(); await appReady(page); await page.locator('.nav[data-page="studio"]').click();
+  await page.waitForFunction(() => !document.querySelector('#design-presets')?.shadowRoot?.getElementById('preset-refresh').disabled);
+  await create(ui, '画像配置を確認');
+  await ui.locator('#preset-reset').click(); await confirmation(ui);
+  await waitForDesign(url, design => design.studio.image === '');
+  const before = await current(url);
+  await openRead(ui, editor);
+  const frame = page.frameLocator(preview + ' #design-preview-frame');
+  for (const [value,scale] of [['1280x720',110],['1080x1920',130],['1440x1080',150]]) {
+    await editor.locator('#preview-width').selectOption(value);
+    await frame.locator('#talk-stage[data-actor-image="custom"]').waitFor();
+    await page.waitForFunction(([selector,expected]) => {
+      const ui = document.querySelector(selector).shadowRoot;
+      return ui.getElementById('actor-scale').value === String(expected);
+    }, [preview,scale]);
+    assert.equal(await frame.locator('#talk-stage').evaluate(stage => stage.style.getPropertyValue('--actor-image-size')), scale + '%');
+    for (const key of ['mode','scale','alignX','alignY','offsetX','offsetY','overflow']) assert.equal(await editor.locator('#actor-' + key).isDisabled(), true);
+    assert.deepEqual(await current(url), before);
+  }
+  await editor.locator('#cancel-design').click(); assert.deepEqual(await current(url), before);
+});

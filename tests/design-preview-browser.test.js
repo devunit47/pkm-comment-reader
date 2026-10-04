@@ -8,6 +8,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
+import { defaultActorImage, talkActorImage, talkLayout } from '../src/shared/design-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
@@ -571,5 +572,151 @@ browserTest('640x360 preview scroll keeps protected handles aligned with their a
   }, id);
   assert.ok(Math.abs(rects.overlay.x - rects.hit.x) < 1 && Math.abs(rects.overlay.y - rects.hit.y) < 1);
   assert.equal(await savedOverlays(page), null);
+  assert.deepEqual(errors, []);
+});
+
+async function actorControls(editor) {
+  if (!await editor.locator('#draft-theme').evaluate(element => element.closest('details').open)) await editor.getByText('画面のデザインも試す', { exact: true }).click();
+  if (!await editor.locator('#draft-actor-placement').evaluate(element => element.open)) await editor.locator('#draft-actor-heading').click();
+}
+async function actorNumber(editor, key, value) {
+  await editor.locator('#actor-' + key).fill(String(value));
+  await editor.locator('#actor-' + key).dispatchEvent('change');
+}
+
+browserTest('actor placement drafts keep three ratios, remember theme values and apply with one write', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  const before = await readDesign(url), puts = [];
+  page.on('request', request => { if (request.method() === 'PUT' && request.url().endsWith('/api/design/current')) puts.push(request.postDataJSON()); });
+  await openPreview(page); await actorControls(editor);
+  assert.equal(await editor.locator('#actor-scale').isDisabled(), true);
+  assert.match(await editor.locator('#draft-actor-help').textContent(), /空き枠/);
+  await editor.locator('#actor-mode').selectOption('custom');
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '100');
+  await actorNumber(editor, 'scale', 110);
+  await actorNumber(editor, 'offsetX', -12.3456);
+  await editor.locator('#actor-alignY').selectOption('bottom');
+  await editor.locator('#actor-overflow').check();
+  await editor.locator('#actor-mode').selectOption('theme');
+  assert.equal(await editor.locator('#actor-scale').isDisabled(), true);
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '110');
+  await editor.locator('#actor-mode').selectOption('custom');
+  assert.equal(await editor.locator('#actor-offsetX').inputValue(), '-12.3456');
+  const expected = { '16:9': { ...defaultActorImage(), mode: 'custom', scale: 110, offsetX: -12.3456, alignY: 'bottom', overflow: true } };
+  for (const [resolution, ratio, scale] of [['1080x1920', '9:16', 150], ['1440x1080', '4:3', 200]]) {
+    await editor.locator('#preview-width').selectOption(resolution);
+    assert.match(await editor.locator('#draft-actor-heading').textContent(), new RegExp(ratio));
+    assert.equal(await editor.locator('#actor-scale').inputValue(), '100');
+    await editor.locator('#actor-mode').selectOption('custom'); await actorNumber(editor, 'scale', scale);
+    expected[ratio] = { ...defaultActorImage(), mode: 'custom', scale };
+  }
+  await editor.locator('#preview-width').selectOption('1280x720');
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '110');
+  assert.deepEqual(await readDesign(url), before); assert.equal(puts.length, 0);
+  await applyDesign(editor); assert.equal(puts.length, 1);
+  const saved = await readDesign(url);
+  for (const ratio of Object.keys(expected)) assert.deepEqual(talkActorImage(saved, ratio), expected[ratio]);
+  await page.reload(); await appReady(page); await openPreview(page); await actorControls(editor);
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '110');
+  assert.equal(await editor.locator('#actor-offsetX').inputValue(), '-12.3456');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('actor drafts cancel, clamp numeric input and reset all ratios while retaining panel layouts', async t => {
+  const { page, editor, url } = await fixture(t, { design: design => ({ ...design, ratios: {
+    ...design.ratios, '16:9': { layout: { panels: { actor: { x: 10, y: 10, w: 70, h: 70 } } }, overlays: overlays([]), actorImage: { mode: 'custom', scale: 130 } },
+    '9:16': { layout: null, overlays: overlays([]), actorImage: { mode: 'theme', scale: 140 } },
+  } }) });
+  const before = await readDesign(url);
+  await openPreview(page); await actorControls(editor);
+  await actorNumber(editor, 'scale', 200.9); assert.equal(await editor.locator('#actor-scale').inputValue(), '200');
+  await actorNumber(editor, 'offsetY', 200); assert.equal(await editor.locator('#actor-offsetY').inputValue(), '100');
+  await actorNumber(editor, 'offsetX', ''); assert.equal(await editor.locator('#actor-offsetX').inputValue(), '0');
+  await editor.locator('#cancel-design').click(); assert.deepEqual(await readDesign(url), before);
+  await openPreview(page); await actorControls(editor);
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '130');
+  await editor.locator('#draft-reset').click();
+  assert.equal(await editor.locator('#actor-mode').inputValue(), 'theme');
+  await applyDesign(editor);
+  const saved = await readDesign(url);
+  for (const ratio of ['16:9', '9:16', '4:3']) {
+    assert.deepEqual(talkActorImage(saved, ratio), defaultActorImage());
+    assert.deepEqual(talkLayout(saved, ratio), talkLayout(before, ratio));
+  }
+});
+
+browserTest('actor save failure keeps a usable draft and an external change blocks its application', async t => {
+  const { page, editor, url } = await fixture(t);
+  await openPreview(page); await actorControls(editor);
+  await editor.locator('#actor-mode').selectOption('custom'); await actorNumber(editor, 'scale', 160);
+  const before = await readDesign(url);
+  await page.route('**/api/design/current', route => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '保存失敗の検証' }) }) : route.continue(), { times: 1 });
+  await editor.locator('#apply-design').click();
+  await editor.locator('#design-status').filter({ hasText: '保存失敗の検証' }).waitFor();
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '160');
+  assert.deepEqual(await readDesign(url), before); await ready(page);
+  await actorNumber(editor, 'offsetY', 2.5);
+  await saveDesign(url, design => ({ ...design, studio: { ...design.studio, title: '別のタブ' } }));
+  await editor.locator('#design-status').filter({ hasText: '別の画面' }).waitFor();
+  await editor.locator('#apply-design').click();
+  await editor.locator('#design-status').filter({ hasText: '適用できませんでした' }).waitFor();
+  const saved = await readDesign(url);
+  assert.equal(saved.studio.title, '別のタブ'); assert.deepEqual(talkActorImage(saved, '16:9'), defaultActorImage());
+  assert.equal(await editor.locator('#actor-scale').inputValue(), '160');
+});
+
+browserTest('image numeric, keyboard and pointer resizing use outside bounds and the item list can restore them', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  const frame = await openPreview(page);
+  await editor.locator('#overlay-image').setInputFiles(imageFile('outside.png'));
+  await countItems(page, 1); await ready(page);
+  const id = await editor.locator('#overlay-select').inputValue();
+  const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator('#overlay-' + key).inputValue())])));
+  for (const [key, value] of Object.entries({ w: 200, h: 200, x: -100, y: -100 })) await number(editor, key, value);
+  assert.deepEqual(await geometry(), { x: -100, y: -100, w: 200, h: 200 });
+  assert.equal(await editor.locator('#overlay-x').getAttribute('min'), '-100');
+  assert.equal(await editor.locator('#overlay-x').getAttribute('max'), '0');
+  await editor.locator('#overlay-select').selectOption(id);
+  await number(editor, 'w', 100); await number(editor, 'h', 100);
+  assert.deepEqual(await geometry(), { x: -98, y: -98, w: 100, h: 100 });
+  await number(editor, 'x', 0); await number(editor, 'y', 8.5);
+  assert.deepEqual(await geometry(), { x: 0, y: 8.5, w: 100, h: 100 });
+  const move = frame.locator('.overlay-hit button[data-resize="false"]');
+  await move.press('ArrowLeft'); await move.press('Shift+ArrowRight');
+  assert.deepEqual(await geometry(), { x: -1, y: 8.5, w: 101, h: 100 });
+  await number(editor, 'x', 0); await number(editor, 'y', 0);
+  await number(editor, 'w', 30); await number(editor, 'h', 30);
+  const handle = await frame.locator('.overlay-hit button[data-resize="true"]').boundingBox();
+  const canvas = await frame.locator('#talk-stage').boundingBox();
+  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+  await page.mouse.move(x,y); await page.mouse.down(); await page.mouse.move(x + canvas.width * .8,y + canvas.height * .8); await page.mouse.up();
+  assert.ok(Number(await editor.locator('#overlay-w').inputValue()) > 100);
+  await number(editor, 'w', 2); await number(editor, 'h', 2); await number(editor, 'x', 200); await number(editor, 'y', -100);
+  assert.deepEqual(await geometry(), { x: 98, y: 0, w: 2, h: 2 });
+  await applyDesign(editor); await page.reload(); await appReady(page);
+  const saved = (await readDesign(url)).ratios['16:9'].overlays.items[0];
+  assert.deepEqual({ x: saved.x, y: saved.y, w: saved.w, h: saved.h }, { x: 98, y: 0, w: 2, h: 2 });
+  assert.deepEqual(errors, []);
+});
+
+browserTest('actor inputs and Apply remain operable at PC, dock and small window widths', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  for (const [width,height] of [[1280,900],[800,500],[500,600],[400,600],[300,600],[640,360]]) {
+    await page.setViewportSize({ width,height });
+    await openPreview(page); await actorControls(editor);
+    await editor.locator('#actor-mode').selectOption('custom'); await actorNumber(editor, 'scale', 120);
+    await actorNumber(editor, 'offsetY', 1.25); await editor.locator('#actor-overflow').check();
+    const input = await editor.locator('#actor-offsetY').boundingBox();
+    assert.ok(input.x >= 0 && input.x + input.width <= width);
+    await editor.locator('#apply-design').scrollIntoViewIfNeeded();
+    const button = await editor.locator('#apply-design').boundingBox();
+    assert.ok(button.x >= 0 && button.x + button.width <= width);
+    assert.ok(button.y >= 0 && button.y + button.height <= height);
+    const overflow = await editor.locator('#design-dialog').evaluate(element => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, elements: [...element.querySelectorAll('*')].filter(child => child.getBoundingClientRect().right > element.getBoundingClientRect().right).map(child => child.id || child.tagName).slice(0,8) }));
+    assert.ok(overflow.scrollWidth <= overflow.clientWidth, JSON.stringify({ width, ...overflow }));
+    await applyDesign(editor);
+    assert.equal(talkActorImage(await readDesign(url), '16:9').scale, 120);
+  }
   assert.deepEqual(errors, []);
 });
