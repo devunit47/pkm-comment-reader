@@ -8,7 +8,10 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
   stage.dataset.theme = studio.theme;
   stage.dataset.layout = studio.layout;
   stage.dataset.decorated = String(studio.decoration);
+  if (studio.actorAppearance === 'none') stage.dataset.actorAppearance = 'none';
+  else delete stage.dataset.actorAppearance;
   stage.style.setProperty('--stage-accent', studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent);
+  // Preserve saved themes that override the comment size directly.
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
   renderCommentLook(stage, studio);
@@ -138,6 +141,10 @@ export function renderCommentLook(stage, studio) {
   const flag = (name, value) => value === null ? delete stage.dataset[name] : stage.dataset[name] = value;
   flag('commentPanel', studio.commentPanel === 'theme' ? null : studio.commentPanel);
   set('--stage-comment-opacity', ['light', 'dark'].includes(studio.commentPanel) ? String(studio.commentPanelOpacity / 100) : null);
+  flag('commentItemBackground', studio.commentItemBackground === 'theme' ? null : studio.commentItemBackground);
+  set('--stage-comment-item-opacity', ['light', 'dark'].includes(studio.commentItemBackground) ? String(studio.commentItemOpacity / 100) : null);
+  flag('commentMaxLines', studio.commentMaxLines === null ? null : String(studio.commentMaxLines));
+  set('--stage-comment-max-lines', studio.commentMaxLines > 0 ? String(studio.commentMaxLines) : null);
   flag('commentText', studio.commentTextColor ? '' : null);
   set('--stage-comment-text', studio.commentTextColor);
   flag('commentAuthor', studio.commentAuthorColor ? '' : null);
@@ -147,7 +154,8 @@ export function renderCommentLook(stage, studio) {
   flag('commentLineHeight', studio.commentLineHeight === null ? null : '');
   set('--stage-comment-line-height', studio.commentLineHeight === null ? null : String(studio.commentLineHeight));
   flag('commentGap', studio.commentGap === null ? null : '');
-  set('--stage-comment-gap', studio.commentGap === null ? null : `${studio.commentGap / 2}px`);
+  const itemBackground = ['light', 'dark'].includes(studio.commentItemBackground);
+  set('--stage-comment-gap', studio.commentGap === null ? null : `${itemBackground ? studio.commentGap : studio.commentGap / 2}px`);
   flag('commentDivider', studio.commentDivider ? null : 'false');
   flag('commentLabel', studio.commentLabel ? null : 'false');
 }

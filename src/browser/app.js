@@ -615,9 +615,11 @@ function renderStudio() {
   $('studio-speech-image-status').textContent = studio.speechImage ? 'ユーザーの背景画像を登録済みです。' : '標準の背景画像を使用します。';
   $('reset-speech-image').disabled = !studio.speechImage;
   for (const key of ['theme', 'source']) $(`studio-${key}`).value = studio[key];
+  $('studio-font-size').value = studio.fontSize;
+  $('studio-actor-appearance').value = studio.actorAppearance;
   $('stage-font-value').textContent = `${studio.fontSize}px`;
   $('stage-font-minus').disabled = studio.fontSize <= 16;
-  $('stage-font-plus').disabled = studio.fontSize >= 28;
+  $('stage-font-plus').disabled = studio.fontSize >= 64;
   $('studio-accent-mode').value = studio.accentMode;
   $('studio-accent').disabled = studio.accentMode === 'theme';
   $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
@@ -633,14 +635,18 @@ function renderStudio() {
   renderCommentLookFields();
   outputPanel?.refresh();
 }
-// An emptied field keeps the current value; other entries clamp to 0–100.
-function commentOpacityInput() {
-  const value = Number($('studio-comment-panel-opacity').value);
-  return $('studio-comment-panel-opacity').value === '' || !Number.isFinite(value) ? studio.commentPanelOpacity : Math.min(100, Math.max(0, Math.round(value)));
+// Empty fields retain their value; finite entries stay within the accepted bounds.
+function studioNumberInput(id, current, min, max) {
+  const field = $(id), value = Number(field.value);
+  return field.value === '' || !Number.isFinite(value) ? current : Math.min(max, Math.max(min, Math.round(value)));
 }
 function renderCommentLookFields() {
   $('studio-comment-preset').value = matchCommentPreset(studio);
   $('studio-comment-panel').value = studio.commentPanel;
+  $('studio-comment-item-background').value = studio.commentItemBackground;
+  $('studio-comment-item-opacity').value = studio.commentItemOpacity;
+  $('studio-comment-item-opacity').disabled = !['light', 'dark'].includes(studio.commentItemBackground);
+  $('studio-comment-max-lines').value = studio.commentMaxLines === null ? '' : String(studio.commentMaxLines);
   $('studio-comment-panel-opacity').value = studio.commentPanelOpacity;
   $('studio-comment-panel-opacity').disabled = !['light', 'dark'].includes(studio.commentPanel);
   for (const [id, key] of [['comment-text', 'commentTextColor'], ['comment-author', 'commentAuthorColor']]) {
@@ -724,7 +730,11 @@ function updateStudio() {
     maxVisible: Number($('studio-max-visible').value), holdSeconds: Number($('studio-hold-seconds').value),
     newestPosition: $('studio-newest-position').value,
     decoration: $('studio-decoration').checked, source,
-    commentPanel: $('studio-comment-panel').value, commentPanelOpacity: commentOpacityInput(),
+    fontSize: studioNumberInput('studio-font-size', studio.fontSize, 16, 64), actorAppearance: $('studio-actor-appearance').value,
+    commentItemBackground: $('studio-comment-item-background').value,
+    commentItemOpacity: studioNumberInput('studio-comment-item-opacity', studio.commentItemOpacity, 0, 100),
+    commentMaxLines: $('studio-comment-max-lines').value === '' ? null : Number($('studio-comment-max-lines').value),
+    commentPanel: $('studio-comment-panel').value, commentPanelOpacity: studioNumberInput('studio-comment-panel-opacity', studio.commentPanelOpacity, 0, 100),
     commentTextColor: $('studio-comment-text-mode').value === 'custom' ? $('studio-comment-text').value : '',
     commentAuthorColor: $('studio-comment-author-mode').value === 'custom' ? $('studio-comment-author').value : '',
     commentOutline: $('studio-comment-outline').value, commentOutlineColor: $('studio-comment-outline-color').value,
@@ -748,7 +758,7 @@ function applyHistoryLimit(value) {
   render();
 }
 $('studio-list-count').onchange = () => applyHistoryLimit(Number($('studio-list-count').value));
-for (const id of ['theme', 'accent', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'max-visible', 'hold-seconds', 'newest-position', 'decoration', 'source',
+for (const id of ['theme', 'accent', 'font-size', 'actor-appearance', 'comment-item-background', 'comment-item-opacity', 'comment-max-lines', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'max-visible', 'hold-seconds', 'newest-position', 'decoration', 'source',
   'comment-panel', 'comment-panel-opacity', 'comment-text-mode', 'comment-text', 'comment-author-mode', 'comment-author',
   'comment-outline', 'comment-outline-color', 'comment-line-height', 'comment-gap', 'comment-divider', 'comment-label']) {
   $(`studio-${id}`).onchange = updateStudio;
@@ -776,7 +786,7 @@ for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
   $(id).onclick = () => {
     const list = $('stage-chat-list');
     const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-    studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(28, studio.fontSize + step)) }, keepImages());
+    studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(64, studio.fontSize + step)) }, keepImages());
     saveStudio().catch(() => {}); renderStudio();
     if (bottom) list.scrollTop = list.scrollHeight;
     updateStageCommentVisibility();
