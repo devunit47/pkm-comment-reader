@@ -1,3 +1,4 @@
+import { talkSpeechStyles } from './workspace-model.js';
 import { THEME_ACCENTS } from './studio.js';
 
 // The live stage and script-free design preview share exactly the same visual
@@ -119,10 +120,13 @@ export function applyTalkLayout(stage, layout) {
     element.style.zIndex = p.z; element.style.maxHeight = 'none'; element.style.margin = '0';
     element.style.display = p.hidden ? 'none' : '';
   }
-  const speech = stage.querySelector(TALK_PANEL_SELECTORS.speech), p = layout?.panels?.speech;
-  if (speech && p) {
-    const minimum = parseFloat(getComputedStyle(speech).minHeight) || 0;
-    speech.style.top = `min(${p.y}%, max(0px, calc(100% - max(${p.h}%, ${minimum}px))))`;
+  const speech = stage.querySelector(TALK_PANEL_SELECTORS.speech);
+  if (speech && layout?.panels?.speech) {
+    const styles = talkSpeechStyles(layout.panels, parseFloat(getComputedStyle(speech).minHeight) || 0);
+    for (const [id, values] of Object.entries(styles)) {
+      const element = stage.querySelector(TALK_PANEL_SELECTORS[id]);
+      if (element) for (const [property, value] of Object.entries(values)) element.style.setProperty(property, value);
+    }
   }
 }
 

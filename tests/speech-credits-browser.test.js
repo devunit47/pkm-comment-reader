@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts } from './browser-support.js';
 
 // The talk (stream) layout is saved in customization/current, not in the browser.
 const savedSpeech = async base => (await readDesign(base)).ratios['16:9']?.layout?.panels.speech;
@@ -48,7 +48,7 @@ async function local(t) {
 async function open(t, url, storage = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   t.after(() => browser.close());
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
   page.setDefaultTimeout(8000);
   const errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));

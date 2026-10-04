@@ -1,7 +1,7 @@
 import { normalizeDesign, defaultDesign, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, IMAGE_TYPES } from './design-model.js';
 
-// Until per-ratio layouts arrive (P1-B2), every screen uses the 16:9 entry.
-export const ACTIVE_RATIO = '16:9';
+// Backups from the browser-storage era held one landscape layout.
+export const LEGACY_RATIO = '16:9';
 
 async function failureMessage(response, fallback) {
   try { return (await response.json()).error || fallback; } catch { return fallback; }

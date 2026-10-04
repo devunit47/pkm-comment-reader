@@ -61,3 +61,10 @@ export async function waitForDesign(base, predicate, timeout = 8000) {
 // The page loads the design from the server before it finishes starting. The
 // recovery button is created last, so its presence means the page is ready.
 export const appReady = page => page.locator('#appearance-recovery').waitFor({ state: 'attached' });
+
+// The app links Google Fonts; a slow external stylesheet delays its scripts.
+// Tests block it so start-up never depends on the network.
+export async function blockExternalFonts(page) {
+  await page.route('https://fonts.googleapis.com/**', route => route.abort());
+  await page.route('https://fonts.gstatic.com/**', route => route.abort());
+}

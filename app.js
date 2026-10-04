@@ -5,7 +5,7 @@ import { initializeDesignPreview } from './design-preview.js';
 import { initializeCustomization } from './customization.js';
 import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
 import { compileTheme } from './theme.js';
-import { createDesignStore, checkImageFile, ACTIVE_RATIO } from './design-client.js';
+import { createDesignStore, checkImageFile, LEGACY_RATIO } from './design-client.js';
 import { defaultDesign, resolveStudioImages, studioOptions } from './design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from './speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
@@ -680,6 +680,9 @@ function leaveTalk(fromHistory = false) {
   page('home');
   $('enter-talk').focus({ preventScroll: true });
 }
+// A reload while talking leaves a talk history entry behind. Without clearing
+// it, leaving talk mode later goes back to that entry and re-enters talk mode.
+if (history.state?.pokomeTalk) history.replaceState({ ...history.state, pokomeTalk: false }, '');
 window.addEventListener('popstate', () => {
   if (history.state?.pokomeTalk) enterTalk(true);
   else leaveTalk(true);
@@ -926,10 +929,12 @@ renderSpeechSettings();
 renderSpeechOptions();
 render();
 const themeEditor = initializeTheme(designStore);
-const workspaceEditor = initializeWorkspace(storage, designStore);
+// The talk screen may switch ratio before the preview exists; it catches up when created.
+let showLiveOverlays = () => {};
+const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioChange: () => showLiveOverlays() });
 const designPreview = initializeDesignPreview({ designStore, themeEditor,
   beginDraft() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
-  getStudio: () => studio, getLayouts: () => workspaceEditor.getLayouts(),
+  getStudio: () => studio, getLiveRatio: () => workspaceEditor.talkRatio(),
   commitStudio(next) { imageGeneration++; speechImageGeneration++; studio = next; renderStudio(); },
 });
 initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
@@ -943,7 +948,8 @@ initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageCh
     try { await designStore.save(design); return true; } catch { return false; }
   },
 });
-outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio });
+showLiveOverlays = designPreview.showLive;
+outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, onSizeChange: () => workspaceEditor.reload() });
 // Another page changed the design, or a failed save was undone: show the saved design.
 designStore.subscribe(detail => {
   imageGeneration++; speechImageGeneration++;
@@ -1006,7 +1012,7 @@ async function importLegacyAppearance(legacy) {
   const base = defaultDesign();
   await designStore.save({ ...base, theme: legacy.theme,
     studio: { ...legacy.studio, image: await upload(legacy.studio.image), speechImage: await upload(legacy.studio.speechImage) },
-    ratios: { ...base.ratios, [ACTIVE_RATIO]: { layout: legacy.talk, overlays: { ...legacy.overlays, assets } } } });
+    ratios: { ...base.ratios, [LEGACY_RATIO]: { layout: legacy.talk, overlays: { ...legacy.overlays, assets } } } });
 }
 $('confirm-restore').onclick = async () => {
   if (!pendingSettings) return;

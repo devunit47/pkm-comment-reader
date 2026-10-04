@@ -124,3 +124,68 @@ test('references become same-origin URLs only through the validated pattern', ()
   assert.equal(options.inspectAsset(ref('b')), null);
   assert.equal(options.maxTotalBytes, Infinity);
 });
+
+// --- P1-B2: per-ratio layouts ---
+import { nearestRatio, PREVIEW_SIZES, defaultTalkLayout, talkLayout, talkOverlays, withTalk, SAFE_AREAS } from '../design-model.js';
+import { PANEL_IDS, normalizeLayout } from '../workspace-model.js';
+import { OUTPUT_SIZES } from '../output-protocol.js';
+
+test('the nearest supported ratio is chosen from a width and height', () => {
+  assert.equal(nearestRatio(1920, 1080), '16:9');
+  assert.equal(nearestRatio(1280, 720), '16:9');
+  assert.equal(nearestRatio(1080, 1920), '9:16');
+  assert.equal(nearestRatio(1440, 1080), '4:3');
+  assert.equal(nearestRatio(1024, 768), '4:3');
+  assert.equal(nearestRatio(390, 844), '9:16', 'a phone-shaped window is portrait');
+  assert.equal(nearestRatio(1000, 1000), '4:3', 'square is closer to 4:3 than to 16:9 or 9:16');
+  assert.equal(nearestRatio(0, 0), '16:9');
+  assert.equal(nearestRatio(NaN, 5), '16:9');
+  assert.deepEqual(Object.fromEntries(PREVIEW_SIZES.map(size => [size, nearestRatio(...size.split('x').map(Number))])),
+    { '1920x1080': '16:9', '1280x720': '16:9', '960x540': '16:9', '640x360': '16:9', '1080x1920': '9:16', '1440x1080': '4:3' });
+  assert.deepEqual(OUTPUT_SIZES['1440x1080'], [1440, 1080]);
+});
+
+test('each ratio has a built-in default: the grid for 16:9 and 4:3, a percentage layout for 9:16', () => {
+  assert.equal(defaultTalkLayout('16:9'), null);
+  assert.equal(defaultTalkLayout('4:3'), null);
+  const portrait = defaultTalkLayout('9:16');
+  assert.deepEqual(portrait, normalizeLayout(portrait, PANEL_IDS.talk), 'the default is already normalized');
+  assert.deepEqual(portrait.panels.chat, { x: 4, y: 64, w: 92, h: 29, z: 2, hidden: false });
+  // Panels do not overlap, and the speech panel fits its 220px minimum at 1920px tall.
+  const order = ['header', 'actor', 'speech', 'chat', 'footer'].map(id => portrait.panels[id]);
+  for (let index = 1; index < order.length; index++) assert.ok(order[index].y >= order[index - 1].y + order[index - 1].h, `panel ${index}`);
+  assert.ok(portrait.panels.speech.h / 100 * 1920 >= 220);
+  portrait.panels.chat.x = 50;
+  assert.equal(defaultTalkLayout('9:16').panels.chat.x, 4, 'callers get a copy');
+});
+
+test('an uncreated ratio uses its own default and never another ratio', () => {
+  const landscape = { panels: Object.fromEntries(PANEL_IDS.talk.map((id, index) => [id, { x: index * 10, y: 0, w: 10, h: 10, z: 1, hidden: false }])) };
+  const design = withTalk(defaultDesign(), '16:9', { layout: landscape });
+  assert.deepEqual(talkLayout(design, '16:9'), normalizeLayout(landscape, PANEL_IDS.talk));
+  assert.deepEqual(talkLayout(design, '9:16'), defaultTalkLayout('9:16'));
+  assert.equal(talkLayout(design, '4:3'), null);
+  assert.deepEqual(talkOverlays(design, '9:16'), { version: 1, items: [], assets: {} });
+  assert.equal(design.ratios['9:16'], null);
+});
+
+test('saving a ratio keeps the others, and returning to its default empties the entry', () => {
+  const overlays = { version: 1, items: [{ id: 'text-1', type: 'text', text: '縦' }], assets: {} };
+  let design = withTalk(defaultDesign(), '9:16', { overlays });
+  assert.equal(design.ratios['9:16'].layout, null, 'an untouched layout stays default');
+  assert.equal(design.ratios['9:16'].overlays.items.length, 1);
+  assert.equal(design.ratios['16:9'], null);
+  const moved = defaultTalkLayout('9:16'); moved.panels.chat.y = 60;
+  design = withTalk(design, '9:16', { layout: moved });
+  assert.equal(design.ratios['9:16'].layout.panels.chat.y, 60);
+  assert.equal(design.ratios['9:16'].overlays.items.length, 1, 'the overlays of the ratio stay');
+  design = withTalk(design, '9:16', { layout: defaultTalkLayout('9:16'), overlays: { version: 1, items: [], assets: {} } });
+  assert.equal(design.ratios['9:16'], null, 'a ratio back at its default is uncreated again');
+  assert.throws(() => withTalk(defaultDesign(), '1:1', {}));
+});
+
+test('safe-area guides are defined once per ratio', () => {
+  assert.deepEqual(SAFE_AREAS['9:16'], { top: 6, bottom: 10, left: 0, right: 0, shade: true });
+  assert.deepEqual(SAFE_AREAS['16:9'], { top: 5, bottom: 5, left: 5, right: 5, shade: false });
+  assert.deepEqual(SAFE_AREAS['4:3'], SAFE_AREAS['16:9']);
+});

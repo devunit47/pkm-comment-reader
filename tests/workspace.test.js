@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeLayout, normalizeWorkspace, PANEL_IDS } from '../workspace-model.js';
+import { normalizeLayout, normalizeWorkspace, PANEL_IDS, talkSpeechStyles } from '../workspace-model.js';
+test('the speech minimum takes space only from panels starting below it', () => {
+  const panel = (x, y, w, h, hidden = false) => ({ x, y, w, h, z: 1, hidden });
+  const panels = { header: panel(4, 2, 92, 8), speech: panel(4, 42, 92, 20), chat: panel(4, 64, 92, 29), footer: panel(4, 94, 92, 4), actor: panel(4, 11, 92, 30) };
+  const styles = talkSpeechStyles(panels, 220);
+  assert.equal(styles.speech.top, 'min(42%, max(0px, calc(100% - max(20%, 220px))))');
+  assert.deepEqual(styles.chat, { top: 'max(64%, calc(42% + 220px))', height: 'max(0px, calc(93% - max(64%, calc(42% + 220px))))' });
+  assert.ok(styles.footer, 'lower panels move only if the minimum reaches them');
+  assert.equal(styles.header, undefined); assert.equal(styles.actor, undefined);
+  assert.equal(talkSpeechStyles({ ...panels, chat: panel(50, 64, 46, 29), speech: panel(4, 42, 40, 20) }, 220).chat, undefined, 'side-by-side panels are untouched');
+  assert.deepEqual(Object.keys(talkSpeechStyles({ ...panels, speech: panel(4, 42, 92, 20, true) }, 220)), ['speech'], 'a hidden speech panel takes no space');
+  assert.deepEqual(Object.keys(talkSpeechStyles(panels, 0)), ['speech']);
+});
 test('layout geometry is constrained to its responsive canvas', () => {
   const layout = normalizeLayout({ panels: { chat: { x: 90, y: -5, w: 30, h: 200, z: 1000, hidden: true } } }, ['chat']);
   assert.deepEqual(layout.panels.chat, { x: 70, y: 0, w: 30, h: 100, z: 99, hidden: true });

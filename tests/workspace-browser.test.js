@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -17,10 +17,10 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
   const server = createServer({ customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto(`http://127.0.0.1:${server.address().port}`);
+    await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
     for (const style of ['panel', 'bubble', 'image']) {
       await page.locator('#studio-speech-style').evaluate((select, value) => { select.value = value; select.dispatchEvent(new Event('change')); }, style);
       const appearance = await page.evaluate(style => {
@@ -220,7 +220,7 @@ test('platform buttons toggle saved connections independently and open settings 
   const server = createServer({ customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
@@ -233,7 +233,7 @@ test('platform buttons toggle saved connections independently and open settings 
       };
     });
     await page.route('**/api/kick/channel/*', route => route.fulfill({ json: { chatroomId: 123 } }));
-    await page.goto('http://127.0.0.1:' + server.address().port);
+    await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
     await page.locator('#twitch-channel').evaluate(input => { input.value = 'unsaved_edit'; });
     await page.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
     assert.equal(await page.locator('#twitch-tab-channel').textContent(), '#saved_channel');
@@ -255,8 +255,8 @@ test('platform buttons toggle saved connections independently and open settings 
     assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-connections')).twitch), 'saved_channel');
     await page.evaluate(() => localStorage.removeItem('pokome-connections'));
     // Use a fresh page without the saved-connection initialization script.
-    const freshPage = await browser.newPage();
-    await freshPage.goto('http://127.0.0.1:' + server.address().port);
+    const freshPage = await browser.newPage(); await blockExternalFonts(freshPage);
+    await freshPage.goto('http://127.0.0.1:' + server.address().port); await appReady(freshPage);
     await freshPage.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
     assert.equal(await freshPage.locator('#settings-page').isVisible(), true);
     assert.equal(await freshPage.locator('#twitch-channel').evaluate(element => element === document.activeElement), true);
@@ -279,7 +279,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
   } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const page = await browser.newPage(); const errors = [];
+    const page = await browser.newPage(); await blockExternalFonts(page); const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
       window.testAudio = [];
@@ -290,7 +290,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
         removeAttribute() {}
       };
     });
-    await page.goto('http://127.0.0.1:' + server.address().port);
+    await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
     await page.locator('#speech-engine').selectOption('voicevox');
     await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#voice').inputValue(), '3');
@@ -328,7 +328,7 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
   const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
     await page.addInitScript(() => {
       localStorage.setItem('pokome-workspace-v1', JSON.stringify({ version: 1, talk: null, home: { panels: {
         comments: { x: 0, y: 0, w: 65, h: 100, z: 1 },
@@ -337,7 +337,7 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
         moderation: { x: 67, y: 84, w: 33, h: 14, z: 1 },
       } } }));
     });
-    await page.goto('http://127.0.0.1:' + server.address().port);
+    await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
     assert.equal(await page.locator('.moderation').count(), 0);
     const total = await page.locator('#comment-list .comment').count();
     await page.locator('#comment-list .message').first().click();
@@ -384,9 +384,9 @@ test('first setup guide and full settings backup restore work through the UI', {
   const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    const page = await browser.newPage();
+    const page = await browser.newPage(); await blockExternalFonts(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
-    await page.goto('http://127.0.0.1:' + server.address().port);
+    await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
     assert.equal(await page.locator('#setup-welcome').isVisible(), true);
     await page.locator('#start-setup').click(); await page.locator('#setup-connect').click();
     assert.equal(await page.locator('#settings-page').isVisible(), true);
@@ -436,6 +436,27 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
     assert.equal(await page.locator('#actor-image').evaluate(image => image.complete && image.naturalWidth), 1);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
+    assert.deepEqual(errors, []);
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+});
+
+// Regression: after a reload in talk mode, leaving talk mode went back to the
+// stale talk history entry and immediately re-entered talk mode.
+test('leaving talk mode after a reload in talk mode returns to the operating screen', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
+  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const page = await browser.newPage(); await blockExternalFonts(page);
+    const errors = []; page.on('pageerror', error => errors.push(error.message));
+    await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
+    await page.locator('#enter-talk').click();
+    await page.reload(); await appReady(page);
+    await page.locator('#enter-talk').click();
+    await page.locator('#leave-talk').click();
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(() => document.body.classList.contains('talk-mode')), false);
+    await page.locator('[data-page="studio"]').click();
+    assert.equal(await page.locator('#studio-page').isVisible(), true);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });

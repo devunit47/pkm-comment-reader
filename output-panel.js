@@ -1,12 +1,12 @@
 import { OUTPUT_PREFERENCES_KEY, OUTPUT_SIZES, normalizeOutputPreferences, outputUrl } from './output-protocol.js';
 
-const SIZE_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）' };
+const SIZE_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）', '1440x1080': '1440 × 1080（4:3）' };
 
 // Controls for opening the stream output. The output itself has no controls,
 // so everything a streamer needs to set up OBS lives on this page.
 // The output size belongs to the design (saved in the customization folder);
 // the background mode and key color depend on this PC's OBS setup and stay here.
-export function initializeOutputPanel({ storage, designStore, publisher, getStudio = () => null }) {
+export function initializeOutputPanel({ storage, designStore, publisher, getStudio = () => null, onSizeChange = () => {} }) {
   let preferences;
   try { preferences = normalizeOutputPreferences(JSON.parse(storage?.getItem(OUTPUT_PREFERENCES_KEY) || 'null')); }
   catch { preferences = normalizeOutputPreferences(); }
@@ -51,7 +51,10 @@ export function initializeOutputPanel({ storage, designStore, publisher, getStud
     preferences = normalizeOutputPreferences({ background: $('output-background').value, key: $('output-key').value, size: $('output-size').value });
     try { storage?.setItem(OUTPUT_PREFERENCES_KEY, JSON.stringify({ background: preferences.background, key: preferences.key })); } catch { /* Preferences are a convenience. */ }
     if (preferences.size !== designStore.design.outputSize) {
-      designStore.save({ ...designStore.design, outputSize: preferences.size }).catch(error => { message = `出力の大きさを保存できません。${error.message}`; setStatus(publisher.status()); });
+      const saving = designStore.save({ ...designStore.design, outputSize: preferences.size });
+      // The talk screen previews the stream, so it follows the new size at once.
+      onSizeChange();
+      saving.catch(error => { message = `出力の大きさを保存できません。${error.message}`; setStatus(publisher.status()); });
     }
     render();
     setStatus(publisher.status());

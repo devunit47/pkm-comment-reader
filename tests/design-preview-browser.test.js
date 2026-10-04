@@ -260,7 +260,7 @@ browserTest('pointer resizing clamps size without moving the anchor at both prev
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page);
   await editor.locator('#add-text').click();
-  for (const resolution of ['1280', '640']) {
+  for (const resolution of ['1280x720', '640x360']) {
     await editor.locator('#preview-width').selectOption(resolution);
     for (const [key, value] of Object.entries({ w: 10, h: 10, x: 80, y: 80 })) await number(editor, key, value);
     const resize = frame.locator('.overlay-hit button[data-resize="true"]');
@@ -488,6 +488,26 @@ browserTest('latest image wins without waiting for superseded decode, and deleti
   assert.deepEqual(errors, []);
 });
 
+browserTest('an image chosen for one ratio stays in that ratio when the preview switches before it finishes', async t => {
+  const { page, editor, errors } = await fixture(t);
+  await openPreview(page);
+  await editor.locator('#preview-width').selectOption('1080x1920');
+  await beginImageGate(page);
+  await editor.locator('#overlay-image').setInputFiles(imageFile('portrait.png'));
+  await page.waitForFunction(() => window.__imageGate.entered === 1);
+  await editor.locator('#preview-width').selectOption('1920x1080');
+  await releaseImageGate(page); await ready(page);
+  await countItems(page, 0);
+  assert.match(await editor.locator('#design-status').textContent(), /9:16/);
+  await editor.locator('#preview-width').selectOption('1080x1920');
+  await countItems(page, 1);
+  await applyDesign(editor);
+  const design = await readDesign(new URL(page.url()).origin);
+  assert.equal(design.ratios['9:16'].overlays.items.length, 1);
+  assert.equal(design.ratios['16:9'], null, 'the landscape ratio stays uncreated');
+  assert.deepEqual(errors, []);
+});
+
 browserTest('a design saved elsewhere reaches the page live and an older open draft cannot overwrite it', async t => {
   const { page, editor, url, errors } = await fixture(t);
   await openPreview(page); await editor.locator('#add-text').click();
@@ -517,7 +537,7 @@ browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS
   await editor.getByText('追加CSSをプレビュー', { exact: true }).click();
   await editor.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height:100px; }');
   assert.ok(Math.abs(await speech.evaluate(element => parseFloat(getComputedStyle(element).top)) - 540) < 1, 'lowering min-height uses raw y75/h25 rather than the old clamped top');
-  await editor.locator('#preview-width').selectOption('640');
+  await editor.locator('#preview-width').selectOption('640x360');
   await page.waitForFunction(root => {
     const frame = document.querySelector(root).shadowRoot.getElementById('design-preview-frame');
     return Math.abs(parseFloat(frame.contentWindow.getComputedStyle(frame.contentDocument.querySelector('.stage-speech')).top) - 260) < 1;
@@ -532,7 +552,7 @@ browserTest('640x360 preview scroll keeps protected handles aligned with their a
   const frame = await openPreview(page);
   await editor.locator('#add-text').click(); const id = await editor.locator('#overlay-select').inputValue();
   await number(editor, 'y', 60); await number(editor, 'h', 20);
-  await editor.locator('#preview-width').selectOption('640');
+  await editor.locator('#preview-width').selectOption('640x360');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerWidth === 640, ROOT);
   const stage = frame.locator('#talk-stage');
   assert.ok(await stage.evaluate(element => element.scrollHeight > element.clientHeight));

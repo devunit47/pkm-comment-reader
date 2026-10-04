@@ -1,6 +1,6 @@
 import { compileTheme } from './theme.js';
-import { createDesignStore, ACTIVE_RATIO } from './design-client.js';
-import { resolveStudioImages, resolveOverlayAssets } from './design-model.js';
+import { createDesignStore } from './design-client.js';
+import { resolveStudioImages, resolveOverlayAssets, nearestRatio, talkLayout, talkOverlays } from './design-model.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from './output-protocol.js';
 
@@ -31,13 +31,18 @@ theme.id = 'pokome-user-theme';
 document.head.append(theme);
 const $ = elementId => stage.querySelector(`#${elementId}`);
 
+// The output uses the layout of the ratio closest to its own size (for example
+// 1080×1920 shows the 9:16 layout), never another ratio's.
+let shownRatio = '';
 function renderAppearance() {
-  const design = designStore.design, ratio = design.ratios[ACTIVE_RATIO];
+  const design = designStore.design, ratio = nearestRatio(innerWidth, innerHeight);
+  shownRatio = ratio;
+  document.body.dataset.ratio = ratio;
   studio = design.studio;
   renderStageAppearance(stage, resolveStudioImages(studio));
-  renderOverlays(stage, resolveOverlayAssets(ratio?.overlays ?? { version: 1, items: [], assets: {} }));
+  renderOverlays(stage, resolveOverlayAssets(talkOverlays(design, ratio)));
   try { theme.textContent = compileTheme(design.theme); } catch { theme.textContent = ''; }
-  applyTalkLayout(stage, ratio?.layout ?? null);
+  applyTalkLayout(stage, talkLayout(design, ratio));
   renderChat();
 }
 
@@ -79,6 +84,7 @@ function scheduleAppearance() {
   appearanceTimer = setTimeout(renderAppearance, 50);
 }
 designStore.subscribe(scheduleAppearance);
+addEventListener('resize', () => { if (nearestRatio(innerWidth, innerHeight) !== shownRatio) scheduleAppearance(); });
 // Nobody can scroll the output, so a resize must keep the newest comment in view.
 new ResizeObserver(() => {
   alignNewest();
