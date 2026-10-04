@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MAX_THEME_CSS_BYTES, RATIOS, defaultDesign, normalizeDesign,
   validImageRef, imageUrl, resolveStudioImages, resolveOverlayAssets, overlayOptions, normalizePresetName, validPresetId,
+  defaultActorImage, normalizeActorImage, talkActorImage,
 } from '../src/shared/design-model.js';
 import { normalizeStudio, DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { normalizeOverlays, MAX_OVERLAYS } from '../src/shared/overlay-model.js';
@@ -112,12 +113,12 @@ test('designs are validated as a whole and keep only known ratios, sizes and bou
   assert.equal(design.outputSize, '1280x720');
   assert.equal(Object.hasOwn(design.studio, 'listCount'), false);
   assert.deepEqual(Object.keys(design.ratios), RATIOS);
-  assert.deepEqual(design.ratios['16:9'], { layout: null, overlays: { version: 1, items: [], assets: {} } });
+  assert.deepEqual(design.ratios['16:9'], { layout: null, overlays: { version: 1, items: [], assets: {} }, actorImage: defaultActorImage() });
   assert.equal(design.ratios['9:16'], null);
   assert.equal(normalizeDesign({ format: 'pokome-design', version: 2, theme: 'a'.repeat(MAX_THEME_CSS_BYTES + 1) }, {}).theme, '');
   assert.equal(normalizeDesign({ format: 'pokome-design', version: 2, theme: 'a'.repeat(MAX_THEME_CSS_BYTES) }, {}).theme.length, MAX_THEME_CSS_BYTES);
   const fallback = defaultDesign();
-  assert.equal(fallback.version, 2);
+  assert.equal(fallback.version, 3);
   assert.deepEqual(fallback.studio, normalizeStudio());
   assert.equal(Object.hasOwn(DEFAULT_STUDIO, 'listCount'), false);
 });
@@ -204,4 +205,87 @@ test('safe-area guides are defined once per ratio', () => {
   assert.deepEqual(SAFE_AREAS['9:16'], { top: 6, bottom: 10, left: 0, right: 0, shade: true });
   assert.deepEqual(SAFE_AREAS['16:9'], { top: 5, bottom: 5, left: 5, right: 5, shade: false });
   assert.deepEqual(SAFE_AREAS['4:3'], SAFE_AREAS['16:9']);
+});
+
+test('actor image normalization bounds finite numbers and preserves fractional offsets', () => {
+  const expected = { mode: 'theme', scale: 100, alignX: 'center', alignY: 'center', offsetX: 0, offsetY: 0, overflow: false };
+  assert.deepEqual(defaultActorImage(), expected);
+  for (const value of [undefined, null, [], 'custom', { mode: 'other', scale: '110', alignX: 'top', alignY: 'left', offsetX: '2', offsetY: '3', overflow: 'true' }]) {
+    assert.deepEqual(normalizeActorImage(value), expected);
+  }
+  for (const value of [NaN, Infinity, -Infinity, '110', null]) {
+    assert.deepEqual(normalizeActorImage({ scale: value, offsetX: value, offsetY: value }), expected);
+  }
+  assert.deepEqual(normalizeActorImage({ mode: 'custom', scale: 110.5, alignX: 'right', alignY: 'bottom', offsetX: -1.125, offsetY: 8.5, overflow: true, unknown: 'drop' }),
+    { mode: 'custom', scale: 111, alignX: 'right', alignY: 'bottom', offsetX: -1.125, offsetY: 8.5, overflow: true });
+  assert.deepEqual(normalizeActorImage({ scale: 90, offsetX: -101, offsetY: 101 }), { ...expected, offsetX: -100, offsetY: 100 });
+  assert.equal(normalizeActorImage({ scale: 201 }).scale, 200);
+  for (const alignX of ['left', 'center', 'right']) for (const alignY of ['top', 'center', 'bottom']) {
+    assert.deepEqual(normalizeActorImage({ alignX, alignY }), { ...expected, alignX, alignY });
+  }
+  const first = defaultActorImage(); first.scale = 150;
+  assert.deepEqual(defaultActorImage(), expected, 'defaults are not shared mutable state');
+});
+
+test('version 2 ignores surplus actor image settings, version 3 reads them, and unknown versions fail', () => {
+  const actorImage = { mode: 'custom', scale: 110, alignX: 'left', alignY: 'bottom', offsetX: -3.5, offsetY: 8.5, overflow: true };
+  const raw = { format: 'pokome-design', version: 2, theme: '.pokome-workspace .actor-figure { transform: scale(1.1); }',
+    ratios: { '16:9': { actorImage }, '9:16': {} } };
+  const old = normalizeDesign(raw);
+  assert.equal(old.version, 3);
+  assert.equal(old.theme, raw.theme);
+  assert.deepEqual(talkActorImage(old, '16:9'), defaultActorImage());
+  assert.deepEqual(talkActorImage(old, '9:16'), defaultActorImage());
+  assert.deepEqual(talkActorImage(old, '4:3'), defaultActorImage());
+  assert.equal(old.ratios['4:3'], null);
+  const current = normalizeDesign({ ...raw, version: 3 });
+  assert.deepEqual(talkActorImage(current, '16:9'), actorImage);
+  assert.deepEqual(talkActorImage(current, '9:16'), defaultActorImage());
+  const copy = talkActorImage(current, '16:9'); copy.scale = 160;
+  assert.equal(talkActorImage(current, '16:9').scale, 110);
+  assert.deepEqual(normalizeDesign(JSON.parse(JSON.stringify(current))), current);
+  for (const version of [undefined, 1, 4, 99, '2', '3']) assert.throws(() => normalizeDesign({ ...raw, version }));
+});
+
+test('actor-image-only ratios stay separate and other updates preserve their retained theme adjustments', () => {
+  const actorImage = { ...defaultActorImage(), mode: 'custom', scale: 110, alignY: 'bottom', offsetY: 1.125, overflow: true };
+  const original = defaultDesign();
+  let design = withTalk(original, '16:9', { actorImage });
+  assert.deepEqual(design.ratios['16:9'], { layout: null, overlays: normalizeOverlays(), actorImage });
+  assert.equal(original.ratios['16:9'], null);
+  assert.deepEqual(talkActorImage(design, '9:16'), defaultActorImage());
+  assert.deepEqual(talkActorImage(design, '4:3'), defaultActorImage());
+  design = withTalk(design, '16:9', { actorImage: { ...actorImage, mode: 'theme' } });
+  assert.deepEqual(talkActorImage(design, '16:9'), { ...actorImage, mode: 'theme' });
+  design = normalizeDesign(JSON.parse(JSON.stringify(design)));
+  const text = normalizeOverlays({ version: 1, items: [{ id: 'label', type: 'text', text: '残る' }], assets: {} });
+  design = withTalk(design, '16:9', { overlays: text });
+  design = withTalk(design, '16:9', { layout: { panels: { actor: { x: 20, y: 10, w: 40, h: 60, z: 2 } } } });
+  assert.deepEqual(talkActorImage(design, '16:9'), { ...actorImage, mode: 'theme' });
+  design = withTalk(design, '9:16', { actorImage: { ...defaultActorImage(), mode: 'custom', scale: 200 } });
+  design = withTalk(design, '16:9', { actorImage: null });
+  assert.deepEqual(talkActorImage(design, '16:9'), defaultActorImage());
+  assert.deepEqual(talkOverlays(design, '16:9'), text);
+  assert.equal(talkActorImage(design, '9:16').scale, 200);
+  design = withTalk(design, '16:9', { layout: null, overlays: normalizeOverlays() });
+  assert.equal(design.ratios['16:9'], null, 'only a completely default ratio returns to null');
+  assert.equal(talkActorImage(design, '9:16').scale, 200);
+});
+
+test('normalized version 2 image coordinates survive conversion and saving for every ratio', () => {
+  const assets = { 'asset-1': ref('a') }, images = { [ref('a')]: entry() };
+  const items = [
+    { ...imageItem('minimum', 'asset-1'), x: 98, y: 0, w: 2, h: 2 },
+    { ...imageItem('maximum', 'asset-1'), x: 0, y: 0, w: 100, h: 100 },
+    { ...imageItem('fractional', 'asset-1'), x: 12.5, y: 34.25, w: 67.125, h: 21.5 },
+  ];
+  const normalized = normalizeOverlays(overlays(items, assets), overlayOptions(images));
+  const legacy = { format: 'pokome-design', version: 2, ratios: Object.fromEntries(RATIOS.map(ratio => [ratio, { layout: null, overlays: normalized }])) };
+  const current = normalizeDesign(legacy, images);
+  assert.equal(legacy.version, 2, 'reading does not mutate the input');
+  for (const ratio of RATIOS) {
+    assert.deepEqual(talkOverlays(current, ratio), normalized);
+    assert.deepEqual(talkActorImage(current, ratio), defaultActorImage());
+  }
+  assert.deepEqual(normalizeDesign(JSON.parse(JSON.stringify(current)), images), current);
 });

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request } from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { MAX_IMAGE_BYTES, defaultDesign } from '../src/shared/design-model.js';
+import { MAX_IMAGE_BYTES, defaultDesign, defaultActorImage, normalizeDesign, withTalk, RATIOS } from '../src/shared/design-model.js';
 import { UNREFERENCED_IMAGE_GRACE_MS, inspectImageBytes } from '../src/server/design-storage.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
@@ -67,6 +67,41 @@ test('saving stores a normalized design.json, keeps referenced images and report
   assert.deepEqual(await current(), { design: saved.design, images: saved.images, revision: saved.revision });
   // Only temporary-free, final files remain.
   assert.deepEqual((await readdir(join(directory, 'current'))).sort(), ['design.json', 'images']);
+});
+
+test('reading a version 2 current leaves its file and images intact, then saving writes version 3', async t => {
+  const { directory, current, upload, save } = await serve(t);
+  const image = await upload(png);
+  const initial = normalizeDesign({ ...defaultDesign(), studio: { ...defaultDesign().studio, image: image.ref, title: '旧デザイン' },
+    theme: '.pokome-workspace .actor-figure { transform: scale(1.1); }',
+    ratios: Object.fromEntries(RATIOS.map(ratio => [ratio, { layout: null, overlays: { version: 1,
+      items: [{ id: 'backdrop', type: 'image', assetId: 'background', x: 0, y: 0, w: 100, h: 100 }], assets: { background: image.ref } } }])) }, { [image.ref]: image });
+  const legacy = structuredClone(initial); legacy.version = 2;
+  for (const ratio of RATIOS) delete legacy.ratios[ratio].actorImage;
+  const path = join(directory, 'current', 'design.json'), raw = JSON.stringify(legacy, null, 2) + '\n';
+  await writeFile(path, raw);
+  const imagePath = join(directory, 'current', image.ref);
+  const aged = new Date(Date.now() - UNREFERENCED_IMAGE_GRACE_MS - 60000);
+  await utimes(imagePath, aged, aged);
+  const beforeFile = await stat(path), beforeImage = await stat(imagePath);
+  const loaded = await current();
+  assert.equal(loaded.design.version, 3);
+  assert.deepEqual(loaded.design, initial);
+  for (const ratio of RATIOS) assert.deepEqual(loaded.design.ratios[ratio].actorImage, defaultActorImage());
+  assert.equal(await readFile(path, 'utf8'), raw);
+  assert.equal((await stat(path)).mtimeMs, beforeFile.mtimeMs);
+  assert.equal((await stat(imagePath)).mtimeMs, beforeImage.mtimeMs);
+  assert.deepEqual(await readFile(imagePath), png);
+  const resaved = await (await save(legacy, loaded.revision)).json();
+  assert.deepEqual(resaved.design, initial, 'resaving a version 2 payload preserves the scene');
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).version, 3);
+  const actorImage = { mode: 'custom', scale: 110, alignX: 'left', alignY: 'bottom', offsetX: -3.125, offsetY: 8.5, overflow: true };
+  const draft = withTalk(resaved.design, '16:9', { actorImage });
+  const saved = await (await save(draft, resaved.revision)).json();
+  assert.equal(JSON.parse(await readFile(path, 'utf8')).version, 3);
+  assert.deepEqual(saved.design, draft);
+  assert.deepEqual((await current()).design, draft);
+  assert.deepEqual(await readFile(imagePath), png);
 });
 
 test('a stale or missing revision is rejected so another tab cannot be overwritten', async t => {

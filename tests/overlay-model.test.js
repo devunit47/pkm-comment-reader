@@ -4,7 +4,7 @@ import {
   MAX_OVERLAYS, MAX_OVERLAY_TEXT, MAX_OVERLAY_ASSET_BYTES,
   MAX_OVERLAY_TOTAL_ASSET_BYTES, MAX_OVERLAY_PIXELS,
   normalizeOverlays, createOverlay, removeOverlay, pruneOverlayAssets,
-  addOverlayAsset, inspectOverlayImage,
+  addOverlayAsset, inspectOverlayImage, overlayBounds,
 } from '../src/shared/overlay-model.js';
 
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
@@ -126,4 +126,43 @@ test('missing geometry stays inside a full-canvas overlay and malformed override
   assert.equal(createOverlay('text', null).type, 'text');
   const info = inspectOverlayImage(png); info.width = 1000000;
   assert.equal(inspectOverlayImage(png).width, 1);
+});
+
+test('image bounds allow one canvas outside each edge while retaining 2% on both axes', () => {
+  assert.deepEqual(overlayBounds('image', 200, 200), { minX: -100, maxX: 0, minY: -100, maxY: 0, minSize: 2, maxSize: 200 });
+  assert.deepEqual(overlayBounds('image', 2, 2), { minX: 0, maxX: 98, minY: 0, maxY: 98, minSize: 2, maxSize: 200 });
+  assert.deepEqual(overlayBounds('image', 100, 100), { minX: -98, maxX: 98, minY: -98, maxY: 98, minSize: 2, maxSize: 200 });
+  assert.deepEqual(overlayBounds('text', 200, 0), { minX: 0, maxX: 0, minY: 0, maxY: 98, minSize: 2, maxSize: 100 });
+  const geometry = value => normalizeOverlays(envelope([{ ...imageItem(), ...value }], { 'asset-one': png })).items[0];
+  for (const [w, h, minX, maxX, minY, maxY] of [[200, 200, -100, 0, -100, 0], [2, 2, 0, 98, 0, 98], [100, 100, -98, 98, -98, 98], [150.5, 120.25, -100, 49.5, -100, 79.75]]) {
+    const low = geometry({ w, h, x: -500, y: -500 }), high = geometry({ w, h, x: 500, y: 500 });
+    assert.deepEqual([low.x, low.y, low.w, low.h], [minX, minY, w, h]);
+    assert.deepEqual([high.x, high.y, high.w, high.h], [maxX, maxY, w, h]);
+    assert.ok(low.x + w >= 2 && low.y + h >= 2);
+    assert.ok(high.x <= 98 && high.y <= 98 && high.x + w <= 200 && high.y + h <= 200);
+  }
+  const corrected = geometry({ w: 999, h: 1, x: 98, y: -100 });
+  assert.deepEqual([corrected.w, corrected.h, corrected.x, corrected.y], [200, 2, 0, 0], 'size is corrected before position');
+  const desk = geometry({ x: 0, y: 8.5, w: 100, h: 100 });
+  assert.equal(desk.y, 8.5);
+  assert.deepEqual(normalizeOverlays(JSON.parse(JSON.stringify(envelope([desk], { 'asset-one': png })))), envelope([desk], { 'asset-one': png }));
+});
+
+test('old normalized image edges and decimals remain unchanged, and non-finite input uses defaults', () => {
+  const geometry = value => normalizeOverlays(envelope([{ ...imageItem(), ...value }], { 'asset-one': png })).items[0];
+  for (const w of [2, 37.125, 100]) for (const h of [2, 21.25, 100]) {
+    for (const x of [0, 100 - w]) for (const y of [0, 100 - h]) {
+      const item = geometry({ w, h, x, y });
+      assert.deepEqual([item.w, item.h, item.x, item.y], [w, h, x, y]);
+    }
+  }
+  for (const value of [NaN, Infinity, -Infinity, '100', null]) {
+    const item = geometry({ w: value, h: value, x: value, y: value });
+    assert.deepEqual([item.w, item.h, item.x, item.y], [30, 30, 5, 5]);
+    assert.deepEqual(overlayBounds('image', value, value), overlayBounds('image', 30, 30));
+  }
+  const maximum = geometry({ w: 200, h: 200, x: NaN, y: Infinity });
+  assert.deepEqual([maximum.x, maximum.y], [0, 0], 'default positions also obey the corrected bounds');
+  const text = normalizeOverlays(envelope([textItem({ w: 200, h: 200, x: -50, y: -50 })])).items[0];
+  assert.deepEqual([text.w, text.h, text.x, text.y], [100, 100, 0, 0], 'text limits stay unchanged');
 });

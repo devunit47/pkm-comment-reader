@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createDesignStore, createPresetClient, checkImageFile } from '../src/browser/design-client.js';
-import { defaultDesign, MAX_IMAGE_BYTES } from '../src/shared/design-model.js';
+import { defaultDesign, defaultActorImage, withTalk, RATIOS, MAX_IMAGE_BYTES } from '../src/shared/design-model.js';
 
 // A fake server that records requests and can be told to reject a revision.
 function fakeServer({ revision = 'r0', conflictOnce = false, failLoad = false } = {}) {
@@ -71,6 +71,28 @@ test('uploaded images join the catalog so their references survive normalization
   await store.save({ ...defaultDesign(), studio: { ...defaultDesign().studio, image: ref } });
   assert.equal(store.design.studio.image, ref);
   assert.equal(server.current.design.studio.image, ref);
+});
+
+test('version 2 client loading performs no write and a later save sends version 3 with every ratio', async () => {
+  const server = fakeServer();
+  server.current.design = { ...defaultDesign(), version: 2,
+    theme: '.pokome-workspace .actor-figure { transform: scale(1.1); }',
+    ratios: { '16:9': { layout: null, overlays: { version: 1, items: [], assets: {} }, actorImage: { mode: 'custom', scale: 200 } }, '9:16': null, '4:3': null } };
+  const original = structuredClone(server.current.design);
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  assert.deepEqual(server.requests.map(request => request.method), ['GET']);
+  assert.deepEqual(server.current.design, original);
+  assert.equal(store.design.version, 3);
+  assert.deepEqual(store.design.ratios['16:9'].actorImage, defaultActorImage(), 'surplus version 2 settings are ignored');
+  let draft = store.design;
+  for (const [index, ratio] of RATIOS.entries()) draft = withTalk(draft, ratio, { actorImage: {
+    ...defaultActorImage(), mode: index === 1 ? 'theme' : 'custom', scale: 110 + index * 10, offsetX: index + 0.125, offsetY: -8.5,
+  } });
+  await store.save(draft);
+  const put = server.requests.find(request => request.method === 'PUT');
+  assert.equal(JSON.parse(put.body).version, 3);
+  assert.deepEqual(server.current.design, draft);
+  assert.deepEqual(store.design, draft);
 });
 
 test('unreadable originals keep the server available but refuse every current write', async () => {

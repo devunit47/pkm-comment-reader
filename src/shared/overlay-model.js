@@ -93,12 +93,23 @@ export function inspectOverlayImage(dataURL) {
   } catch { return null; }
 }
 
+// Image frames may cross the canvas but must leave 2% visible on each axis.
+export function overlayBounds(type, w, h) {
+  const minSize = 2, maxSize = type === 'image' ? 200 : 100;
+  const width = bounded(w, 30, minSize, maxSize), height = bounded(h, type === 'text' ? 12 : 30, minSize, maxSize);
+  return type === 'image'
+    ? { minX: Math.max(-100, 2 - width), maxX: Math.min(98, 200 - width), minY: Math.max(-100, 2 - height), maxY: Math.min(98, 200 - height), minSize, maxSize }
+    : { minX: 0, maxX: 100 - width, minY: 0, maxY: 100 - height, minSize, maxSize };
+}
+
 function normalizeItem(value) {
   if (!record(value) || !safeId(value.id) || !['text', 'image'].includes(value.type)) return null;
-  const w = bounded(value.w, 30, 2, 100), h = bounded(value.h, value.type === 'text' ? 12 : 30, 2, 100);
+  const maxSize = value.type === 'image' ? 200 : 100;
+  const w = bounded(value.w, 30, 2, maxSize), h = bounded(value.h, value.type === 'text' ? 12 : 30, 2, maxSize);
+  const bounds = overlayBounds(value.type, w, h);
   return {
     id: value.id, type: value.type,
-    x: bounded(value.x, Math.min(5, 100 - w), 0, 100 - w), y: bounded(value.y, Math.min(5, 100 - h), 0, 100 - h), w, h,
+    x: bounded(value.x, Math.min(5, bounds.maxX), bounds.minX, bounds.maxX), y: bounded(value.y, Math.min(5, bounds.maxY), bounds.minY, bounds.maxY), w, h,
     z: Math.round(bounded(value.z, 1, 0, 99)), hidden: value.hidden === true,
     text: value.type === 'text' && typeof value.text === 'string' ? value.text.slice(0, MAX_OVERLAY_TEXT) : '',
     color: typeof value.color === 'string' && /^#[\da-f]{6}$/i.test(value.color) ? value.color : '#ffffff',
