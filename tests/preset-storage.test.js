@@ -59,6 +59,15 @@ async function manualPreset(directory, id, design = fixtureDesign(), files = fix
   return folder;
 }
 
+async function openedFilesDuring(operation) {
+  const original = fs.open, files = [];
+  fs.open = async (path, ...options) => { files.push(String(path)); return original(path, ...options); };
+  syncBuiltinESMExports();
+  try { await operation(); }
+  finally { fs.open = original; syncBuiltinESMExports(); }
+  return files;
+}
+
 test('saving a complete scene, resetting, previewing and applying preserves every ratio, theme and image', async t => {
   const app = await serve(t); await app.uploadFixture();
   const design = fixtureDesign(); await app.save(design);
@@ -84,6 +93,85 @@ test('saving a complete scene, resetting, previewing and applying preserves ever
   assert.deepEqual(await app.current(), restored);
   assert.equal(Object.hasOwn(restored.design, 'backgroundMode'), false);
   assert.equal(Object.hasOwn(restored.design, 'chromaColor'), false);
+});
+
+test('current saves never read preset images', async t => {
+  const app = await serve(t); await app.uploadFixture(); await app.save(fixtureDesign());
+  const presetFiles = new Set();
+  for (let index = 0; index < 3; index++) {
+    const preset = await app.newPreset(`画像確認 ${index}`);
+    for (const ref of Object.keys(fixtureFiles)) presetFiles.add(join(app.directory, 'presets', preset.id, ref));
+  }
+  const files = await openedFilesDuring(() => app.save({ ...fixtureDesign(), name: 'currentのみ更新' }));
+  assert.deepEqual(files.filter(path => presetFiles.has(path)), [], 'current saving must not inspect any preset image');
+});
+
+test('a preset image GET reads only the requested image once', async t => {
+  const app = await serve(t), folder = await manualPreset(app.directory, 'single-image-read');
+  const files = await openedFilesDuring(async () => {
+    const response = await fetch(`${app.base}/api/design/presets/single-image-read/images/${imageName(actorRef)}`);
+    assert.equal(response.status, 200); assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), fixtureFiles[actorRef]);
+  });
+  assert.deepEqual(files.filter(path => dirname(path) === join(folder, 'images')), [join(folder, actorRef)]);
+});
+
+test('a pending preset image read never blocks a current save', async t => {
+  const app = await serve(t), folder = await manualPreset(app.directory, 'pending-image');
+  const original = fs.open, target = join(folder, actorRef), timers = [];
+  let release, started, imageRequest, saving, intercepted = false;
+  const gate = new Promise(resolve => { release = resolve; }), ready = new Promise(resolve => { started = resolve; });
+  const deadline = message => new Promise((_, reject) => { timers.push(setTimeout(() => reject(new Error(message)), 3000)); });
+  fs.open = async (path, ...options) => {
+    if (String(path) === target && !intercepted) { intercepted = true; started(); await gate; }
+    return original(path, ...options);
+  };
+  syncBuiltinESMExports();
+  try {
+    imageRequest = fetch(`${app.base}/api/design/presets/pending-image/images/${imageName(actorRef)}`);
+    await Promise.race([ready, deadline('image reading did not start')]);
+    saving = app.save({ ...defaultDesign(), name: '画像の待機中も保存' });
+    assert.equal((await Promise.race([saving, deadline('current save waited for a preset image')])).design.name, '画像の待機中も保存');
+  } finally {
+    for (const timer of timers) clearTimeout(timer);
+    release(); fs.open = original; syncBuiltinESMExports();
+    if (imageRequest) { const response = await imageRequest; assert.equal(response.status, 200); await response.arrayBuffer(); }
+    if (saving) await saving;
+  }
+});
+
+test('a direct preset image GET rejects forged bytes, invalid paths and directory junctions', async t => {
+  const app = await serve(t), folder = await manualPreset(app.directory, 'checked-image');
+  const path = `${app.base}/api/design/presets/checked-image/images/${imageName(actorRef)}`;
+  await writeFile(join(folder, actorRef), fixtureFiles[backgroundRef]);
+  const forged = await fetch(path); assert.equal(forged.status, 404); await forged.arrayBuffer();
+  const svg = await fetch(path.replace('.png', '.svg')); assert.equal(svg.status, 404); await svg.arrayBuffer();
+  const traversal = await fetch(path.replace('checked-image', '..%2Fcurrent')); assert.equal(traversal.status, 400); await traversal.arrayBuffer();
+  const missing = await fetch(path.replace('checked-image', 'missing')); assert.equal(missing.status, 404); await missing.arrayBuffer();
+  const outside = join(app.folder, 'outside-get'); await mkdir(outside); await writeFile(join(outside, imageName(actorRef)), fixtureFiles[actorRef]);
+  await rm(join(folder, 'images'), { recursive: true }); await symlink(outside, join(folder, 'images'), process.platform === 'win32' ? 'junction' : 'dir');
+  const linked = await fetch(path); assert.ok([422, 503].includes(linked.status)); await linked.arrayBuffer();
+  assert.deepEqual(await readFile(join(outside, imageName(actorRef))), fixtureFiles[actorRef]);
+});
+
+test('a directory swap during a preset image GET is rejected before sending bytes', async t => {
+  const app = await serve(t), folder = await manualPreset(app.directory, 'swapped-get');
+  const imageFolder = join(folder, 'images'), outside = join(app.folder, 'outside-get-swap'), displaced = join(app.folder, 'displaced-get');
+  await mkdir(outside); await writeFile(join(outside, imageName(actorRef)), fixtureFiles[actorRef]);
+  const original = fs.realpath; let checks = 0, swapped = false;
+  fs.realpath = async (path, ...options) => {
+    const value = await original(path, ...options);
+    if (String(path) === imageFolder && ++checks === 2) {
+      swapped = true; await rename(imageFolder, displaced); await symlink(outside, imageFolder, process.platform === 'win32' ? 'junction' : 'dir');
+    }
+    return value;
+  };
+  syncBuiltinESMExports();
+  let response;
+  try { response = await fetch(`${app.base}/api/design/presets/swapped-get/images/${imageName(actorRef)}`); await response.arrayBuffer(); }
+  finally { fs.realpath = original; syncBuiltinESMExports(); }
+  assert.equal(swapped, true); assert.equal(response.status, 422);
+  assert.deepEqual(await readFile(join(outside, imageName(actorRef))), fixtureFiles[actorRef]);
 });
 
 test('grapheme-bounded names, duplicate names and renaming affect the name only', async t => {

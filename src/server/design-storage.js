@@ -298,7 +298,6 @@ export function createDesignStorage(root) {
       let design;
       try { design = normalizeDesign(value, before.images); }
       catch (error) { throw failure(400, error.message); }
-      if (await exists(presets)) { await presetDirectories(); await collectPresetImages(); }
       await protectReleasedImages(before.design, design);
       await atomicWrite(designPath, JSON.stringify(design, null, 2), root);
       const after = await load();
@@ -461,16 +460,6 @@ export function createDesignStorage(root) {
     return { id, design, images: list, revision, updatedAt };
   }
 
-  async function collectPresetImages() {
-    for (const entry of await readdir(presets, { withFileTypes: true })) {
-      if (!validPresetId(entry.name)) continue;
-      try {
-        const value = await loadPreset(entry.name);
-        await cleanup(value.design, join(presetPath(entry.name), 'images'));
-      } catch { /* Invalid user-placed presets stay intact and appear in the list. */ }
-    }
-  }
-
   async function listPresets() {
     return exclusive(async () => {
       await presetDirectories();
@@ -623,17 +612,23 @@ export function createDesignStorage(root) {
   }
 
   async function sendPresetImage(res, id, name) {
-    return exclusive(async () => {
-      await presetDirectories();
-      const match = IMAGE_NAME.exec(name);
-      if (!match) throw failure(404, '画像が見つかりません。');
-      const value = await loadPreset(id), ref = `images/${name}`;
-      if (!Object.hasOwn(value.images, ref)) throw failure(404, '画像が見つかりません。');
-      const { bytes } = await readStable(join(presetPath(id), 'images', name), MAX_IMAGE_BYTES);
-      if (!inspectImageBytes(bytes, match[2]) || createHash('sha256').update(bytes).digest('hex') !== match[1]) throw failure(404, '画像が見つかりません。');
-      res.writeHead(200, { 'Content-Type': IMAGE_TYPES[match[2]], 'Cache-Control': 'private, max-age=31536000, immutable' });
-      res.end(bytes);
-    });
+    const match = IMAGE_NAME.exec(name);
+    if (!match) throw failure(404, '画像が見つかりません。');
+    const imageFolder = join(presetPath(id), 'images');
+    let bytes;
+    try {
+      // Content-addressed reads need only one file. Recheck its parent chain
+      // after reading, so they can run outside the save queue without following links.
+      const check = await guardDirectory(root, imageFolder);
+      ({ bytes } = await readStable(join(imageFolder, name), MAX_IMAGE_BYTES));
+      await check();
+    } catch (error) {
+      if (error.code === 'ENOENT') throw failure(404, '画像が見つかりません。');
+      throw error;
+    }
+    if (!inspectImageBytes(bytes, match[2]) || createHash('sha256').update(bytes).digest('hex') !== match[1]) throw failure(404, '画像が見つかりません。');
+    res.writeHead(200, { 'Content-Type': IMAGE_TYPES[match[2]], 'Cache-Control': 'private, max-age=31536000, immutable' });
+    res.end(bytes);
   }
 
   async function sendImage(res, name) {
