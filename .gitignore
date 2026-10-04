@@ -6,5 +6,5 @@ node_modules/
 dist-local/
 customization/
 
-# Local-only sample materials and export archives.
-/samples/personal/
+# Private notes repository.
+/notes/

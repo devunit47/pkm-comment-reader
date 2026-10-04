@@ -1,13 +1,19 @@
 # AGENTS.md — 作業の引き継ぎと進め方
 
-このリポジトリで作業するエージェント（Codex など）向けの案内です。最初に読み、続けて [docs/design/roadmap.md](docs/design/roadmap.md) を読んでください。
+このリポジトリで作業するエージェント（Codex など）向けの案内です。最初にこの文書を読み、続けて [notes/handoff.md](notes/handoff.md) と [notes/design/roadmap.md](notes/design/roadmap.md) を読んでください。
+
+`notes/` は手元にだけ置く非公開リポジトリで、公開リポジトリの Git 管理対象から除外しています。アクセス権のある利用者は、リポジトリ直下で次のコマンドを実行して用意してください。
+
+```sh
+git clone https://github.com/devunit47/pkm-comment-reader-notes.git notes
+```
 
 ## 利用者とのやり取り
 
 - 利用者への返答は日本語で書く。
 - コミット・push・PR 作成・マージ・ブランチ削除は、そのたびに利用者の了承を得てから行う。前の了承を次の操作に流用しない。
 - 新しい機能は、次の順で進めてきた。この流れを守る。
-  1. 方針（目的・追加する設定・実装の考え方・範囲外・決めてほしいこと）を短くまとめ、利用者の確認を得る。大きい機能は `docs/design/<名前>.md` に仕様書を書く。
+  1. 方針（目的・追加する設定・実装の考え方・範囲外・決めてほしいこと）を短くまとめ、利用者の確認を得る。大きい機能は `notes/design/<名前>.md` に仕様書を書く。
   2. master から `feat/<名前>` ブランチを切って実装し、テストを追加する。
   3. 自己レビューする（diff の読み直し、テーマとの組み合わせ、実ブラウザでの見た目）。
   4. 利用者の了承を得てコミット → push → PR 作成。
@@ -27,10 +33,11 @@
 
 - 外部パッケージのインストールは不要（依存なし）。
 - CI（`.github/workflows/ci.yml`）は PR で `npm run check`・`npm test`（Ubuntu）と `build:local`（Windows）を実行する。
-- P1-B2最終版の [PR CI](https://github.com/devunit47/pkm-comment-reader/actions/runs/37166991572) は成功（2026-10-04）。Ubuntuの構文チェック・全テストと、Windowsの配布版ビルドを確認済み。
 
 ## コードの約束事
 
+- 公開リポジトリのファイル（コード・テスト・文書）・コミットメッセージ・PR 本文に、利用者の PC の絶対パス・ユーザー名・メールアドレスを書かない。パスはリポジトリからの相対パスか、`%USERPROFILE%` のような一般的な書き方にする。
+- 仕様書・計画・引き継ぎ・確認用素材は `notes/` に置き、公開リポジトリに入れない。
 - 画面の文言・文書は日本語。コード中のコメントは英語で、「なぜ」を短く書く。
 - 受け取ったコメントや設定は必ず正規化してから使う。描画は `textContent` のみで、`innerHTML` に利用者のデータを入れない。
 - 見た目（配信デザイン・テーマCSS・雑談画面の配置・追加の文字と画像・出力の大きさ）は `customization/current/design.json` と画像ファイルに保存し、`src/browser/design-client.js` の `createDesignStore` を通して読み書きする。localStorage に見た目を書かない。localStorage に残すのは接続先・音声・ユーザー管理・ホームの配置・履歴件数（`pokome-history-limit`）・配信出力の背景だけ。
@@ -63,4 +70,4 @@
 | `src/shared/theme.js` | テーマCSSの検証と適用 |
 | `src/browser/chat-state.js` / `src/shared/connections.js` | コメント履歴と Twitch・Kick 接続 |
 
-仕様書は `docs/design/`、利用者向けの説明は `README.md` と `docs/customization.md`。
+仕様書は `notes/design/`、引き継ぎは `notes/handoff.md`、確認用素材は `notes/samples/`。利用者向けの説明は `README.md` と `docs/customization.md`。
