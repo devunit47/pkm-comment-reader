@@ -28,7 +28,7 @@ async function serve(t) {
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(folder, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;
   const origin = base;
-  const write = (path, body, type, headers = {}) => fetch(base + path, { method: 'PUT', body, headers: { 'Content-Type': type, Origin: origin, ...headers } });
+  const write = (path, body, type, headers = {}) => fetch(base + path, { method: 'PUT', body, headers: { 'Content-Type': type, Origin: origin, 'Sec-Fetch-Site': 'same-origin', ...headers } });
   const current = async () => (await fetch(`${base}/api/design/current`)).json();
   const upload = async (bytes, type = 'image/png') => (await write('/api/design/images', bytes, type)).json();
   const save = async (design, revision) => write('/api/design/current', JSON.stringify(design), 'application/json', { 'If-Match': revision });
@@ -99,7 +99,7 @@ test('writes require this app as origin, a JSON or image type and bounded bodies
   assert.equal((await write('/api/design/images', png, 'image/svg+xml')).status, 415);
   assert.equal((await write('/api/design/current', '{broken', 'application/json', { 'If-Match': 'default' })).status, 400);
   assert.equal((await write('/api/design/current', JSON.stringify({ format: 'other' }), 'application/json', { 'If-Match': 'default' })).status, 400);
-  assert.equal((await fetch(`${base}/api/design/current`, { method: 'DELETE', headers: { Origin: base } })).status, 405);
+  assert.equal((await fetch(`${base}/api/design/current`, { method: 'DELETE', headers: { Origin: base, 'Sec-Fetch-Site': 'same-origin' } })).status, 405);
   assert.equal((await fetch(`${base}/api/design/current`, { headers: { Origin: 'http://evil.example' } })).status, 403);
   // Bodies over the limit stop with 413 before being stored.
   const huge = Buffer.alloc(MAX_IMAGE_BYTES + 1); png.copy(huge);

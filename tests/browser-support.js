@@ -27,7 +27,7 @@ export async function saveDesign(base, change) {
   const design = typeof change === 'function' ? change(current.design) : { ...current.design, ...change };
   const response = await fetch(`${base}/api/design/current`, {
     method: 'PUT', body: JSON.stringify(design),
-    headers: { 'Content-Type': 'application/json', 'If-Match': current.revision, Origin: base },
+    headers: { 'Content-Type': 'application/json', 'If-Match': current.revision, Origin: base, 'Sec-Fetch-Site': 'same-origin' },
   });
   if (!response.ok) throw new Error(`saveDesign failed: ${response.status} ${await response.text()}`);
   return (await response.json()).design;
@@ -42,7 +42,7 @@ export async function saveTalk(base, { layout, overlays } = {}) {
   });
 }
 export async function uploadDesignImage(base, bytes, type = 'image/png') {
-  const response = await fetch(`${base}/api/design/images`, { method: 'PUT', body: bytes, headers: { 'Content-Type': type, Origin: base } });
+  const response = await fetch(`${base}/api/design/images`, { method: 'PUT', body: bytes, headers: { 'Content-Type': type, Origin: base, 'Sec-Fetch-Site': 'same-origin' } });
   if (!response.ok) throw new Error(`upload failed: ${response.status}`);
   return response.json();
 }

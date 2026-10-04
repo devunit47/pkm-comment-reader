@@ -101,7 +101,7 @@ function readAllowed(req) {
 }
 function writeAllowed(req) {
   const host = req.headers.host || '', site = req.headers['sec-fetch-site'];
-  return localHost(host) && req.headers.origin === `http://${host}` && (!site || site === 'same-origin');
+  return localHost(host) && req.headers.origin === `http://${host}` && site === 'same-origin';
 }
 
 export function createDesignStorage(root) {
