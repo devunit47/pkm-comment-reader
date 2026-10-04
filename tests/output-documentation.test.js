@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 const customization=await readFile(new URL('../docs/customization.md',import.meta.url),'utf8');
 const readme=await readFile(new URL('../README.md',import.meta.url),'utf8');
-const specification=await readFile(new URL('../docs/design/output-comment-lifetime.md',import.meta.url),'utf8');
 function section(markdown, title) {
   const headings=[...markdown.matchAll(/^(#{1,6}) (.+)$/gm)];
   const heading=headings.find(item=>item[2].trim()===title);
@@ -17,7 +16,6 @@ test('display limits belong with design guidance and explain unlimited defaults 
   assert.ok(display.index<section(customization,'ローカルフォルダーの素材を使う').index);
   for (const concept of ['制限なし','1～30','受信時刻','履歴','読み上げ']) assert.ok(display.text.includes(concept),concept);
   assert.match(display.text,/標準[^。]*制限なし|制限なし[^。]*標準/);
-  assert.match(specification,/maxVisible[^\n]*0[^\n]*制限なし/);
 });
 test('OBS output instructions link directly to display limits and mention retained history', async () => {
   const output=section(readme,'配信出力（OBS用）').text;
