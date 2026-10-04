@@ -42,7 +42,8 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
   function accept(value, ticket) {
     if (ticket <= applied) return false;
     applied = ticket;
-    confirmed = { design: normalizeDesign(value.design, { ...value.images, ...uploaded }), images: value.images, revision: value.revision };
+    confirmed = { design: normalizeDesign(value.design, { ...value.images, ...uploaded }), images: value.images, revision: value.revision, readOnly: value.readOnly === true };
+    warning = value.warning || '';
     return true;
   }
 
@@ -55,7 +56,6 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
     if (!force && flushing) return false;
     if (!accept(value, ticket)) return false;
     shown = confirmed.design;
-    warning = value.warning || '';
     available = true;
     return true;
   }
@@ -70,6 +70,7 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
   }
 
   async function put(design, { expectedRevision = confirmed.revision, replacement = false } = {}) {
+    requireWritable();
     const ticket = ++issued;
     const response = await fetchImpl('/api/design/current', {
       method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': expectedRevision || 'default' }, body: JSON.stringify(design),
@@ -81,7 +82,12 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
       shown = confirmed.design;
       throw Object.assign(new Error('別の画面で見た目が変更されたため、最新の内容に切り替えました。もう一度操作してください。'), { conflict: true });
     }
-    if (!response.ok) throw new Error(await failureMessage(response, '見た目を保存できません。'));
+    if (!response.ok) {
+      const value = await response.json().catch(() => null);
+      // The original may have become unreadable after this page loaded it.
+      if (value?.readOnly) await reloadExternal(true);
+      throw new Error(value?.error || '見た目を保存できません。');
+    }
     accept(await response.json(), ticket);
     if (replacement) { shown = confirmed.design; emit({ applied: true }); }
     // Newer edits still waiting stay on screen; otherwise show what was stored.
@@ -102,15 +108,22 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
     }
   }
 
+  function requireWritable() {
+    if (!available) throw new Error('見た目を保存できません。ローカルサーバーから開いているか確認してください。');
+    if (confirmed.readOnly) throw new Error(warning);
+  }
+
   const store = {
     get design() { return shown; },
     get images() { return images(); },
     get revision() { return confirmed.revision; },
     get available() { return available; },
+    get writable() { return available && !confirmed.readOnly; },
     get warning() { return warning; },
     // Resolves once this design, or a newer one requested meanwhile, is stored.
     save(design) {
-      if (!available) return Promise.reject(new Error('見た目を保存できません。ローカルサーバーから開いているか確認してください。'));
+      try { requireWritable(); }
+      catch (error) { if (confirmed.readOnly) emit({ reverted: true }); return Promise.reject(error); }
       if (replacing) return Promise.reject(new Error('デザインを適用中です。完了後にもう一度操作してください。'));
       const normalized = normalizeDesign(design, images());
       shown = normalized; desired = normalized; latest = normalized;
@@ -120,7 +133,7 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
     async waitForSaves() { while (flushing) await flushing; return confirmed.revision; },
     async applyPreset(preset, expectedRevision) {
       await store.waitForSaves();
-      if (!available) throw new Error('見た目を保存できません。ローカルサーバーから開いているか確認してください。');
+      requireWritable();
       if (replacing || confirmed.revision !== expectedRevision) throw new Error('別の画面で見た目が変更されました。キャンセルして開き直してください。');
       if (!validPresetId(preset.id) || !preset.revision) throw new Error('プリセットを読み直してください。');
       replacing = true;
@@ -128,6 +141,7 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
       finally { replacing = false; }
     },
     async reset(expectedRevision = null) {
+      requireWritable();
       const latestRevision = await store.waitForSaves();
       if (expectedRevision && expectedRevision !== latestRevision) throw new Error('別の画面で見た目が変更されました。もう一度操作してください。');
       expectedRevision ||= latestRevision;
@@ -137,7 +151,7 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
       finally { replacing = false; }
     },
     async uploadImage(file) {
-      if (!available) throw new Error('画像を保存できません。ローカルサーバーから開いているか確認してください。');
+      requireWritable();
       const response = await fetchImpl('/api/design/images', { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
       if (!response.ok) throw new Error(await failureMessage(response, '画像を保存できません。'));
       const { ref, ...info } = await response.json();
@@ -197,11 +211,13 @@ export function createPresetClient(store, { fetchImpl = (...args) => globalThis.
       return preset;
     },
     async create(name) {
+      if (store.writable === false) throw new Error(store.warning);
       name = normalizePresetName(name);
       const currentRevision = await store.waitForSaves();
       return request('/api/design/presets', { method: 'POST', body: { name, currentRevision } });
     },
     async overwrite(preset) {
+      if (store.writable === false) throw new Error(store.warning);
       const currentRevision = await store.waitForSaves();
       return request(path(preset.id), { method: 'PUT', body: { overwrite: true, currentRevision }, revision: preset.revision });
     },

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDesignStore, checkImageFile } from '../src/browser/design-client.js';
+import { createDesignStore, createPresetClient, checkImageFile } from '../src/browser/design-client.js';
 import { defaultDesign, MAX_IMAGE_BYTES } from '../src/shared/design-model.js';
 
 // A fake server that records requests and can be told to reject a revision.
@@ -12,6 +12,7 @@ function fakeServer({ revision = 'r0', conflictOnce = false, failLoad = false } 
     requests.push({ url, method: options.method || 'GET', headers: options.headers || {}, body: options.body });
     if (url === '/api/design/current' && (!options.method || options.method === 'GET')) return failLoad ? reply(503, { error: '使えません。' }) : reply(200, current);
     if (url === '/api/design/current' && options.method === 'PUT') {
+      if (current.readOnly) return reply(422, { error: current.warning, readOnly: true });
       if (conflict) { conflict = false; current = { ...current, revision: 'other' }; return reply(409, { error: 'conflict', revision: 'other' }); }
       if (options.headers['If-Match'] !== current.revision) return reply(409, { error: 'stale' });
       current = { design: JSON.parse(options.body), images: current.images, revision: `r${++count}` };
@@ -70,6 +71,54 @@ test('uploaded images join the catalog so their references survive normalization
   await store.save({ ...defaultDesign(), studio: { ...defaultDesign().studio, image: ref } });
   assert.equal(store.design.studio.image, ref);
   assert.equal(server.current.design.studio.image, ref);
+});
+
+test('unreadable originals keep the server available but refuse every current write', async () => {
+  const server = fakeServer();
+  Object.assign(server.current, { readOnly: true, warning: '原本を退避してください。' });
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const presets = createPresetClient(store, { fetchImpl: server.fetchImpl });
+  assert.equal(store.available, true);
+  assert.equal(store.writable, false);
+  for (const operation of [() => store.save(defaultDesign()), () => store.reset(),
+    () => store.applyPreset({ id: 'saved', revision: 'preset-r0' }, store.revision),
+    () => store.uploadImage({ type: 'image/png' }), () => presets.create('保存しない'),
+    () => presets.overwrite({ id: 'saved', revision: 'preset-r0' })]) {
+    await assert.rejects(operation(), /退避/);
+  }
+  assert.deepEqual(server.requests.map(request => request.method), ['GET']);
+  assert.deepEqual(store.design, defaultDesign());
+});
+
+test('a protection response refreshes the reason when the original breaks after page load', async () => {
+  const server = fakeServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  Object.assign(server.current, { revision: 'broken', readOnly: true, warning: '原本を退避してください。' });
+  await assert.rejects(store.save({ ...defaultDesign(), name: '保存しない' }), /退避/);
+  assert.equal(store.writable, false);
+  assert.equal(store.revision, 'broken');
+  assert.match(store.warning, /退避/);
+  assert.deepEqual(store.design, defaultDesign());
+  await assert.rejects(store.reset(), /退避/);
+  assert.equal(server.requests.filter(request => request.method === 'PUT').length, 1);
+});
+
+test('reloading a repaired original clears protection and restores saving', async () => {
+  const server = fakeServer();
+  Object.assign(server.current, { readOnly: true, warning: '原本を退避してください。' });
+  let source;
+  class Events {
+    constructor() { source = this; this.listeners = {}; }
+    addEventListener(type, listener) { this.listeners[type] = listener; }
+  }
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, EventSourceClass: Events });
+  delete server.current.readOnly; delete server.current.warning; server.current.revision = 'repaired';
+  source.listeners.change({ data: JSON.stringify({ revision: 'repaired' }) });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(store.writable, true);
+  assert.equal(store.warning, '');
+  await store.save({ ...defaultDesign(), name: '修復後' });
+  assert.equal(store.design.name, '修復後');
 });
 
 test('change events from other pages reload the design once it differs', async () => {

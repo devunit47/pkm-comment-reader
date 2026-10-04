@@ -15,8 +15,10 @@ export function initializeDesignPresets({ designStore, designPreview, beginChang
   const selected = () => presets.find(preset => preset.id === $('preset-select').value && !preset.error);
   const status = message => { $('preset-status').textContent = message; };
   function buttons() {
-    for (const id of ['save', 'reset', 'refresh', 'folder']) $(`preset-${id}`).disabled = busy || !designStore.available;
-    for (const id of ['load', 'overwrite', 'rename', 'delete']) $(`preset-${id}`).disabled = busy || !selected() || !designStore.available;
+    for (const id of ['save', 'reset']) $(`preset-${id}`).disabled = busy || !designStore.available || designStore.writable === false;
+    for (const id of ['refresh', 'folder']) $(`preset-${id}`).disabled = busy || !designStore.available;
+    for (const id of ['load', 'overwrite']) $(`preset-${id}`).disabled = busy || !selected() || !designStore.available || designStore.writable === false;
+    for (const id of ['rename', 'delete']) $(`preset-${id}`).disabled = busy || !selected() || !designStore.available;
     $('preset-select').disabled = busy;
     const preset = selected();
     $('preset-details').textContent = preset ? `id: ${preset.id} ／ 更新: ${formatDate(preset.updatedAt)}` : '';
@@ -115,6 +117,7 @@ export function initializeDesignPresets({ designStore, designPreview, beginChang
     const result = await client.openFolder(selected()?.id);
     status(result.opened ? 'プリセットのフォルダーを開きました。' : `フォルダーの場所: ${result.directory}`);
   });
+  designStore.subscribe(buttons);
   run(async () => { await refresh(); status(''); });
   return { refresh: () => run(async () => { await refresh(); status('プリセットの一覧を更新しました。'); }) };
 }

@@ -948,15 +948,17 @@ const designPreview = initializeDesignPreview({ designStore, themeEditor,
   getStudio: () => studio, getLiveRatio: () => workspaceEditor.talkRatio(),
   commitStudio(next) { imageGeneration++; speechImageGeneration++; studio = next; renderStudio(); },
 });
-initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageChange, applyImageFile,
+initializeCustomization({ platforms: enabledPlatforms, themeEditor, designStore, beginImageChange, applyImageFile,
   async resetAppearance() {
     designPreview.reset();
     imageGeneration++; speechImageGeneration++;
+    // Preserve the operating UI too when the server protects an unreadable original.
+    await designStore.reset();
     const design = defaultDesign();
     studio = design.studio;
     themeEditor.reflectTheme(design.theme); workspaceEditor.reset();
     renderStudio(); render();
-    try { await designStore.save(design); return true; } catch { return false; }
+    return true;
   },
 });
 showLiveOverlays = designPreview.showLive;
