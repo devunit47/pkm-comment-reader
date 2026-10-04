@@ -24,6 +24,7 @@ jobs:
           mkdir site
           cp pages/index.html site/index.html
           cp pages/index.html site/404.html
+          cp -R pages/screens site/screens
           touch site/.nojekyll
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
