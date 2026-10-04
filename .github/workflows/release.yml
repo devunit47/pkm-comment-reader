@@ -1,3 +1,4 @@
+# Runs only for version tags so ordinary pushes never publish a release.
 name: Release Windows local version
 
 on:

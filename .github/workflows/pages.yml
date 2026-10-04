@@ -1,3 +1,4 @@
+# Deployed by hand because Pages only hosts the static moved notice.
 name: Publish moved notice to GitHub Pages
 run-name: Publish GitHub Pages moved notice
 
