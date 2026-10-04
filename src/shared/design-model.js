@@ -18,6 +18,23 @@ export const IMAGE_TYPES = Object.freeze({ png: 'image/png', jpg: 'image/jpeg', 
 const IMAGE_REF = /^images\/([0-9a-f]{64})\.(png|jpg|webp|gif)$/;
 const SCOPE = /^(?:current|presets\/[a-z0-9-]{1,64})$/;
 const record = value => !!value && typeof value === 'object' && !Array.isArray(value);
+const nameSegmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
+function nameParts(value, limit = MAX_DESIGN_NAME + 1) {
+  const parts = [];
+  for (const part of nameSegmenter.segment(value)) { parts.push(part.segment); if (parts.length >= limit) break; }
+  return parts;
+}
+
+export function normalizePresetName(value) {
+  if (typeof value !== 'string' || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(value)) throw new Error('名前に改行や制御文字は使えません。');
+  const name = value.trim();
+  if (!name || nameParts(name).length > MAX_DESIGN_NAME) throw new Error('名前は1〜40文字で入力してください。絵文字も1文字として数えます。');
+  return name;
+}
+
+export function validPresetId(value) {
+  return typeof value === 'string' && /^[a-z0-9-]{1,64}$/.test(value) && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(value);
+}
 
 export const validImageRef = value => typeof value === 'string' && IMAGE_REF.test(value);
 export const imageExtension = type => Object.keys(IMAGE_TYPES).find(extension => IMAGE_TYPES[extension] === type) || '';
@@ -55,7 +72,7 @@ export function normalizeDesign(value, images = {}) {
   }
   return {
     format: DESIGN_FORMAT, version: DESIGN_VERSION,
-    name: typeof value.name === 'string' ? value.name.slice(0, MAX_DESIGN_NAME) : '',
+    name: typeof value.name === 'string' ? nameParts(value.name).slice(0, MAX_DESIGN_NAME).join('') : '',
     // The server cannot run compileTheme (it needs CSSOM); pages compile on load.
     theme: typeof value.theme === 'string' && themeByteLength(value.theme) <= MAX_THEME_CSS_BYTES ? value.theme : '',
     studio: normalizeStudio(value.studio, studioOptions(images)),

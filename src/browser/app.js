@@ -2,6 +2,7 @@ import { renderStageAppearance, renderStageComments, markClippedComments } from 
 import { OutputPublisher } from '../shared/output-protocol.js';
 import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
+import { initializeDesignPresets } from './design-presets.js';
 import { initializeCustomization } from './customization.js';
 import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
 import { compileTheme } from '../shared/theme.js';
@@ -950,6 +951,9 @@ initializeCustomization({ platforms: enabledPlatforms, themeEditor, beginImageCh
 });
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, onSizeChange: () => workspaceEditor.reload() });
+initializeDesignPresets({ designStore, designPreview,
+  beginChange() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
+});
 // Another page changed the design, or a failed save was undone: show the saved design.
 designStore.subscribe(detail => {
   imageGeneration++; speechImageGeneration++;
