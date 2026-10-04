@@ -27,7 +27,7 @@
 
 - 外部パッケージのインストールは不要（依存なし）。
 - CI（`.github/workflows/ci.yml`）は PR で `npm run check`・`npm test`（Ubuntu）と `build:local`（Windows）を実行する。
-- 2026-10-04 時点（P1-B2 比率ごとの配置の後）では、全 220 件中 215 件成功・5 件スキップ（シンボリックリンク権限 4 件と非 Windows 専用 1 件）。
+- P1-B2最終版の [PR CI](https://github.com/devunit47/pkm-comment-reader/actions/runs/37166991572) は成功（2026-10-04）。Ubuntuの構文チェック・全テストと、Windowsの配布版ビルドを確認済み。
 
 ## コードの約束事
 
