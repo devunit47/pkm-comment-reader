@@ -1,8 +1,8 @@
-import { normalizeStudio } from './studio.js';
-import { compileTheme } from './theme.js';
+import { normalizeStudio } from '../shared/studio.js';
+import { compileTheme } from '../shared/theme.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
-import { MAX_OVERLAYS, normalizeOverlays, createOverlay, removeOverlay, addOverlayAsset } from './overlay-model.js';
-import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, withTalk } from './design-model.js';
+import { MAX_OVERLAYS, normalizeOverlays, createOverlay, removeOverlay, addOverlayAsset } from '../shared/overlay-model.js';
+import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, withTalk } from '../shared/design-model.js';
 import { checkImageFile } from './design-client.js';
 
 const VISUAL_KEYS = Object.keys(normalizeStudio());

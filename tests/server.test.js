@@ -15,7 +15,7 @@ test('the app forbids camera and microphone access and serves the studio module'
   const base = await serve(t);
   const page = await fetch(base);
   assert.equal(page.headers.get('permissions-policy'), 'camera=(), microphone=()');
-  const studio = await fetch(`${base}/studio.js`);
+  const studio = await fetch(`${base}/src/shared/studio.js`);
   assert.equal(studio.status, 200);
   assert.match(studio.headers.get('content-type'), /javascript/);
 });

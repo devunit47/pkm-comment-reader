@@ -5,7 +5,7 @@ import {
   MAX_OVERLAY_TOTAL_ASSET_BYTES, MAX_OVERLAY_PIXELS,
   normalizeOverlays, createOverlay, removeOverlay, pruneOverlayAssets,
   addOverlayAsset, inspectOverlayImage,
-} from '../overlay-model.js';
+} from '../src/shared/overlay-model.js';
 
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 const pngBytes = Buffer.from(png.split(',')[1], 'base64');

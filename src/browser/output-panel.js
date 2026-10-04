@@ -1,4 +1,4 @@
-import { OUTPUT_PREFERENCES_KEY, OUTPUT_SIZES, normalizeOutputPreferences, outputUrl } from './output-protocol.js';
+import { OUTPUT_PREFERENCES_KEY, OUTPUT_SIZES, normalizeOutputPreferences, outputUrl } from '../shared/output-protocol.js';
 
 const SIZE_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）', '1440x1080': '1440 × 1080（4:3）' };
 

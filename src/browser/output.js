@@ -1,8 +1,8 @@
-import { compileTheme } from './theme.js';
+import { compileTheme } from '../shared/theme.js';
 import { createDesignStore } from './design-client.js';
-import { resolveStudioImages, resolveOverlayAssets, nearestRatio, talkLayout, talkOverlays } from './design-model.js';
+import { resolveStudioImages, resolveOverlayAssets, nearestRatio, talkLayout, talkOverlays } from '../shared/design-model.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
-import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from './output-protocol.js';
+import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from '../shared/output-protocol.js';
 
 // The stream output only renders. It has no chat connection, no audio and no
 // controls: the control page publishes live state over a BroadcastChannel and

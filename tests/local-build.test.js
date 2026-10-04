@@ -4,8 +4,8 @@ import { mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { BROWSER_ASSETS, LOCAL_FILES } from '../asset-manifest.js';
-import { buildLocal, stageLocalFiles } from '../build-local.js';
+import { BROWSER_ASSETS, LOCAL_FILES } from '../src/server/asset-manifest.js';
+import { buildLocal, stageLocalFiles } from '../scripts/build-local.js';
 
 async function output(t) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-local-build-'));
@@ -16,20 +16,25 @@ async function output(t) {
 test('local asset staging packages the backend and empty user folders without copying user files', async t => {
   const { folder, destination } = await output(t);
   await stageLocalFiles(destination);
-  assert.deepEqual((await readdir(folder)).sort(), [...LOCAL_FILES, 'customization'].sort());
+  assert.deepEqual((await readdir(folder)).sort(), [...new Set(LOCAL_FILES.map(file => file.split('/')[0])), 'customization'].sort());
+  for (const directory of ['src', 'src/browser', 'src/server', 'src/shared']) {
+    const prefix = directory + '/';
+    const entries = LOCAL_FILES.filter(file => file.startsWith(prefix)).map(file => file.slice(prefix.length).split('/')[0]);
+    assert.deepEqual((await readdir(join(folder, directory))).sort(), [...new Set(entries)].sort());
+  }
   assert.deepEqual((await readdir(join(folder, 'customization'))).sort(), ['images', 'styles']);
   assert.deepEqual(await readdir(join(folder, 'customization', 'images')), []);
   assert.deepEqual(await readdir(join(folder, 'customization', 'styles')), []);
-  assert.ok(LOCAL_FILES.includes('local-customization.js'));
-  assert.ok(BROWSER_ASSETS.includes('customization.js'));
-  assert.ok(!BROWSER_ASSETS.includes('local-customization.js'));
+  assert.ok(LOCAL_FILES.includes('src/server/local-customization.js'));
+  assert.ok(BROWSER_ASSETS.includes('src/browser/customization.js'));
+  assert.ok(!BROWSER_ASSETS.includes('src/server/local-customization.js'));
   assert.ok(LOCAL_FILES.every(file => !file.startsWith('customization/')));
-  const config = await readFile(join(folder, 'app-config.js'), 'utf8');
+  const config = await readFile(join(folder, 'src/shared/app-config.js'), 'utf8');
   assert.match(config, /enabledPlatforms = Object\.freeze\(\['twitch'\]\)/);
   assert.doesNotMatch(config, /kick/);
   const html = await readFile(join(folder, 'index.html'), 'utf8');
   assert.equal((html.match(/data-service="kick" hidden/g) || []).length, 3);
-  for (const file of ['style.css', 'theme.js', 'studio.js', 'speech-background.svg']) assert.deepEqual(await readFile(new URL('../' + file, import.meta.url)), await readFile(join(folder, file)), file);
+  for (const file of ['style.css', 'src/shared/theme.js', 'src/shared/studio.js', 'speech-background.svg']) assert.deepEqual(await readFile(new URL('../' + file, import.meta.url)), await readFile(join(folder, file)), file);
 });
 
 test('rebuilding preserves the destination customization directory, including unsupported user files', async t => {
@@ -41,6 +46,10 @@ test('rebuilding preserves the destination customization directory, including un
   await stageLocalFiles(destination);
   assert.equal(await readFile(join(folder, 'customization', 'styles', 'my-design.css'), 'utf8'), '.pokome-workspace { color: red; }');
   assert.equal(await readFile(join(folder, 'customization', 'images', 'notes.txt'), 'utf8'), 'Keep my original notes');
+  assert.equal(await readFile(join(folder, 'customization', 'README.txt'), 'utf8'), 'My folder notes');
+  await writeFile(join(folder, 'src', 'browser', 'private.env'), 'Keep private');
+  await assert.rejects(stageLocalFiles(destination), /空の出力先/);
+  assert.equal(await readFile(join(folder, 'src', 'browser', 'private.env'), 'utf8'), 'Keep private');
   assert.equal(await readFile(join(folder, 'customization', 'README.txt'), 'utf8'), 'My folder notes');
 });
 
@@ -66,7 +75,7 @@ test('packaging still requires Windows while shared staging remains portable', {
 });
 
 test('JavaScript checking excludes customization source files', async () => {
-  const checker = await readFile(new URL('../check-js.js', import.meta.url), 'utf8');
+  const checker = await readFile(new URL('../scripts/check-js.js', import.meta.url), 'utf8');
   assert.match(checker, /'customization'/);
   const ignored = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
   assert.match(ignored, /^customization\/$/m);

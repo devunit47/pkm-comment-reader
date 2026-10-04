@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { OutputPublisher, applyOutputMessage, createOutputView, normalizeOutputMessage, parseOutputOptions, outputUrl, normalizeOutputPreferences, CONTROLLER_TIMEOUT_MS, PRESENCE_MS } from '../output-protocol.js';
+import { OutputPublisher, applyOutputMessage, createOutputView, normalizeOutputMessage, parseOutputOptions, outputUrl, normalizeOutputPreferences, CONTROLLER_TIMEOUT_MS, PRESENCE_MS } from '../src/shared/output-protocol.js';
 
 class FakeChannel {
   static sent = [];

@@ -1,14 +1,14 @@
-import { DEVELOPMENT_ASSETS } from './asset-manifest.js';
-import { enabledPlatforms } from './app-config.js';
-import { handleLocalSpeech } from './local-speech.js';
-import { createLocalCustomizationHandler, DEFAULT_CUSTOMIZATION_DIRECTORY } from './local-customization.js';
-import { createDesignStorage } from './design-storage.js';
+import { DEVELOPMENT_ASSETS } from './src/server/asset-manifest.js';
+import { enabledPlatforms } from './src/shared/app-config.js';
+import { handleLocalSpeech } from './src/server/local-speech.js';
+import { createLocalCustomizationHandler, DEFAULT_CUSTOMIZATION_DIRECTORY } from './src/server/local-customization.js';
+import { createDesignStorage } from './src/server/design-storage.js';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { validChannel } from './connections.js';
+import { validChannel } from './src/shared/connections.js';
 const files = Object.fromEntries(DEVELOPMENT_ASSETS.map(file => [file === 'index.html' ? '/' : '/' + file, file]));
 const types = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 
@@ -21,7 +21,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end('Bad request'); return; }
     if (url.pathname === '/api/customizations' || url.pathname.startsWith('/api/customizations/')) { await handleLocalCustomization(req, res, url); return; }
     if (url.pathname.startsWith('/api/design/')) { await design.handle(req, res, url); return; }
-    if (!enabledPlatforms.includes('kick') && (url.pathname === '/kick.js' || url.pathname.startsWith('/api/kick/'))) { res.writeHead(404); res.end('Not found'); return; }
+    if (!enabledPlatforms.includes('kick') && (url.pathname === '/src/browser/kick.js' || url.pathname.startsWith('/api/kick/'))) { res.writeHead(404); res.end('Not found'); return; }
     if (url.pathname.startsWith('/api/speech/')) { await handleLocalSpeech(req, res, url, fetchImpl); return; }
     if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); res.end(); return; }
     if (url.pathname.startsWith('/api/kick/channel/')) {

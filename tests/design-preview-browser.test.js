@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
-import { DEFAULT_STUDIO } from '../studio.js';
-import { createOverlay } from '../overlay-model.js';
+import { DEFAULT_STUDIO } from '../src/shared/studio.js';
+import { createOverlay } from '../src/shared/overlay-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in

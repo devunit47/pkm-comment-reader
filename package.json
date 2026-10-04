@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "check": "node check-js.js",
-    "build:local": "node build-local.js"
+    "check": "node scripts/check-js.js",
+    "build:local": "node scripts/build-local.js"
   }
 }

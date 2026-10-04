@@ -1,7 +1,7 @@
-import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout, talkSpeechStyles } from './workspace-model.js';
-import { nearestRatio, talkLayout, defaultTalkLayout, talkOverlays, withTalk } from './design-model.js';
-import { OUTPUT_SIZES } from './output-protocol.js';
-export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from './workspace-model.js';
+import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout, talkSpeechStyles } from '../shared/workspace-model.js';
+import { nearestRatio, talkLayout, defaultTalkLayout, talkOverlays, withTalk } from '../shared/design-model.js';
+import { OUTPUT_SIZES } from '../shared/output-protocol.js';
+export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from '../shared/workspace-model.js';
 
 // The home layout is an operating preference kept in this browser. The talk
 // (stream) layout is part of the design and is saved in the customization folder,

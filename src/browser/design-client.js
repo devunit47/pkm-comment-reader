@@ -1,4 +1,4 @@
-import { normalizeDesign, defaultDesign, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, IMAGE_TYPES } from './design-model.js';
+import { normalizeDesign, defaultDesign, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, IMAGE_TYPES } from '../shared/design-model.js';
 
 // Backups from the browser-storage era held one landscape layout.
 export const LEGACY_RATIO = '16:9';

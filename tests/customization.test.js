@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { editionInfo, createCustomizationStatus, runCustomizationApply } from '../customization.js';
+import { editionInfo, createCustomizationStatus, runCustomizationApply } from '../src/browser/customization.js';
 
 test('capabilities distinguish distributed local and development local editions', () => {
   const local = editionInfo(['twitch']);

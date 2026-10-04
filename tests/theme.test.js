@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compileTheme, MAX_THEME_CSS_BYTES } from '../theme.js';
+import { compileTheme, MAX_THEME_CSS_BYTES } from '../src/shared/theme.js';
 
 import { chromium, executablePath, browserAvailable } from './browser-support.js';
 

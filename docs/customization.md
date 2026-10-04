@@ -9,8 +9,8 @@ Windowsローカル配布版・ローカル開発版のどちらでも、配信�
 ```text
 アプリのフォルダー/
   style.css                標準の外観（直接編集しない）
-  theme.js                 CSSの処理・編集例（直接編集しない）
-  studio.js                配信デザインの初期設定（直接編集しない）
+  src/shared/theme.js      CSSの処理・編集例（直接編集しない）
+  src/shared/studio.js     配信デザインの初期設定（直接編集しない）
   speech-background.svg    標準の読み上げ背景（直接編集しない）
   customization/
     styles/                利用者のCSS

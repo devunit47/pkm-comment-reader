@@ -3,8 +3,8 @@ import { lstat, open, readdir, rename, unlink, utimes, writeFile } from 'node:fs
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { safeDirectory, imageSignatureMatches, ensureCustomizationDirectories } from './local-customization.js';
-import { rasterDimensions } from './overlay-model.js';
-import { MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, IMAGE_TYPES, imageExtension, normalizeDesign, defaultDesign, designImageRefs } from './design-model.js';
+import { rasterDimensions } from '../shared/overlay-model.js';
+import { MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, IMAGE_TYPES, imageExtension, normalizeDesign, defaultDesign, designImageRefs } from '../shared/design-model.js';
 
 // The applied design lives in customization/current: design.json plus images
 // named by their SHA-256. Pages read it through this API and follow changes

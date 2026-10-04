@@ -1,3 +1,0 @@
-export const BROWSER_ASSETS = Object.freeze(['index.html', 'style.css', 'app.js', 'connections.js', 'chat-state.js', 'speech-options.js', 'speech-engine.js', 'studio.js', 'stage-appearance.js', 'overlay-model.js', 'design-model.js', 'design-client.js', 'design-preview.js', 'workspace.js', 'workspace-model.js', 'theme.js', 'settings-backup.js', 'customization.js', 'speech-background.svg', 'output.html', 'output.js', 'output-protocol.js', 'output-panel.js']);
-export const LOCAL_FILES = Object.freeze([...BROWSER_ASSETS, 'local-speech.js', 'local-customization.js', 'design-storage.js', 'app-config.js', 'server.js', 'asset-manifest.js', 'package.json', 'LICENSE', 'PRIVACY.md']);
-export const DEVELOPMENT_ASSETS = Object.freeze([...BROWSER_ASSETS, 'app-config.js', 'kick.js']);
