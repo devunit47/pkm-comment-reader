@@ -79,8 +79,14 @@ export function initializeWorkspace(storage, designStore, { onTalkRatioChange = 
   }
   function interactionStart(mode, element, resize, axes = [1, 1]) {
     const p = { ...layouts[mode].panels[element.dataset.panelType] };
-    if (mode !== 'talk' || element !== talkSpeech) return p;
+    if (mode !== 'talk') return p;
     const root = roots[mode], canvas = root.getBoundingClientRect(), visible = element.getBoundingClientRect();
+    if (element !== talkSpeech) {
+      // A panel pushed down by the speech minimum moves from where it is shown, keeping its shown size.
+      const shownY = (visible.top - canvas.top + root.scrollTop) / canvas.height * 100;
+      if (!resize && Math.abs(shownY - p.y) > .01) { p.y = shownY; p.h = visible.height / canvas.height * 100; }
+      return p;
+    }
     // Reconcile only the dimensions the user is editing. A viewport resize or
     // a click without movement must not rewrite the saved desktop percentages.
     if (resize) {

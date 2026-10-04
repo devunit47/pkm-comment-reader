@@ -53,8 +53,11 @@ browserTest('the chosen ratio is edited inside its own frame and saved only to t
   assert.deepEqual({ left: chat.left, width: chat.width }, { left: '4%', width: '92%' });
   assert.match(chat.top, /^max\(64%/); assert.match(chat.height, /93%/);
   const move = page.locator('.stage-chat [data-layout-handle] button').first();
-  await move.press('ArrowUp'); await move.press('ArrowUp');
-  const saved = await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y === 60);
+  // The speech minimum can push the comments below 64% on this screen, and
+  // keys move them from where they are shown (down, since up is held by it).
+  const shown = await page.locator('#talk-stage .stage-chat').evaluate(element => { const stage = element.closest('#talk-stage').getBoundingClientRect(); return (element.getBoundingClientRect().top - stage.top) / stage.height * 100; });
+  await move.press('ArrowDown'); await move.press('ArrowDown');
+  const saved = await waitForDesign(url, design => Math.abs(design.ratios['9:16']?.layout?.panels.chat.y - (shown + 4)) < .1);
   assert.equal(saved.ratios['16:9'], null, 'the landscape ratio is untouched');
   assert.equal(saved.ratios['4:3'], null);
   await page.locator('#layout-session #finish').click();
@@ -107,6 +110,46 @@ browserTest('the portrait default keeps the speech minimum off the comments on a
   assert.ok(boxes['.stage-speech'].bottom <= boxes['.stage-chat'].top + 1, `speech ends at ${boxes['.stage-speech'].bottom}, comments start at ${boxes['.stage-chat'].top}`);
   assert.ok(boxes['.stage-chat'].bottom <= boxes['.stage-footer'].top + 1, 'the comments keep their bottom edge');
   assert.ok(boxes['.stage-chat'].height > 100, 'the comments stay usable');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('a comments panel pushed down by the speech minimum moves from where it is shown', async t => {
+  const { page, editor, url, errors } = await fixture(t, { width: 1280, height: 720 });
+  await page.locator('[data-page="studio"]').click();
+  await editor.locator('#mode').selectOption('talk');
+  await editor.locator('#ratio').selectOption('9:16');
+  // Free movement, so the shown distance can be compared exactly.
+  await editor.locator('#snap').evaluate(input => { input.checked = false; input.dispatchEvent(new Event('change')); });
+  await editor.locator('#edit').click();
+  const box = () => page.locator('#talk-stage .stage-chat').evaluate(element => { const { top, height } = element.getBoundingClientRect(); return { top, height }; });
+  const before = await box();
+  const handle = await page.locator('.stage-chat [data-layout-handle] button').first().boundingBox();
+  const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  await page.mouse.move(x, y + 20, { steps: 4 }); await page.mouse.up();
+  const after = await box();
+  assert.ok(Math.abs(after.top - before.top - 20) <= 1, `moved from ${before.top} to ${after.top}`);
+  assert.ok(Math.abs(after.height - before.height) <= 1, `height changed from ${before.height} to ${after.height}`);
+  await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y > 64);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('the preview moves the panels below the speech panel when draft CSS raises its minimum', async t => {
+  const { page, preview, errors } = await fixture(t);
+  await page.locator('[data-page="studio"]').click();
+  await preview.locator('#open-design-preview').click();
+  await page.waitForFunction(root => !document.querySelector(root).shadowRoot.getElementById('apply-design').disabled, PREVIEW);
+  await preview.locator('#preview-width').selectOption('1080x1920');
+  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 1920, PREVIEW);
+  await preview.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await preview.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height: 600px; }');
+  const frame = page.frameLocator(`${PREVIEW} #design-preview-frame`);
+  // The draft CSS input redraws the preview synchronously.
+  const boxes = await frame.locator('#talk-stage').evaluate(stage => Object.fromEntries(['.stage-speech', '.stage-chat'].map(selector => {
+    const box = stage.querySelector(selector).getBoundingClientRect(); return [selector, { bottom: box.bottom, top: box.top, height: box.height }];
+  })));
+  assert.ok(boxes['.stage-speech'].height >= 600, 'the draft CSS applies');
+  assert.ok(boxes['.stage-speech'].bottom <= boxes['.stage-chat'].top + 1, `speech ends at ${boxes['.stage-speech'].bottom}, comments start at ${boxes['.stage-chat'].top}`);
   assert.deepEqual(errors, []);
 });
 

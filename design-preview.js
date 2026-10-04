@@ -101,6 +101,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getStudio, c
     renderStageComments(sampleList, selectOutputComments(SAMPLE_COMMENTS, draft.studio, 0, false));
     const themeStyle = frameDoc.getElementById('preview-theme');
     if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
+    // The draft CSS can change the speech minimum, which moves the panels below it.
+    applyTalkLayout(previewStage, baseline.layouts[draft.ratio]);
     const old = new Map([...frameDoc.querySelectorAll('.overlay-hit')].map(element => [element.dataset.overlayId, element]));
     for (const item of draft.overlays.items) {
       let hit = old.get(item.id);
