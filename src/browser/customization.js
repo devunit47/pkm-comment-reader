@@ -37,7 +37,7 @@ export async function runCustomizationApply(status, { loading, read, apply, succ
   }
 }
 
-export function initializeCustomization({ platforms, themeEditor, beginImageChange, applyImageFile, resetAppearance }) {
+export function initializeCustomization({ platforms, themeEditor, designStore, beginImageChange, applyImageFile, resetAppearance }) {
   const edition = editionInfo(platforms);
   let localStatus;
   const capabilities = document.createElement('section');
@@ -66,14 +66,30 @@ export function initializeCustomization({ platforms, themeEditor, beginImageChan
     <dialog aria-labelledby="reset-title"><h2 id="reset-title">見た目を標準に戻しますか？</h2><p>配色・文章・画像・追加CSS・ホームと雑談画面の配置を組み込みの標準に戻します。接続先・音声・ユーザー管理設定と、customizationフォルダーの素材（styles・images）は残ります。</p><div class="actions"><button id="confirm-reset" type="button">標準に戻す</button><button id="cancel-reset" type="button">キャンセル</button></div></dialog>`;
   document.body.append(recovery);
   const dialog = shadow.querySelector('dialog');
+  let protectedOriginal = false;
+  const updateProtection = () => {
+    const blocked = designStore?.available && designStore.writable === false;
+    shadow.getElementById('open-reset').disabled = !!blocked;
+    shadow.getElementById('confirm-reset').disabled = !!blocked;
+    if (blocked) {
+      dialog.close();
+      shadow.getElementById('result').textContent = designStore.warning;
+    } else if (protectedOriginal) shadow.getElementById('result').textContent = '';
+    protectedOriginal = !!blocked;
+  };
+  designStore?.subscribe(updateProtection);
+  updateProtection();
   shadow.getElementById('open-reset').onclick = () => { if (!dialog.open) dialog.showModal(); };
   shadow.getElementById('cancel-reset').onclick = () => dialog.close();
   shadow.getElementById('confirm-reset').onclick = async () => {
     dialog.close();
     // Cleared first, so the message always describes this reset once it is saved.
     shadow.getElementById('result').textContent = '';
-    const saved = await resetAppearance();
-    const message = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。ローカルサーバーが動いているか、customizationフォルダーを確認してください。';
+    let message;
+    try {
+      const saved = await resetAppearance();
+      message = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。ローカルサーバーが動いているか、customizationフォルダーを確認してください。';
+    } catch (error) { message = `標準に戻せませんでした：${error.message}`; }
     shadow.getElementById('result').textContent = message;
     localStatus?.clear(message);
     shadow.getElementById('open-reset').focus();

@@ -252,7 +252,21 @@ export function createDesignStorage(root) {
     }
     const revision = createHash('sha256').update(raw).digest('hex').slice(0, 32);
     try { return { design: normalizeDesign(JSON.parse(raw.toString('utf8')), list), images: list, revision }; }
-    catch { return { design: defaultDesign(), images: list, revision, warning: '保存されていたデザインを読み込めなかったため、標準の見た目を表示しています。' }; }
+    catch (error) {
+      const reason = error instanceof SyntaxError ? 'design.jsonのJSONに書き間違いがあります。' : 'design.jsonの形式・バージョンに対応していません。';
+      return { design: defaultDesign(), images: list, revision, readOnly: true,
+        warning: `${reason}標準の見た目を表示しています。原本と画像を保護するため、保存・標準復帰・プリセット適用を止めています。アプリを終了し、customization/currentをdesign.jsonとimagesごと別の場所へ退避してから、ファイルを修正するか対応する版で開き直してください。` };
+    }
+  }
+
+  function requireWritable(value) {
+    if (value.readOnly) throw Object.assign(failure(422, value.warning), { readOnly: true });
+  }
+
+  async function cleanupCurrent(value = null) {
+    value ??= await load();
+    // Fallback defaults cannot tell us which images the original still uses.
+    if (!value.readOnly) await cleanup(value.design);
   }
 
   async function cleanup(design, directory = images) {
@@ -295,6 +309,7 @@ export function createDesignStorage(root) {
   async function save(value, expected) {
     return exclusive(async () => {
       const before = await load();
+      requireWritable(before);
       if (expected !== before.revision) throw Object.assign(failure(409, '別の画面で見た目が変更されました。最新の内容を読み込み直してください。'), { revision: before.revision });
       let design;
       try { design = normalizeDesign(value, before.images); }
@@ -302,7 +317,7 @@ export function createDesignStorage(root) {
       await protectReleasedImages(before.design, design);
       await atomicWrite(designPath, JSON.stringify(design, null, 2), root);
       const after = await load();
-      await cleanup(after.design);
+      await cleanupCurrent(after);
       broadcast(after.revision);
       return after;
     });
@@ -475,7 +490,7 @@ export function createDesignStorage(root) {
         } catch (error) { item.error = error.status ? error.message : 'プリセットを読み込めません。ファイルとアクセス権を確認してください。'; }
         list.push(item);
       }
-      await cleanup((await load()).design);
+      await cleanupCurrent();
       list.sort((a, b) => a.name.localeCompare(b.name, 'ja') || a.id.localeCompare(b.id));
       return { presets: list, directory: presets };
     });
@@ -536,14 +551,14 @@ export function createDesignStorage(root) {
     return exclusive(async () => {
       await presetDirectories();
       name = presetName(name);
-      const value = await load(); checkRevision(currentRevision, value, true);
+      const value = await load(); requireWritable(value); checkRevision(currentRevision, value, true);
       const id = randomUUID(), staged = await createStagedPreset(id, { ...structuredClone(value.design), name }, images);
       try {
         if (await exists(presetPath(id))) throw failure(409, 'プリセットのidが重なりました。もう一度保存してください。');
         await renamePresetFolder(staged, presetPath(id));
       }
       catch (error) { await removeDirectory(staged, root).catch(() => {}); throw error; }
-      await cleanup(value.design);
+      await cleanupCurrent();
       return loadPreset(id);
     });
   }
@@ -554,7 +569,7 @@ export function createDesignStorage(root) {
       const before = await loadPreset(id); checkRevision(expected, before);
       let design, sourceImages;
       if (update.overwrite === true) {
-        const value = await load(); checkRevision(update.currentRevision, value, true);
+        const value = await load(); requireWritable(value); checkRevision(update.currentRevision, value, true);
         design = { ...structuredClone(value.design), name: before.design.name }; sourceImages = images;
       } else if (Object.hasOwn(update, 'name')) {
         design = { ...structuredClone(before.design), name: presetName(update.name) }; sourceImages = join(presetPath(id), 'images');
@@ -562,7 +577,7 @@ export function createDesignStorage(root) {
       const staged = await createStagedPreset(id, design, sourceImages, before);
       try { await replacePresetDirectory(presetPath(id), staged, join(presets, backupName(id)), { root }); }
       catch (error) { await removeDirectory(staged, root).catch(() => {}); throw error; }
-      await cleanup((await load()).design);
+      await cleanupCurrent();
       return loadPreset(id);
     });
   }
@@ -574,7 +589,7 @@ export function createDesignStorage(root) {
       const deleted = join(presets, `.deleted-${randomUUID()}`);
       await renamePresetFolder(presetPath(id), deleted);
       await removeDirectory(deleted, root);
-      await cleanup((await load()).design);
+      await cleanupCurrent();
       return { deleted: id };
     });
   }
@@ -582,14 +597,14 @@ export function createDesignStorage(root) {
   async function applyPreset(id, presetRevision, currentRevision) {
     return exclusive(async () => {
       await presetDirectories();
-      const before = await load(); checkRevision(currentRevision, before, true);
+      const before = await load(); requireWritable(before); checkRevision(currentRevision, before, true);
       const value = await loadPreset(id); checkRevision(presetRevision, value);
       for (const ref of designImageRefs(value.design)) await copyImage(ref, join(presetPath(id), 'images'), images);
       const list = await catalog(), design = normalizeDesign(structuredClone(value.design), list);
       await protectReleasedImages(before.design, design);
       await atomicWrite(designPath, JSON.stringify(design, null, 2), root);
       const after = await load();
-      await cleanup(after.design);
+      await cleanupCurrent(after);
       broadcast(after.revision);
       return after;
     });
@@ -742,7 +757,7 @@ export function createDesignStorage(root) {
       res.setHeader('Allow', 'GET, PUT, POST, DELETE');
       throw failure(405, 'この操作には対応していません。');
     } catch (error) {
-      if (error.status) json(error.status, { error: error.message, ...(error.revision ? { revision: error.revision } : {}) });
+      if (error.status) json(error.status, { error: error.message, ...(error.revision ? { revision: error.revision } : {}), ...(error.readOnly ? { readOnly: true } : {}) });
       else json(503, { error: 'customizationフォルダーを利用できません。通常のフォルダーか、アクセス権を確認してください。' });
     }
   }
