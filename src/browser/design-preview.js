@@ -3,7 +3,7 @@ import { compileTheme, DEFAULT_THEME_CSS, MAX_THEME_CSS_BYTES } from '../shared/
 import { OUTPUT_SIZES } from '../shared/output-protocol.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { MAX_OVERLAYS, normalizeOverlays, createOverlay, removeOverlay, addOverlayAsset, overlayBounds } from '../shared/overlay-model.js';
-import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, talkActorImage, normalizeActorImage, defaultActorImage, withTalk } from '../shared/design-model.js';
+import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, talkActorImage, normalizeActorImage, withTalk, defaultDesign } from '../shared/design-model.js';
 import { checkImageFile, STALE_DRAFT } from './design-client.js';
 import { createDraftSession } from '../shared/design-draft.js';
 
@@ -45,7 +45,7 @@ dialog[data-mode=preset] .side,dialog[data-mode=preset] .edit-only{display:none}
 @media(max-width:767px){#design-dialog[open]{display:block;overflow:auto}.bar{position:sticky;top:0;z-index:1;background:#101a18}.editor{display:flex;flex-direction:column}.center{order:-1}.side,.center{overflow:visible}.left,.right{border:0}.stage-box{flex:none;min-height:0}.tabs{display:flex;gap:8px;padding:8px 14px 0}.tabs button[aria-pressed=true]{background:#ace5cd;color:#11271e}#design-dialog[data-tab=targets] .right,#design-dialog[data-tab=settings] .left{display:none}dialog[data-mode=preset] .tabs{display:none}}`;
 
 const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><button id="open-design-preview" class="primary" type="button">デザインを編集</button><p id="preview-result" role="status"></p><p><small>このページの「画面の配置」と「配信出力（OBS用）」の出力の大きさは、移行中のため変更するとすぐに保存されます。</small></p></section>
-<dialog id="design-dialog" aria-labelledby="design-title" data-tab="targets"><div class="bar"><div class="title"><h2 id="design-title">デザインエディタ</h2><span id="draft-state" role="status"></span></div><div class="actions"><button id="restart-design" type="button" hidden>最新のデザインからやり直す</button><button id="discard-design" class="edit-only danger" type="button">変更をすべて破棄</button><button id="apply-design" class="primary" type="button">適用</button><button id="cancel-design" type="button">閉じる</button></div></div>
+<dialog id="design-dialog" aria-labelledby="design-title" data-tab="targets"><div class="bar"><div class="title"><h2 id="design-title">デザインエディタ</h2><span id="draft-state" role="status"></span><div class="actions edit-only"><button id="undo-design" type="button" aria-keyshortcuts="Control+Z">取り消し</button><button id="redo-design" type="button" aria-keyshortcuts="Control+Shift+Z Control+Y">やり直し</button></div></div><div class="actions"><button id="restart-design" type="button" hidden>最新のデザインからやり直す</button><button id="discard-design" class="edit-only danger" type="button">変更をすべて破棄</button><button id="apply-design" class="primary" type="button">適用</button><button id="cancel-design" type="button">閉じる</button></div></div>
 <p id="design-status" role="status" aria-live="polite"></p>
 <div class="editor"><div class="tabs edit-only" role="group" aria-label="表示する欄"><button id="show-targets" type="button" aria-pressed="true">対象</button><button id="show-settings" type="button" aria-pressed="false">設定</button></div>
 <aside class="side left" aria-label="道具と対象"><h3>道具</h3><div class="actions"><button id="add-text" type="button">文字を追加</button></div><label>画像を追加<input id="overlay-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><p><small>追加は各比率20個まで。画像はPNG・JPEG・WebP・GIF、1枚20MB・1600万画素まで。</small></p><details id="target-details" open><summary>対象一覧</summary><label>編集する対象<select id="target-select" size="12"></select></label></details></aside>
@@ -54,7 +54,7 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 <div data-target="screen"><span class="scope">全比率共通の見た目</span><label>テーマ<select id="draft-theme">${options([['mint', 'ミントの夜'], ['rose', 'ローズの夜'], ['violet', 'すみれの夜'], ['paper', 'お昼の喫茶室']])}</select></label><label>配色モード<select id="draft-accentMode">${options([['theme', 'テーマに合わせる'], ['custom', '自分で設定']])}</select></label><label>アクセントカラー<input id="draft-accent" type="color"></label><label class="check"><input id="draft-decoration" type="checkbox">星やハートの装飾を表示</label>
 <label>出力の大きさ<select id="draft-outputSize">${options(Object.keys(OUTPUT_SIZES).map(value => [value, OUTPUT_LABELS[value]]))}</select></label><p><small>配信出力と雑談画面はこの大きさの比率で表示します。確認サイズを変えても出力の大きさは変わりません。</small></p>
 <details><summary>詳細：テーマCSS</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false" placeholder="${DEFAULT_THEME_CSS.replace(/"/g, '&quot;')}"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。CSSで位置や大きさを指定すると、設定と重なる場合があります。動かせないときはCSSを解除または編集してください。</small></p><label>CSSファイルを読み込む<input id="draft-css-file" type="file" accept=".css,text/css"></label><div class="actions"><button id="draft-css-clear" type="button">CSSを解除</button><button id="draft-css-export" type="button">編集中のCSSを書き出す</button></div><p><small>書き出すのはCSSだけです。配置・画像・そのほかの設定は含みません。</small></p></details>
-<button id="draft-reset" type="button">追加項目・配色・文章・画像・立ち絵画像の配置・CSSを標準に戻して試す</button><p><small>立ち絵画像の配置は全比率で標準に戻します。既存の枠の配置は変わりません。「適用」までは元のデザインを保持します。</small></p></div>
+<button id="draft-reset" type="button">デザイン全体を標準に戻す</button><p><small>出力の大きさ・テーマCSS・すべての比率の配置と追加の文字・画像を含めて、標準のデザインを下書きに読み込みます。「適用」までは保存しません。</small></p></div>
 <div data-target="header" hidden><span class="scope">全比率共通の見た目</span>${textField('title', 'タイトル', 60)}${textField('subtitle', 'サブタイトル', 100)}</div>
 <div data-target="chat" hidden><span class="scope">全比率共通の見た目</span><label>コメント欄の見た目をまとめて切り替え<select id="draft-commentPreset">${options([...Object.entries(COMMENT_PRESETS).map(([value, preset]) => [value, preset.label]), ['', '個別に調整中']])}</select></label><p><small>選ぶと下の見た目とコメントの表示をまとめて変更します。配置・文字サイズ・表示件数は変えません。</small></p><label>コメントの表示<select id="draft-commentStyle">${options([['stacked', '名前を上に表示'], ['anonymous', '名前なし'], ['inline', '名前と本文を横並び'], ['compact', '1行コンパクト']])}</select></label><label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="64" step="1"></label><p><small>テーマCSSに文字サイズの指定がある場合は、その指定が優先されます。</small></p>
 <label>配信出力の表示件数<select id="draft-maxVisible">${options([['0', '制限なし'], ...Array.from({ length: 30 }, (_, index) => [String(index + 1), `${index + 1}件`])])}</select></label><label>配信出力の表示時間<select id="draft-holdSeconds">${options([['0', '時間では消さない'], ['5', '5秒'], ['15', '15秒'], ['30', '30秒']])}</select></label><label>配信出力の新着位置<select id="draft-newestPosition">${options([['bottom', '下'], ['top', '上']])}</select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p>
@@ -129,6 +129,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const ready = !!previewStage && !!session;
     $('apply-design').disabled = !ready || pending > 0 || saving || session.stale || (!presetDraft && !!cssError);
     $('discard-design').disabled = !ready || saving || !session.dirty;
+    $('undo-design').disabled = !editable() || !session.canUndo;
+    $('redo-design').disabled = !editable() || !session.canRedo;
     $('restart-design').hidden = !session?.stale || !!presetDraft;
     $('restart-design').disabled = saving;
     $('cancel-design').disabled = saving;
@@ -418,7 +420,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       commentResizeObserver.observe(sampleList);
       previewStage.addEventListener('scroll', positionHits, { passive: true });
       // Escape inside a nested browsing context does not reach the parent.
-      frameDoc.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); requestClose(); } });
+      frameDoc.addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); requestClose(); } else historyKey(event); });
       refresh(); status(preset ? 'プリセットの内容を表示しています。比率を確認して「適用」を押してください。' : 'この画面での変更は「適用」を押すまで配信画面に反映されません。');
     } catch (error) { if (isCurrent(token)) status(`プレビューを開けませんでした：${error.message}`); }
   }
@@ -566,15 +568,41 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const link = document.createElement('a'); link.href = url; link.download = 'pokome-theme.css'; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  $('draft-reset').onclick = () => {
+  $('draft-reset').onclick = async () => {
     if (!editable() || !previewStage) return;
-    invalidate();
-    let next = { ...design(), studio: normalizeStudio(), theme: '' };
-    for (const r of RATIOS) next = withTalk(next, r, { overlays: normalizeOverlays(), actorImage: defaultActorImage() });
-    selected = 'screen';
-    edit(next, { label: '標準に戻す' });
-    status('標準の見た目と全比率の立ち絵画像の配置をプレビューしています。「閉じる」で破棄できます。');
+    if (!await confirmAction('デザイン全体を標準に戻しますか？', '出力の大きさ・テーマCSS・すべての比率の配置と追加の文字・画像・立ち絵画像の配置を含めて、標準のデザインを下書きに読み込みます。「適用」するまで保存しません。', '標準を下書きに読み込む', 'キャンセル') || !editable()) return;
+    invalidate(); session.seal(); selected = 'screen';
+    edit({ ...defaultDesign(), name: design().name }, { label: 'デザイン全体を標準に戻す' });
+    status('標準のデザインを下書きに読み込みました。「取り消し」で戻せます。');
   };
+  // Shows the ratio an undone or redone operation belongs to.
+  function showRatio(target) {
+    if (!target || target === ratio) return;
+    $('preview-width').value = PREVIEW_SIZES.find(value => nearestRatio(...size(value)) === target);
+    ratio = target; scale();
+  }
+  function step(direction) {
+    if (!editable()) return;
+    dragCleanup?.();
+    const entry = direction === 'undo' ? session.undo() : session.redo();
+    if (!entry) return;
+    showRatio(entry.ratio); refresh();
+    status(`「${entry.label || '変更'}」を${direction === 'undo' ? '取り消しました' : 'やり直しました'}${entry.ratio ? `（${entry.ratio}）` : ''}。`);
+  }
+  $('undo-design').onclick = () => step('undo');
+  $('redo-design').onclick = () => step('redo');
+  // Text and number fields keep their own Ctrl+Z while they have focus.
+  function historyKey(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || !session) return;
+    const key = event.key.toLowerCase();
+    if (key !== 'z' && key !== 'y') return;
+    if (event.composedPath()[0]?.matches?.('textarea, input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=button])')) return;
+    event.preventDefault();
+    step(key === 'z' && !event.shiftKey ? 'undo' : 'redo');
+  }
+  dialog.addEventListener('keydown', historyKey);
+  // Reloading or closing the tab would lose the draft.
+  window.addEventListener('beforeunload', event => { if (session && !presetDraft && session.dirty) { event.preventDefault(); event.returnValue = ''; } });
   $('discard-design').onclick = async () => {
     if (!session || saving || !session.dirty) return;
     if (!await confirmAction('変更をすべて破棄しますか？', 'この編集での変更をすべて破棄します。すべての比率の変更と、取り消し・やり直しの履歴が消えます。エディタは開いたままです。', '変更をすべて破棄', 'キャンセル') || !session) return;

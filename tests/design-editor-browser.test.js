@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
+import { defaultDesign } from '../src/shared/design-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, saveDesign, appReady, blockExternalFonts, uploadDesignImage, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
 
 // The full-screen editor: one target's settings at a time, a single draft for
@@ -257,4 +258,96 @@ browserTest('removing an image while its upload is checked keeps Apply usable an
   await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
   assert.equal((await readDesign(url)).studio.image, '');
   assert.deepEqual(errors, []);
+});
+
+browserTest('undo and redo step through edits across ratios, while typing keeps the field’s own undo', async t => {
+  const { page, url, editor, errors, puts } = await fixture(t);
+  const before = await readDesign(url);
+  await open(page, editor);
+  assert.equal(await editor.locator('#undo-design').isDisabled(), true);
+  await editorTarget(editor, 'header');
+  await editor.locator('#draft-title').pressSequentially('一回の入力');
+  await editor.locator('#draft-title').dispatchEvent('change');
+  const typed = await editor.locator('#draft-title').inputValue();
+  await editor.locator('#preview-width').selectOption('1080x1920');
+  await editor.locator('#add-text').click();
+  const frame = page.frameLocator(`${ROOT} #design-preview-frame`);
+  assert.equal(await frame.locator('.pokome-overlay').count(), 1);
+  await editor.locator('#preview-width').selectOption('1280x720');
+  await editor.locator('#undo-design').click();
+  assert.match(await editor.locator('#preview-width').inputValue(), /^1080x1920$/, 'undoing a portrait edit shows that ratio');
+  assert.match(await editor.locator('#design-status').textContent(), /9:16/);
+  assert.equal(await frame.locator('.pokome-overlay').count(), 0);
+  await editor.locator('#redo-design').click();
+  assert.equal(await frame.locator('.pokome-overlay').count(), 1);
+  await editor.locator('#target-select').focus();
+  await page.keyboard.press('Control+z'); await page.keyboard.press('Control+z');
+  await editorTarget(editor, 'header');
+  assert.equal(await editor.locator('#draft-title').inputValue(), before.studio.title, 'the typed title was one operation');
+  assert.equal(await editor.locator('#undo-design').isDisabled(), true);
+  await editor.locator('#target-select').focus();
+  await page.keyboard.press('Control+y');
+  assert.equal(await editor.locator('#draft-title').inputValue(), typed);
+  await page.keyboard.press('Control+Shift+z');
+  assert.equal(await frame.locator('.pokome-overlay').count(), 1);
+  // Discarding ends the history.
+  await editor.locator('#discard-design').click(); await editor.locator('#editor-confirm-accept').click();
+  assert.deepEqual([await editor.locator('#undo-design').isDisabled(), await editor.locator('#redo-design').isDisabled()], [true, true]);
+  // Ctrl+Z in a text field belongs to the field, not to the draft.
+  await editor.locator('#add-text').click();
+  await editorTarget(editor, 'header');
+  await editor.locator('#draft-subtitle').focus(); await page.keyboard.press('Control+z');
+  assert.equal(await frame.locator('.pokome-overlay').count(), 1);
+  assert.equal(puts.length, 0);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('one drag is one undo step', async t => {
+  const { page, editor, errors } = await fixture(t);
+  await open(page, editor);
+  await editor.locator('#add-text').click();
+  const x = async () => Number(await editor.locator('#overlay-x').inputValue());
+  const start = await x();
+  const handle = await page.frameLocator(`${ROOT} #design-preview-frame`).locator('.overlay-hit button[data-resize="false"]').boundingBox();
+  await page.mouse.move(handle.x + 5, handle.y + 5); await page.mouse.down();
+  for (const step of [10, 20, 40]) await page.mouse.move(handle.x + 5 + step, handle.y + 5);
+  await page.mouse.up();
+  assert.ok(await x() > start);
+  await editor.locator('#undo-design').click();
+  assert.equal(await x(), start);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('the whole design returns to the default in the draft only after confirmation, as one undo step', async t => {
+  const item = createOverlay('text', { id: 'portrait-note', text: '縦の文字' });
+  const { page, url, editor, errors, puts } = await fixture(t, { design: design => ({ ...design, outputSize: '1080x1920', theme: '.pokome-workspace { color: rgb(1, 2, 3); }',
+    studio: { ...design.studio, title: '保存済みの題名' },
+    ratios: { ...design.ratios, '9:16': { layout: { panels: { chat: { x: 1, y: 2, w: 50, h: 40 } } }, overlays: { version: 1, items: [item], assets: {} } } } }) });
+  const before = await readDesign(url);
+  await open(page, editor);
+  await editor.locator('#draft-reset').click();
+  assert.match(await editor.locator('#editor-confirm-message').textContent(), /出力の大きさ.*テーマCSS.*すべての比率/);
+  await editor.locator('#editor-confirm-cancel').click();
+  assert.equal(await editor.locator('#draft-state').textContent(), '変更なし');
+  await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click();
+  assert.equal(await editor.locator('#draft-outputSize').inputValue(), '1280x720');
+  assert.equal(await editor.locator('#draft-css').inputValue(), '');
+  await editor.locator('#undo-design').click();
+  assert.equal(await editor.locator('#draft-outputSize').inputValue(), '1080x1920');
+  await editor.locator('#redo-design').click();
+  assert.deepEqual(await readDesign(url), before); assert.equal(puts.length, 0);
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  assert.deepEqual(await readDesign(url), defaultDesign());
+  assert.deepEqual(errors, []);
+});
+
+browserTest('leaving the page with a changed draft asks the browser to confirm', async t => {
+  const { page, editor } = await fixture(t);
+  await open(page, editor); await editorTarget(editor, 'footer');
+  await editor.locator('#draft-footer').fill('閉じる前の確認');
+  const dialog = page.waitForEvent('dialog');
+  page.close({ runBeforeUnload: true });
+  const shown = await dialog;
+  assert.equal(shown.type(), 'beforeunload');
+  await shown.dismiss();
 });

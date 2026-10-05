@@ -8,7 +8,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { defaultActorImage, talkActorImage, talkLayout } from '../src/shared/design-model.js';
+import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
@@ -449,7 +449,7 @@ browserTest('pending image decode cannot resurrect items after reset or cancel',
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
   await page.waitForFunction(() => window.__imageGate.entered === 1);
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
-  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click();
+  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click();
   await releaseImageGate(page); await countItems(page, 0); await ready(page);
   assert.deepEqual(await appearance(page), before);
   await closeEditor(editor);
@@ -477,7 +477,7 @@ browserTest('latest image wins without waiting for superseded decode, and deleti
   await releaseImageGate(page); await ready(page); await countItems(page, 1);
   assert.equal(await frame.locator('.pokome-overlay img').getAttribute('src'), servedImage(bluePNG));
   assert.equal(await frame.locator('.pokome-overlay img').evaluate(image => image.complete && image.naturalWidth), 1, 'the preview loads folder images under its CSP');
-  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click();
+  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click();
   await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('削除する文字');
   const textId = await editor.locator('#target-select').inputValue();
   await countItems(page, 1); await ready(page);
@@ -624,7 +624,7 @@ browserTest('actor placement drafts keep three ratios, remember theme values and
   assert.deepEqual(errors, []);
 });
 
-browserTest('actor drafts cancel, clamp numeric input and reset all ratios while retaining panel layouts', async t => {
+browserTest('actor drafts cancel, clamp numeric input and reset every ratio with the whole design', async t => {
   const { page, editor, url } = await fixture(t, { design: design => ({ ...design, ratios: {
     ...design.ratios, '16:9': { layout: { panels: { actor: { x: 10, y: 10, w: 70, h: 70 } } }, overlays: overlays([]), actorImage: { mode: 'custom', scale: 130 } },
     '9:16': { layout: null, overlays: overlays([]), actorImage: { mode: 'theme', scale: 140 } },
@@ -638,13 +638,14 @@ browserTest('actor drafts cancel, clamp numeric input and reset all ratios while
   await closeEditor(editor); assert.deepEqual(await readDesign(url), before);
   await openPreview(page); await actorControls(editor);
   assert.equal(await editor.locator('#actor-scale').inputValue(), '130');
-  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await actorControls(editor);
+  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click(); await actorControls(editor);
   assert.equal(await editor.locator('#actor-mode').inputValue(), 'theme');
   await applyDesign(editor);
   const saved = await readDesign(url);
   for (const ratio of ['16:9', '9:16', '4:3']) {
     assert.deepEqual(talkActorImage(saved, ratio), defaultActorImage());
-    assert.deepEqual(talkLayout(saved, ratio), talkLayout(before, ratio));
+    // The whole design returns to the default, panel layouts included.
+    assert.equal(saved.ratios[ratio], null);
   }
 });
 
