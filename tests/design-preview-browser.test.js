@@ -194,7 +194,7 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.ok(Number(await editor.locator('#overlay-w').inputValue()) > sizeBefore.w);
   assert.ok(Number(await editor.locator('#overlay-h').inputValue()) > sizeBefore.h);
   await number(editor, 'z', 9);
-  assert.equal(await firstItem.evaluate(element => getComputedStyle(element).zIndex), '9');
+  assert.equal(await firstItem.evaluate(element => getComputedStyle(element).zIndex), String(9 * 32 + 5));
   await editor.locator('#overlay-hidden').check(); assert.equal(await firstItem.isVisible(), false);
   await editor.locator('#overlay-hidden').uncheck(); assert.equal(await firstItem.isVisible(), true);
   await editorTarget(editor, second); await editor.locator('#delete-overlay').click();

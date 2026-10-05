@@ -61,6 +61,7 @@ browserTest('ratio and confirmation size are separate and do not save view chang
 browserTest('panel pointer gestures start at their rendered rectangle, resize from every edge, and cancel without a save', async t => {
   const { page, editor, url } = await fixture(t), before = await readDesign(url);
   await editorTarget(editor, 'actor');
+  await editor.locator('#canvas-snap').uncheck();
   const target = editor.locator('.canvas-target[data-target-id=actor]');
   const rect = await target.boundingBox(), canvas = await editor.locator('#design-preview-frame').boundingBox();
   await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2); await page.mouse.down();

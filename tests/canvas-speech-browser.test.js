@@ -29,6 +29,7 @@ async function openSpeechCanvas(page) {
   await page.locator('[data-page="studio"]').click();
   const editor = page.locator('#design-preview-editor');
   await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await editor.locator('#canvas-snap').uncheck();
   await canvasSize(page, editor, '1280x720'); await editorTarget(editor, 'speech');
   return editor;
 }

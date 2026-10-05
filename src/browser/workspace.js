@@ -1,6 +1,7 @@
 import { WORKSPACE_KEY, PANEL_IDS, normalizeWorkspace, normalizeLayout, talkSpeechStyles } from '../shared/workspace-model.js';
 import { nearestRatio, talkLayout, defaultTalkLayout, talkOverlays, defaultActorImage, talkActorImage, withTalk } from '../shared/design-model.js';
 import { OUTPUT_SIZES } from '../shared/output-protocol.js';
+import { applyTalkLayout } from './stage-appearance.js';
 export { WORKSPACE_KEY, normalizeWorkspace, normalizeLayout } from '../shared/workspace-model.js';
 
 // The home layout is an operating preference kept in this browser. The talk
@@ -107,7 +108,13 @@ export function initializeWorkspace(storage, designStore, { onTalkRatioChange = 
   }
   function apply(mode) {
     const root = roots[mode];
-    if (layouts[mode]) {
+    if (mode === 'talk') {
+      applyTalkLayout(root, layouts.talk);
+      if (editing && layouts.talk) for (const element of panels.talk) {
+        const hidden = layouts.talk.panels[element.dataset.panelType].hidden;
+        element.style.display = ''; element.style.opacity = hidden ? '.45' : '';
+      }
+    } else if (layouts[mode]) {
       if (mode === 'home') { root.style.position = 'relative'; root.style.display = 'block'; root.style.height = 'max(700px, 80vh)'; }
       for (const element of panels[mode]) { const p = layouts[mode].panels[element.dataset.panelType]; element.style.setProperty('position', 'absolute'); for (const [property, value] of Object.entries({ left: p.x, top: p.y, width: p.w, height: p.h })) element.style.setProperty(property, `${value}%`); element.style.zIndex = p.z; element.style.maxHeight = 'none'; element.style.margin = '0'; element.style.display = p.hidden && !editing ? 'none' : ''; element.style.opacity = p.hidden && editing ? '.45' : ''; }
       // The speech minimum can exceed a saved percentage height. Clamp its
