@@ -112,15 +112,16 @@ browserTest('blank panel numbers keep a standard layout unmaterialized', async t
 
 browserTest('west and north panel resize stop at the boundary without moving the opposite edge', async t => {
   const { page, editor } = await fixture(t);
-  await editorTarget(editor, 'actor'); await editor.locator('#canvas-snap').uncheck();
-  for (const edge of ['w', 'n']) {
-    for (const [key, value] of Object.entries({ w: 30, h: 30, x: 20, y: 20 })) await number(editor, `panel-${key}`, value);
+  await editorTarget(editor, 'actor');
+  for (const snap of [false, true]) for (const extent of [30, 31, 31.5]) for (const edge of ['w', 'n']) {
+    await editor.locator('#canvas-snap').setChecked(snap);
+    for (const [key, value] of Object.entries({ w: extent, h: extent, x: 20, y: 20 })) await number(editor, `panel-${key}`, value);
     const hit = editor.locator('.canvas-target[data-target-id=actor]'), handle = await hit.locator(`[data-edge=${edge}]`).boundingBox();
     const canvas = await editor.locator('#design-preview-frame').boundingBox();
     await page.mouse.move(handle.x + 8, handle.y + 8); await page.mouse.down();
     await page.mouse.move(handle.x + 8 - (edge === 'w' ? canvas.width * .4 : 0), handle.y + 8 - (edge === 'n' ? canvas.height * .4 : 0)); await page.mouse.up();
     const position = Number(await editor.locator(edge === 'w' ? '#panel-x' : '#panel-y').inputValue());
     const dimension = Number(await editor.locator(edge === 'w' ? '#panel-w' : '#panel-h').inputValue());
-    assert.equal(position, 0); assert.equal(position + dimension, 50, `${edge} preserves the opposite edge`);
+    assert.equal(position, 0); assert.equal(position + dimension, 20 + extent, `${edge}, snap=${snap}, extent=${extent} preserves the opposite edge`);
   }
 });

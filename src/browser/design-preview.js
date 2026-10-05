@@ -409,8 +409,15 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
           if (edge && ((key === 'w' && (!dx || !/[ew]/.test(edge))) || (key === 'h' && (!dy || !/[ns]/.test(edge))))) continue;
           patch[key] = Math.round(patch[key] / 2) * 2;
         }
-        if (edge.includes('w')) patch.x = original.x + original.w - patch.w;
-        if (edge.includes('n')) patch.y = original.y + original.h - patch.h;
+        // Bounds take priority when snapping would round past the opposite edge.
+        if (edge.includes('w')) {
+          if (original.type !== 'image') patch.w = Math.min(patch.w, original.x + original.w);
+          patch.x = original.x + original.w - patch.w;
+        }
+        if (edge.includes('n')) {
+          if (original.type !== 'image') patch.h = Math.min(patch.h, original.y + original.h);
+          patch.y = original.y + original.h - patch.h;
+        }
         if (e.shiftKey && original.type === 'image' && edge.length === 2) Object.assign(patch, resizeTarget(original, (patch.w - original.w) * (edge.includes('w') ? -1 : 1), (patch.h - original.h) * (edge.includes('n') ? -1 : 1), edge, true));
       }
       changedTarget(id, patch, { merge });
