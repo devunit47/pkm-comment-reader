@@ -1,7 +1,7 @@
 import { createPresetClient } from './design-client.js';
 import { normalizePresetName } from '../shared/design-model.js';
 
-export function initializeDesignPresets({ designStore, designPreview, beginChange = () => {} }) {
+export function initializeDesignPresets({ designStore, designPreview }) {
   const client = createPresetClient(designStore), host = document.createElement('div');
   host.id = 'design-presets'; document.getElementById('studio-page').prepend(host, document.getElementById('design-preview-editor'));
   const shadow = host.attachShadow({ mode: 'open' });
@@ -88,7 +88,6 @@ export function initializeDesignPresets({ designStore, designPreview, beginChang
   $('preset-refresh').onclick = () => run(async () => { await refresh(); status('プリセットの一覧を更新しました。'); });
   $('preset-load').onclick = () => run(async () => {
     const choice = selected(); if (!choice) return;
-    beginChange(); await designStore.waitForSaves();
     let preset;
     try { preset = await client.read(choice.id); }
     catch (error) { choice.error = error.message; renderList(); throw error; }
@@ -109,9 +108,9 @@ export function initializeDesignPresets({ designStore, designPreview, beginChang
     await client.remove(preset); await refresh(''); status('プリセットを削除しました。');
   });
   $('preset-reset').onclick = () => run(async () => {
-    const currentRevision = await designStore.waitForSaves();
+    const currentRevision = designStore.revision;
     if (!await confirm('標準へ戻す', '今のデザイン全体を標準に戻しますか？ 保存済みのプリセットは残ります。', '標準へ戻す')) { status('標準へ戻す操作をキャンセルしました。'); return; }
-    beginChange(); await designStore.reset(currentRevision); status('今のデザイン全体を標準へ戻しました。');
+    await designStore.reset(currentRevision); status('今のデザイン全体を標準へ戻しました。');
   });
   $('preset-folder').onclick = () => run(async () => {
     const result = await client.openFolder(selected()?.id);

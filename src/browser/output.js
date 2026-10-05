@@ -18,7 +18,7 @@ const id = globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Ma
 // The stage markup lives in index.html; share it instead of duplicating it.
 const source = new DOMParser().parseFromString(await (await fetch('./', { cache: 'no-cache' })).text(), 'text/html');
 const stage = document.importNode(source.getElementById('talk-stage'), true);
-for (const element of stage.querySelectorAll('.stage-actions,dialog,[popover],.stage-font-controls,#stage-comment-settings,script,iframe,object,embed,link,input,select,textarea,output')) element.remove();
+for (const element of stage.querySelectorAll('.stage-actions,dialog,[popover],script,iframe,object,embed,link,input,select,textarea,output')) element.remove();
 // Keep the speaker icon and other content; only the controls disappear.
 for (const button of stage.querySelectorAll('button')) button.replaceWith(...button.childNodes);
 stage.hidden = false;

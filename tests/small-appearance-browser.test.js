@@ -80,7 +80,7 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   await page.locator('.nav[data-page="studio"]').click();
   assert.deepEqual(await look(page), live);
   await edit(page, 'chat', editor => change(editor, '#draft-fontSize', '64'));
-  assert.equal(await page.locator('#stage-font-plus').isDisabled(), true);
+  assert.equal(await page.locator('#stage-font-plus').count(), 0);
   assert.equal(await page.locator('#draft-speechFontSize option[value="32"]').count(), 1);
   await edit(page, 'chat', async editor => {
     await editor.locator('#draft-commentPreset').selectOption('theme');

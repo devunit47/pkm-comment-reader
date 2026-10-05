@@ -428,13 +428,13 @@ browserTest('reopening the output window applies a newly chosen size', async t =
   // A large virtual screen keeps the window manager from clamping the sizes.
   const { context, page, errors } = await fixture(t, { viewport: null, args: ['--screen-info={0,0 3000x2400}'] });
   await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#output-size').selectOption('1280x720');
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1280x720'));
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.waitForLoadState();
   const size = () => output.evaluate(() => [innerWidth, innerHeight]);
   assert.deepEqual(await size(), [1280, 720]);
-  await page.locator('#output-size').selectOption('1080x1920');
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await page.locator('#open-output-window').click();
   await output.waitForFunction(() => innerWidth === 1080 && innerHeight === 1920);
   await page.locator('#output-status').filter({ hasText: '1080 × 1920' }).waitFor();

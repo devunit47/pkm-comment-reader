@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeLayout, normalizeWorkspace, PANEL_IDS, talkSpeechStyles } from '../src/shared/workspace-model.js';
+import { normalizeLayout, PANEL_IDS, talkSpeechStyles } from '../src/shared/workspace-model.js';
 test('the speech minimum takes space only from panels starting below it', () => {
   const panel = (x, y, w, h, hidden = false) => ({ x, y, w, h, z: 1, hidden });
   const panels = { header: panel(4, 2, 92, 8), speech: panel(4, 42, 92, 20), chat: panel(4, 64, 92, 29), footer: panel(4, 94, 92, 4), actor: panel(4, 11, 92, 30) };
@@ -19,28 +19,12 @@ test('layout geometry is constrained to its responsive canvas', () => {
 });
 test('invalid and missing panels do not produce incomplete layouts', () => {
   assert.equal(normalizeLayout({ panels: {} }, ['chat']), null);
-  assert.throws(() => normalizeWorkspace({ version: 2 }));
-  assert.throws(() => normalizeWorkspace({ version: 1, talk: { panels: {} } }));
   const panel = normalizeLayout({ panels: { chat: { x: NaN, h: Infinity, hidden: 'true' } } }, ['chat']).panels.chat;
   assert.equal(panel.x, 0); assert.equal(panel.h, 30); assert.equal(panel.hidden, false);
 });
-test('saved layouts roundtrip without carrying unrelated fields', () => {
-  const panels = Object.fromEntries(PANEL_IDS.home.map(id => [id, { x: 0, y: 0, w: 30, h: 30, z: 1, hidden: false }]));
-  const state = normalizeWorkspace({ version: 1, home: { panels }, talk: null, token: 'secret' });
-  assert.deepEqual(normalizeWorkspace(JSON.parse(JSON.stringify(state))), state);
+test('saved talk layouts roundtrip without carrying unrelated fields', () => {
+  const panels = Object.fromEntries(PANEL_IDS.talk.map(id => [id, { x: 0, y: 0, w: 30, h: 30, z: 1, hidden: false }]));
+  const state = normalizeLayout({ panels, token: 'secret' }, PANEL_IDS.talk);
+  assert.deepEqual(normalizeLayout(JSON.parse(JSON.stringify(state)), PANEL_IDS.talk), state);
   assert.equal(state.token, undefined);
-});
-
-test('removed user panel space expands the preview without overlapping settings', () => {
-  const panels = {
-    comments: { x: 0, y: 0, w: 65, h: 100 },
-    now: { x: 67, y: 0, w: 33, h: 20 },
-    reading: { x: 67, y: 22, w: 33, h: 60 },
-    moderation: { x: 67, y: 84, w: 33, h: 14 },
-  };
-  const result = normalizeWorkspace({ version: 1, home: { panels }, talk: null });
-  assert.equal(result.home.panels.now.h, 38);
-  assert.equal(result.home.panels.reading.y, 40);
-  assert.equal(result.home.panels.reading.y + result.home.panels.reading.h, 100);
-  assert.deepEqual(normalizeWorkspace(result), result);
 });

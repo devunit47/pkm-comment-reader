@@ -73,7 +73,7 @@ for (const packaged of [false, true]) {
       const store = await createDesignStore({ watch: false });
       const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='), value => value.charCodeAt(0));
       const image = await store.uploadImage(new Blob([bytes], { type: 'image/png' }));
-      await store.save({ ...store.design, studio: { ...store.design.studio, title: 'ヘッダー確認', image: image.ref } });
+      await store.applyDraft({ ...store.design, studio: { ...store.design.studio, title: 'ヘッダー確認', image: image.ref } }, store.revision);
       const current = await (await fetch('/api/design/current')).json();
       return { title: current.design.studio.title, image: current.design.studio.image };
     });

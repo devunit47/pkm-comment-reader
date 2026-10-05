@@ -65,7 +65,7 @@ git clone https://github.com/devunit47/pkm-comment-reader-notes.git notes
 - 仕様書・計画・引き継ぎ・確認用素材は `notes/` に置き、公開リポジトリに入れない。
 - 画面の文言・文書は日本語。コード中のコメントは英語で、「なぜ」を短く書く。
 - 受け取ったコメントや設定は必ず正規化してから使う。描画は `textContent` のみで、`innerHTML` に利用者のデータを入れない。
-- 見た目（配信デザイン・テーマCSS・雑談画面の配置・追加の文字と画像・出力の大きさ）は `customization/current/design.json` と画像ファイルに保存し、`src/browser/design-client.js` の `createDesignStore` を通して読み書きする。localStorage に見た目を書かない。localStorage に残すのは接続先・音声・ユーザー管理・ホームの配置・履歴件数（`pokome-history-limit`）・配信出力の背景だけ。
+- 見た目（配信デザイン・テーマCSS・雑談画面の配置・追加の文字と画像・出力の大きさ）は `customization/current/design.json` と画像ファイルに保存し、`src/browser/design-client.js` の `createDesignStore` を通して読み書きする。localStorage に見た目を書かない。localStorage に残すのは接続先・音声・ユーザー管理・履歴件数（`pokome-history-limit`）・配信出力の背景だけ。
 - 雑談画面の配置と追加の文字・画像は比率（16:9・9:16・4:3）ごとに持つ。読み書きは `src/shared/design-model.js` の `talkLayout`・`talkOverlays`・`withTalk` を使う（未作成の比率はその比率の標準。ほかの比率を流用しない）。雑談モードは「出力の大きさ」の比率、配信出力は自分の大きさに最も近い比率（`nearestRatio`）、配置の編集中は「編集する比率」を表示する。
 - design.json の画像は `images/<SHA-256>.<拡張子>` の参照。正規化は `src/shared/design-model.js` の `normalizeDesign`（画像目録で検査）を使い、`normalizeStudio`・`normalizeOverlays` を design.json に使うときは `studioOptions`・`overlayOptions` を渡す（渡さないと画像参照が消える）。保存済みの設計オブジェクトは直接書き換えず、複製してから編集する。
 - 提供するのはローカル版だけ（Windows 配布版と開発版）。GitHub Pages は静的な移転案内（`pages/index.html`）だけを公開し、アプリは置かない。
@@ -98,6 +98,9 @@ git clone https://github.com/devunit47/pkm-comment-reader-notes.git notes
 仕様書は `notes/design/`、引き継ぎは `notes/handoff.md`、確認用素材は `notes/samples/`。利用者向けの説明は `README.md` と `docs/customization.md`。
 
 ## Lessons
+
+- 候補選択と読み込み開始が別の操作のときは、進行中の処理を置き換えるのは読み込み開始時だけにする。同じ対象のPCファイルとフォルダー素材を組み合わせ、候補変更だけで待機・結果・完了表示が失われないことを回帰テストする。
+- 入口や保存キーを廃止するときは、旧DOM・キー・属性・更新履歴を含む画面の説明と呼び出し元をコード・文書・全テスト・確認用スクリプトで検索し、専用の保存処理も削除する。削除確認は実際のDOM名で行い、廃止した入口のテストは現行の挙動へ置き換えてから全テストを実行する。
 
 - スクロールする画面の座標を変換するときは、選択枠ではスクロール量を引き、表示矩形から保存座標へ戻すときは加える。縦横・表示倍率・表示中／非表示の対象と、操作後の反対辺を実ブラウザで照合する。
 - 標準配置の重なり順を統一するときは、既存のz=0・1の追加要素が読むだけで同じ前後関係になることを確かめ、数値化と対象一覧にも同じ標準zを使う。

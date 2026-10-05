@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SETTINGS_KEYS, LEGACY_APPEARANCE_KEYS, exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob } from '../src/browser/settings-backup.js';
+import { SETTINGS_KEYS, LEGACY_APPEARANCE_KEYS, exportSettings, parseSettings, restoreSettings } from '../src/browser/settings-backup.js';
 import { HISTORY_LIMIT_KEY } from '../src/shared/studio.js';
 
 test('quota rollback removes partial writes before restoring larger original values', () => {
@@ -72,12 +72,13 @@ test('storage failure rolls back previously applied entries', () => {
 test('new backups hold operating settings only, never the appearance or images', () => {
   const source = storage();
   for (const key of LEGACY_APPEARANCE_KEYS) source.setItem(key, '{}');
+  source.setItem('pokome-workspace-v1', '{"version":1,"home":{"panels":{}},"talk":null}');
   source.setItem(HISTORY_LIMIT_KEY, '42');
   const data = exportSettings(source);
   for (const key of LEGACY_APPEARANCE_KEYS) assert.equal(Object.hasOwn(data.settings, key), false, key);
+  assert.equal(Object.hasOwn(data.settings, 'pokome-workspace-v1'), false);
   assert.equal(data.settings[HISTORY_LIMIT_KEY], '42');
   const parsed = parseSettings(JSON.stringify(data));
-  assert.equal(extractLegacyAppearance(parsed), null);
   const restored = storage(); restoreSettings(restored, parsed);
   assert.equal(restored.getItem(HISTORY_LIMIT_KEY), '42');
   const unknown = exportSettings(storage()); unknown.settings['unknown-key'] = '{}';
@@ -87,7 +88,7 @@ test('new backups hold operating settings only, never the appearance or images',
 });
 
 // Backups made by the browser-only (GitHub Pages) edition carried the appearance.
-test('browser-era backups still restore, and their appearance and images can be imported into the folder', () => {
+test('browser-era backups restore operating settings and ignore appearance without clearing old keys', () => {
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
   const talk = { panels: Object.fromEntries(['header', 'chat', 'speech', 'actor', 'footer'].map((id, index) => [id, { x: index * 10, y: 0, w: 10, h: 10, z: 1, hidden: false }])) };
   const old = { format: 'pokome-settings', version: 1, settings: {
@@ -99,18 +100,28 @@ test('browser-era backups still restore, and their appearance and images can be 
     'pokome-overlays-v1': JSON.stringify({ version: 1, items: [{ id: 'item-1', type: 'image', assetId: 'asset-1' }], assets: { 'asset-1': png } }),
   } };
   const parsed = parseSettings(JSON.stringify(old));
-  assert.equal(parsed[HISTORY_LIMIT_KEY], '12', 'the old history limit moves to its own key');
-  const legacy = extractLegacyAppearance(parsed);
-  assert.equal(legacy.studio.title, '旧タイトル');
-  assert.equal(legacy.studio.image, png);
-  assert.equal(legacy.theme, '.pokome-workspace{}');
-  assert.equal(legacy.talk.panels.chat.x, 10);
-  assert.equal(legacy.overlays.assets['asset-1'], png);
-  const blob = dataUrlToBlob(png);
-  assert.equal(blob.type, 'image/png');
-  assert.equal(blob.size, Buffer.from(png.split(',')[1], 'base64').length);
-  assert.throws(() => dataUrlToBlob('data:image/svg+xml;base64,PHN2Zy8+'));
-  const restored = storage(); restoreSettings(restored, parsed);
+  assert.equal(parsed[HISTORY_LIMIT_KEY], '12', 'the operating history limit is restored from old backups');
+  assert.deepEqual(Object.keys(parsed), SETTINGS_KEYS);
+  for (const key of LEGACY_APPEARANCE_KEYS) assert.equal(Object.hasOwn(parsed, key), false, key);
+  const restored = storage();
+  for (const key of LEGACY_APPEARANCE_KEYS) restored.setItem(key, 'keep obsolete data');
+  restoreSettings(restored, parsed);
   assert.equal(restored.getItem('pokome-connections'), '{"twitch":"example"}');
-  for (const key of LEGACY_APPEARANCE_KEYS) assert.equal(restored.getItem(key), null, key);
+  assert.equal(restored.getItem(HISTORY_LIMIT_KEY), '12');
+  for (const key of LEGACY_APPEARANCE_KEYS) assert.equal(restored.getItem(key), 'keep obsolete data', key);
+});
+
+test('ignored appearance cannot block restore and never overrides an explicit history limit', () => {
+  const backup = exportSettings(storage());
+  backup.settings['pokome-workspace-v1'] = '{obsolete workspace';
+  backup.settings['pokome-theme-v1'] = 'old theme';
+  backup.settings['pokome-overlays-v1'] = '{obsolete overlays';
+  backup.settings['pokome-studio'] = JSON.stringify({ listCount: 12, title: '旧タイトル' });
+  backup.settings[HISTORY_LIMIT_KEY] = '84';
+  assert.equal(parseSettings(JSON.stringify(backup))[HISTORY_LIMIT_KEY], '84');
+  delete backup.settings[HISTORY_LIMIT_KEY];
+  backup.settings['pokome-studio'] = '{obsolete studio';
+  const parsed = parseSettings(JSON.stringify(backup));
+  assert.equal(parsed[HISTORY_LIMIT_KEY], null);
+  assert.deepEqual(Object.keys(parsed), SETTINGS_KEYS);
 });

@@ -48,28 +48,17 @@ export function compileTheme(css, Sheet = globalThis.CSSStyleSheet) {
 }
 
 // Shows the applied theme CSS on the operating page. It is edited in the
-// design editor; local style files still apply it directly until E4.
+// design editor and reflected here only after it is saved.
 export function initializeTheme(designStore) {
   document.querySelector('main').classList.add('pokome-workspace');
   document.querySelector('.sidebar').classList.add('pokome-workspace');
   const style = document.createElement('style');
   style.id = 'pokome-user-theme';
   document.head.append(style);
-  let generation = 0;
-  const beginChange = () => ++generation;
-  // Resolves true once saved, false if saving failed, null if superseded.
-  const apply = async (css, expected = beginChange()) => {
-    if (expected !== generation) return null;
-    style.textContent = compileTheme(css);
-    try { await designStore.save({ ...designStore.design, theme: css }); }
-    catch { return false; }
-    return true;
-  };
   // Shows a theme that is already stored, such as one changed in another tab.
   const reflectTheme = css => {
-    beginChange();
     try { style.textContent = compileTheme(css); } catch { style.textContent = ''; }
   };
   reflectTheme(designStore.design.theme);
-  return { applyTheme: apply, beginChange, reflectTheme };
+  return { reflectTheme };
 }

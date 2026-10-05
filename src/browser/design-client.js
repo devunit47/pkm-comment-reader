@@ -3,9 +3,6 @@ import { compileTheme } from '../shared/theme.js';
 
 export const STALE_DRAFT = '別の画面でデザインが変更されました。最新のデザインから編集をやり直してください。';
 
-// Backups from the browser-storage era held one landscape layout.
-export const LEGACY_RATIO = '16:9';
-
 async function failureMessage(response, fallback) {
   try { return (await response.json()).error || fallback; } catch { return fallback; }
 }
@@ -23,15 +20,11 @@ export async function checkImageFile(file, { Image: ImageClass = globalThis.Imag
   } finally { urls.revokeObjectURL(url); }
 }
 
-// The applied design, read from and written to customization/current through
-// the local server. `confirmed` is what the server last acknowledged; `shown`
-// is what this page displays: confirmed plus edits that are still being saved.
-// Saves are serialized and the newest requested design wins.
+// The applied design changes only after a revision-checked server write succeeds.
 export async function createDesignStore({ fetchImpl = (...args) => globalThis.fetch(...args), EventSourceClass = globalThis.EventSource, watch = true } = {}) {
-  let confirmed = { design: defaultDesign(), images: {}, revision: '' }, shown = confirmed.design;
+  let confirmed = { design: defaultDesign(), images: {}, revision: '' };
   let available = false, warning = '';
-  // `latest` is the newest design passed to save(); `desired` is the next one to send.
-  let desired = null, latest = null, flushing = null, announced = '', replacing = false;
+  let replacing = false;
   // Every request that can replace `confirmed` takes a ticket. An answer to a
   // request issued before the last applied one is stale and is ignored.
   let issued = 0, applied = 0;
@@ -49,65 +42,44 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
     return true;
   }
 
-  async function load({ force = false } = {}) {
+  async function load() {
     const ticket = ++issued;
     const response = await fetchImpl('/api/design/current', { cache: 'no-store' });
     if (!response.ok) throw new Error(await failureMessage(response, '見た目を読み込めません。'));
     const value = await response.json();
-    // While edits are being saved, their own answer will be newer than this one.
-    if (!force && flushing) return false;
     if (!accept(value, ticket)) return false;
-    shown = confirmed.design;
     available = true;
     return true;
   }
   try { await load(); }
   catch (error) { warning = `${error.message} 標準の見た目を表示しています。ローカルサーバーから開いているか確認してください。`; }
 
-  async function reloadExternal(force = false) {
+  async function reloadExternal() {
     const before = confirmed.revision;
     let changed;
-    try { changed = await load({ force }); } catch { return; /* The next change event retries. */ }
+    try { changed = await load(); } catch { return; /* The next change event retries. */ }
     if (changed && confirmed.revision !== before) emit({ external: true });
   }
 
-  async function put(design, { expectedRevision = confirmed.revision, replacement = false } = {}) {
+  async function put(design, expectedRevision) {
     requireWritable();
     const ticket = ++issued;
     const response = await fetchImpl('/api/design/current', {
       method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': expectedRevision || 'default' }, body: JSON.stringify(design),
     });
     if (response.status === 409) {
-      desired = null; latest = null;
       // The server already holds a newer design; show it instead of this save.
-      await reloadExternal(true);
-      shown = confirmed.design;
+      await reloadExternal();
       throw Object.assign(new Error('別の画面で見た目が変更されたため、最新の内容に切り替えました。もう一度操作してください。'), { conflict: true });
     }
     if (!response.ok) {
       const value = await response.json().catch(() => null);
       // The original may have become unreadable after this page loaded it.
-      if (value?.readOnly) await reloadExternal(true);
+      if (value?.readOnly) await reloadExternal();
       throw new Error(value?.error || '見た目を保存できません。');
     }
     accept(await response.json(), ticket);
-    if (replacement) { shown = confirmed.design; emit({ applied: true }); }
-    // Newer edits still waiting stay on screen; otherwise show what was stored.
-    if (design === latest) { shown = confirmed.design; latest = null; }
-  }
-  async function flush() {
-    try { while (desired) { const next = desired; desired = null; await put(next); } }
-    catch (error) {
-      // Unsaved edits are dropped, so a cancelled draft cannot ride along with
-      // a later save. Pages rerender from the saved design.
-      if (!error.conflict) { desired = null; latest = null; shown = confirmed.design; emit({ reverted: true }); }
-      throw error;
-    }
-    finally {
-      flushing = null;
-      // A change announced while saving may come from another page.
-      if (announced && announced !== confirmed.revision) reloadExternal();
-    }
+    emit({ applied: true });
   }
 
   function requireWritable() {
@@ -116,36 +88,23 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
   }
 
   const store = {
-    get design() { return shown; },
+    get design() { return confirmed.design; },
     get images() { return images(); },
     get revision() { return confirmed.revision; },
     get available() { return available; },
     get writable() { return available && !confirmed.readOnly; },
     get warning() { return warning; },
-    // Resolves once this design, or a newer one requested meanwhile, is stored.
-    save(design) {
-      try { requireWritable(); }
-      catch (error) { if (confirmed.readOnly) emit({ reverted: true }); return Promise.reject(error); }
-      if (replacing) return Promise.reject(new Error('デザインを適用中です。完了後にもう一度操作してください。'));
-      const normalized = normalizeDesign(design, images());
-      shown = normalized; desired = normalized; latest = normalized;
-      if (!flushing) flushing = flush();
-      return flushing;
-    },
-    async waitForSaves() { while (flushing) await flushing; return confirmed.revision; },
     async applyPreset(preset, expectedRevision) {
-      await store.waitForSaves();
       requireWritable();
       if (replacing || confirmed.revision !== expectedRevision) throw new Error('別の画面で見た目が変更されました。キャンセルして開き直してください。');
       if (!validPresetId(preset.id) || !preset.revision) throw new Error('プリセットを読み直してください。');
       replacing = true;
-      try { await put({ presetId: preset.id, presetRevision: preset.revision }, { expectedRevision, replacement: true }); }
+      try { await put({ presetId: preset.id, presetRevision: preset.revision }, expectedRevision); }
       finally { replacing = false; }
     },
     // The editor's single save. The revision is the one the draft started from,
     // so a design saved elsewhere since then is answered with a conflict.
     async applyDraft(design, expectedRevision) {
-      await store.waitForSaves();
       requireWritable();
       if (replacing) throw new Error('デザインを適用中です。完了後にもう一度操作してください。');
       if (!expectedRevision || confirmed.revision !== expectedRevision) throw Object.assign(new Error(STALE_DRAFT), { conflict: true });
@@ -154,18 +113,17 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
       const kept = designImageRefs(normalized);
       if ([...designImageRefs(design)].some(ref => !kept.has(ref))) throw new Error('下書きで使っている画像が見つかりません。画像を選び直してください。');
       replacing = true;
-      try { await put(normalized, { expectedRevision, replacement: true }); }
+      try { await put(normalized, expectedRevision); }
       catch (error) { throw error.conflict ? Object.assign(new Error(STALE_DRAFT), { conflict: true }) : error; }
       finally { replacing = false; }
     },
     async reset(expectedRevision = null) {
       requireWritable();
-      const latestRevision = await store.waitForSaves();
-      if (expectedRevision && expectedRevision !== latestRevision) throw new Error('別の画面で見た目が変更されました。もう一度操作してください。');
-      expectedRevision ||= latestRevision;
+      if (expectedRevision && expectedRevision !== confirmed.revision) throw new Error('別の画面で見た目が変更されました。もう一度操作してください。');
+      expectedRevision ||= confirmed.revision;
       if (replacing) throw new Error('デザインを適用中です。完了後にもう一度操作してください。');
       replacing = true;
-      try { await put(defaultDesign(), { expectedRevision, replacement: true }); }
+      try { await put(defaultDesign(), expectedRevision); }
       finally { replacing = false; }
     },
     async uploadImage(file) {
@@ -182,15 +140,16 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
   if (watch && typeof EventSourceClass === 'function') {
     const events = new EventSourceClass('/api/design/events');
     events.addEventListener('change', event => {
+      let announced;
       try { announced = JSON.parse(event.data).revision; } catch { return; }
       // Revisions are content hashes, so only the current one can be skipped:
       // another page may return to content this page saved earlier.
-      if (!flushing && announced !== confirmed.revision) reloadExternal();
+      if (announced !== confirmed.revision) reloadExternal();
     });
     // A server restart may have missed events; reread when the stream returns.
     let opened = false;
     events.addEventListener('open', () => {
-      if (opened && available && !flushing) reloadExternal();
+      if (opened && available) reloadExternal();
       opened = true;
     });
   }
@@ -206,7 +165,7 @@ export async function checkPreset(preset, { Image: ImageClass = globalThis.Image
   }
 }
 
-// Preset reads never become the store's shown or confirmed current design.
+// Preset reads never change the store's confirmed current design.
 export function createPresetClient(store, { fetchImpl = (...args) => globalThis.fetch(...args), validate = checkPreset } = {}) {
   const path = id => {
     if (!validPresetId(id)) throw new Error('プリセットのidが正しくありません。');
@@ -231,12 +190,12 @@ export function createPresetClient(store, { fetchImpl = (...args) => globalThis.
     async create(name) {
       if (store.writable === false) throw new Error(store.warning);
       name = normalizePresetName(name);
-      const currentRevision = await store.waitForSaves();
+      const currentRevision = store.revision;
       return request('/api/design/presets', { method: 'POST', body: { name, currentRevision } });
     },
     async overwrite(preset) {
       if (store.writable === false) throw new Error(store.warning);
-      const currentRevision = await store.waitForSaves();
+      const currentRevision = store.revision;
       return request(path(preset.id), { method: 'PUT', body: { overwrite: true, currentRevision }, revision: preset.revision });
     },
     rename: (preset, name) => request(path(preset.id), { method: 'PUT', body: { name: normalizePresetName(name) }, revision: preset.revision }),
