@@ -35,6 +35,9 @@ const ACTOR_KEYS = ['mode', 'scale', 'alignX', 'alignY', 'offsetX', 'offsetY', '
 const options = pairs => pairs.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
 const textField = (key, label, max) => `<label>${label}<input id="draft-${key}" type="text" maxlength="${max}"></label>`;
 
+const LOCAL_PICKERS = { css: 'styles', actor: 'images', speech: 'images', overlay: 'images' };
+const localPicker = id => `<section id="local-${id}" class="local-picker"><details><summary>customizationフォルダーから選ぶ</summary><p><small>保存場所：<span class="local-directory">取得中…</span><br>${id === 'css' ? 'customization/styles のCSS（UTF-8・1MBまで）' : 'customization/images のPNG・JPEG・WebP・GIF（20MB・1600万画素まで）'}。直下のファイルだけが対象です。元ファイルを変えたら読み込み直してください。</small></p><button class="local-refresh" type="button">一覧を更新</button><p class="local-status" role="status"></p><label>${id === 'css' ? 'CSS' : '画像'}<select id="local-${id}-select" disabled></select></label><button id="local-${id}-load" type="button" disabled>下書きに読み込む</button></details></section>`;
+
 const STYLE = `:host{display:block;color:#edf4e9;font:14px system-ui;margin-bottom:24px}*{box-sizing:border-box}section.entry{background:#1a2325;border:1px solid #506960;border-radius:12px;padding:24px}h2,h3,p{margin:0 0 12px}h2{font-size:18px}h3{font-size:15px}p{line-height:1.7;color:#c0d0c8}
 button,input,select,textarea{font:inherit;background:#101b18;color:#edf4e9;border:1px solid #70877b;border-radius:6px;padding:8px;max-width:100%}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #ace5cd;outline-offset:2px}
 label{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:5px;margin:10px 0}select{width:100%;min-width:0}textarea{width:100%;resize:vertical}input[type=file]{width:100%;min-width:0}input[type=color]{width:100%;height:40px;padding:3px}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.primary{background:#ace5cd;color:#11271e;font-weight:700}.danger{border-color:#e6a0a0}
@@ -56,12 +59,12 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 <dialog id="design-dialog" aria-labelledby="design-title" data-tab="targets"><div class="bar"><div class="title"><h2 id="design-title">デザインエディタ</h2><span id="draft-state" role="status"></span><div class="actions edit-only"><button id="undo-design" type="button" aria-keyshortcuts="Control+Z">取り消し</button><button id="redo-design" type="button" aria-keyshortcuts="Control+Shift+Z Control+Y">やり直し</button></div></div><div class="actions"><button id="restart-design" type="button" hidden>最新のデザインからやり直す</button><button id="discard-design" class="edit-only danger" type="button">変更をすべて破棄</button><button id="apply-design" class="primary" type="button">適用</button><button id="cancel-design" type="button">閉じる</button></div></div>
 <p id="design-status" role="status" aria-live="polite"></p>
 <div class="editor"><div class="tabs edit-only" role="group" aria-label="表示する欄"><button id="show-targets" type="button" aria-pressed="true">対象</button><button id="show-settings" type="button" aria-pressed="false">設定</button></div>
-<aside class="side left" aria-label="道具と対象"><h3>道具</h3><div class="actions"><button id="add-text" type="button">文字を追加</button></div><label>画像を追加<input id="overlay-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><p><small>追加は各比率20個まで。画像はPNG・JPEG・WebP・GIF、1枚20MB・1600万画素まで。</small></p><details id="target-details" open><summary>対象一覧</summary><label>編集する対象<select id="target-select" size="12"></select></label></details></aside>
+<aside class="side left" aria-label="道具と対象"><h3>道具</h3><div class="actions"><button id="add-text" type="button">文字を追加</button></div><label>画像を追加<input id="overlay-image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>${localPicker('overlay')}<p><small>追加は各比率20個まで。画像はPNG・JPEG・WebP・GIF、1枚20MB・1600万画素まで。</small></p><details id="target-details" open><summary>対象一覧</summary><label>編集する対象<select id="target-select" size="12"></select></label></details></aside>
 <div class="center"><div class="view"><label>編集する比率<select id="preview-ratio">${options([["16:9", "16:9"], ["9:16", "9:16"], ["4:3", "4:3"]])}</select></label><label>確認サイズ<select id="preview-width">${PREVIEW_SIZES.map(value => `<option value="${value}">${value.replace('x', ' × ')}（${nearestRatio(...size(value))}）</option>`).join('')}</select></label><label class="check"><input id="preview-guides" type="checkbox" checked>画面端のガイドを表示</label></div><p id="preview-ratio-help"><small>比率ごとに、配置・追加の文字と画像・立ち絵画像の配置を別々に保存します。</small></p><div class="stage-box" id="stage-box"><div class="viewport" id="preview-viewport"><iframe id="design-preview-frame" title="雑談画面のデザインプレビュー" sandbox="allow-same-origin"></iframe><div id="canvas-layer" class="edit-only"></div><div id="snap-lines" hidden aria-hidden="true"><i></i><i></i></div></div></div><p class="edit-only"><small>サンプル表示です。チャット接続・音声再生は行いません。外部フォントを読み込まないため、文字の折り返しは適用後も確認してください。選択枠の内側で移動、辺・角のハンドルでサイズ変更できます。画像の角をShiftとドラッグすると縦横比を保ちます。狭い画面では右欄の数値を使ってください。矢印キーで移動、Shift＋矢印でサイズ変更。画面収録・ウィンドウキャプチャ中は、この編集画面も映るためOBSの別シーンなどで編集してください。</small></p></div>
 <aside class="side right" aria-labelledby="target-heading"><h3 id="target-heading">画面全体</h3><div id="canvas-order" class="actions" hidden><button id="canvas-backward" type="button">後ろへ</button><button id="canvas-forward" type="button">前へ</button></div><section id="panel-placement" hidden><span class="scope">この比率の配置</span><div class="numbers">${[["x", "横位置（%）"], ["y", "縦位置（%）"], ["w", "幅（%）"], ["h", "高さ（%）"], ["z", "重なり順 0〜99"]].map(([key, label]) => `<label>${label}<input id="panel-${key}" type="number" min="${["w", "h"].includes(key) ? 5 : 0}" max="${key === "z" ? 99 : 100}" step="any"></label>`).join("")}</div><label class="check"><input id="panel-hidden" type="checkbox">このパネルを非表示</label></section>
 <div data-target="screen"><section><h3>この比率の配置</h3><label>コピー元の比率<select id="copy-ratio-source"></select></label><button id="copy-ratio" type="button">別の比率からコピー</button><button id="reset-ratio" type="button">この比率の配置を標準に戻す</button><p><small>標準に戻すのはこの比率の5パネルと立ち絵画像の配置です。追加の文字・画像と、全比率共通の見た目は残します。</small></p></section><span class="scope">全比率共通の見た目</span><label>テーマ<select id="draft-theme">${options([['mint', 'ミントの夜'], ['rose', 'ローズの夜'], ['violet', 'すみれの夜'], ['paper', 'お昼の喫茶室']])}</select></label><label>配色モード<select id="draft-accentMode">${options([['theme', 'テーマに合わせる'], ['custom', '自分で設定']])}</select></label><label>アクセントカラー<input id="draft-accent" type="color"></label><label class="check"><input id="draft-decoration" type="checkbox">星やハートの装飾を表示</label>
 <label>出力の大きさ<select id="draft-outputSize">${options(Object.keys(OUTPUT_SIZES).map(value => [value, OUTPUT_LABELS[value]]))}</select></label><p><small>配信出力と雑談画面はこの大きさの比率で表示します。確認サイズを変えても出力の大きさは変わりません。</small></p>
-<details><summary>詳細：テーマCSS</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false" placeholder="${DEFAULT_THEME_CSS.replace(/"/g, '&quot;')}"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。CSSで位置や大きさを指定すると、設定と重なる場合があります。動かせないときはCSSを解除または編集してください。</small></p><label>CSSファイルを読み込む<input id="draft-css-file" type="file" accept=".css,text/css"></label><div class="actions"><button id="draft-css-clear" type="button">CSSを解除</button><button id="draft-css-export" type="button">編集中のCSSを書き出す</button></div><p><small>書き出すのはCSSだけです。配置・画像・そのほかの設定は含みません。</small></p></details>
+<details><summary>詳細：テーマCSS</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false" placeholder="${DEFAULT_THEME_CSS.replace(/"/g, '&quot;')}"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。CSSで位置や大きさを指定すると、設定と重なる場合があります。動かせないときはCSSを解除または編集してください。</small></p><label>CSSファイルを読み込む<input id="draft-css-file" type="file" accept=".css,text/css"></label>${localPicker('css')}<div class="actions"><button id="draft-css-clear" type="button">CSSを解除</button><button id="draft-css-export" type="button">編集中のCSSを書き出す</button></div><p><small>書き出すのはCSSだけです。配置・画像・そのほかの設定は含みません。</small></p></details>
 <button id="draft-reset" type="button">デザイン全体を標準に戻す</button><p><small>出力の大きさ・テーマCSS・すべての比率の配置と追加の文字・画像を含めて、標準のデザインを下書きに読み込みます。「適用」までは保存しません。</small></p></div>
 <div data-target="header" hidden><span class="scope">全比率共通の見た目</span>${textField('title', 'タイトル', 60)}${textField('subtitle', 'サブタイトル', 100)}</div>
 <div data-target="chat" hidden><span class="scope">全比率共通の見た目</span><label>コメント欄の見た目をまとめて切り替え<select id="draft-commentPreset">${options([...Object.entries(COMMENT_PRESETS).map(([value, preset]) => [value, preset.label]), ['', '個別に調整中']])}</select></label><p><small>選ぶと下の見た目とコメントの表示をまとめて変更します。配置・文字サイズ・表示件数は変えません。</small></p><label>コメントの表示<select id="draft-commentStyle">${options([['stacked', '名前を上に表示'], ['anonymous', '名前なし'], ['inline', '名前と本文を横並び'], ['compact', '1行コンパクト']])}</select></label><label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="64" step="1"></label><p><small>テーマCSSに文字サイズの指定がある場合は、その指定が優先されます。</small></p>
@@ -71,8 +74,8 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本文の色' : '名前の色'; return `<label>${label}<select id="draft-${key}Mode">${options([['theme', 'テーマのまま'], ['custom', '色を指定']])}</select></label><label>${label}（指定色）<input id="draft-${key}" type="color"></label>`; }).join('')}
 <label>文字の縁取り<select id="draft-commentOutline">${options([['none', 'なし'], ['thin', '細い'], ['thick', '太い']])}</select></label><label>縁取りの色<input id="draft-commentOutlineColor" type="color"></label><label>行間<select id="draft-commentLineHeight">${options([['', 'テーマのまま'], ['1.2', '1.2（詰める）'], ['1.35', '1.35'], ['1.5', '1.5'], ['1.75', '1.75'], ['2', '2.0（広い）']])}</select></label>
 <label class="check"><input id="draft-commentDivider" type="checkbox">コメントの区切り線を表示</label><label class="check"><input id="draft-commentLabel" type="checkbox">見出し（「みんなのコメント」と件数）を表示</label><p><small>「テーマのまま」以外を選んだ項目は、テーマCSSより優先します。</small></p></div>
-<div data-target="speech" hidden><span class="scope">全比率共通の見た目</span>${textField('speechTitle', '読み上げ枠の見出し', 40)}<label>読み上げの文字サイズ<select id="draft-speechFontSize">${options([16, 22, 28, 32].map(px => [String(px), `${px}px`]))}</select></label><label>読み上げ枠<select id="draft-speechStyle">${options([['panel', '通常のパネル'], ['bubble', 'セリフの吹き出し'], ['image', '背景画像']])}</select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label><label>名前・コメントの背景画像<input id="draft-speechImage" type="file" accept="${IMAGE_ACCEPT}"></label><p id="speech-image-status" role="status"></p><button id="draft-speechImage-reset" type="button">標準の背景画像に戻す</button><p><small>PNG・JPEG・WebP・GIF、20MB・1600万画素まで。画像は名前と本文だけの背景に表示します。</small></p></div>
-<div data-target="actor" hidden><span class="scope">全比率共通の見た目</span><label>表示するもの<select id="draft-source">${options([['space', '空き枠 / OBSで映像を重ねる'], ['image', '立ち絵画像']])}</select></label><label>立ち絵画像<input id="draft-image" type="file" accept="${IMAGE_ACCEPT}"></label><p id="actor-image-status" role="status"></p><button id="draft-image-remove" type="button">画像を削除</button><p><small>PNG・JPEG・WebP・GIF、20MB・1600万画素まで。透過PNGにも対応します。動くVtuberモデルや外部のワイプ映像は、空き枠にOBSのソースを重ねて使えます。</small></p><label>立ち絵の枠・背景・キャプション<select id="draft-actorAppearance">${options([['theme', 'テーマのまま'], ['none', 'すべて消す']])}</select></label>
+<div data-target="speech" hidden><span class="scope">全比率共通の見た目</span>${textField('speechTitle', '読み上げ枠の見出し', 40)}<label>読み上げの文字サイズ<select id="draft-speechFontSize">${options([16, 22, 28, 32].map(px => [String(px), `${px}px`]))}</select></label><label>読み上げ枠<select id="draft-speechStyle">${options([['panel', '通常のパネル'], ['bubble', 'セリフの吹き出し'], ['image', '背景画像']])}</select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label><label>名前・コメントの背景画像<input id="draft-speechImage" type="file" accept="${IMAGE_ACCEPT}"></label>${localPicker('speech')}<p id="speech-image-status" role="status"></p><button id="draft-speechImage-reset" type="button">標準の背景画像に戻す</button><p><small>PNG・JPEG・WebP・GIF、20MB・1600万画素まで。画像は名前と本文だけの背景に表示します。</small></p></div>
+<div data-target="actor" hidden><span class="scope">全比率共通の見た目</span><label>表示するもの<select id="draft-source">${options([['space', '空き枠 / OBSで映像を重ねる'], ['image', '立ち絵画像']])}</select></label><label>立ち絵画像<input id="draft-image" type="file" accept="${IMAGE_ACCEPT}"></label>${localPicker('actor')}<p id="actor-image-status" role="status"></p><button id="draft-image-remove" type="button">画像を削除</button><p><small>PNG・JPEG・WebP・GIF、20MB・1600万画素まで。透過PNGにも対応します。動くVtuberモデルや外部のワイプ映像は、空き枠にOBSのソースを重ねて使えます。</small></p><label>立ち絵の枠・背景・キャプション<select id="draft-actorAppearance">${options([['theme', 'テーマのまま'], ['none', 'すべて消す']])}</select></label>
 <h3 id="draft-actor-heading">この比率の立ち絵画像の配置</h3><span class="scope">この比率の配置</span><label>画像の配置方法<select id="actor-mode">${options([['theme', 'テーマのまま'], ['custom', '自分で調整']])}</select></label><label>拡大率（%）<input id="actor-scale" type="number" min="100" max="200" step="1"></label><label>横位置合わせ<select id="actor-alignX">${options([['left', '左'], ['center', '中央'], ['right', '右']])}</select></label><label>縦位置合わせ<select id="actor-alignY">${options([['top', '上'], ['center', '中央'], ['bottom', '下（画像ファイルの下端）']])}</select></label><div class="numbers"><label>横の微調整（%）<input id="actor-offsetX" type="number" min="-100" max="100" step="any"></label><label>縦の微調整（%）<input id="actor-offsetY" type="number" min="-100" max="100" step="any"></label></div><label class="check"><input id="actor-overflow" type="checkbox">枠からはみ出す</label><p><small id="draft-actor-help"></small></p></div>
 <div data-target="footer" hidden><span class="scope">全比率共通の見た目</span>${textField('footer', '画面下のひとこと', 100)}</div>
 <div data-target="overlay" hidden><span class="scope">この比率の配置</span><label class="check"><input id="overlay-hidden" type="checkbox">この項目を非表示</label><div id="overlay-text-fields"><label>表示する文章<textarea id="overlay-text" maxlength="1000" rows="3"></textarea></label><label>文字の色<input id="overlay-color" type="color"></label><label>文字の大きさ（px）<input id="overlay-font-size" type="number" min="12" max="160"></label></div><div class="numbers">${[['x', '横位置（%）'], ['y', '縦位置（%）'], ['w', '幅（%）'], ['h', '高さ（%）'], ['z', '重なり順 0〜99']].map(([key, label]) => `<label>${label}<input id="overlay-${key}" type="number" min="${['w', 'h'].includes(key) ? 2 : 0}" max="${key === 'z' ? 99 : 100}" step="1"></label>`).join('')}</div><p><small>画像は各辺に画面1枚分まで、幅・高さ200%まで置けます。枠は画面内に幅・高さ各2%残すよう補正します。文字は画面内に収めます。大きい重なり順の項目ほど手前に表示します。パネルも同じキャンバスで選んで配置できます。</small></p><button id="delete-overlay" class="danger" type="button">この項目を削除</button></div>
@@ -82,7 +85,7 @@ ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本�
 // The full-screen design editor. Everything edited here stays in one draft
 // (every ratio) until Apply stores it with a single revision-checked write.
 // getLiveRatio tells which ratio the talk screen shows.
-export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio = () => '16:9', beginDraft = () => {} }) {
+export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:9' }) {
   const live = document.getElementById('talk-stage');
   let presetDraft = null, presetApply = null, returnFocus = null;
   const assetOptions = () => overlayOptions(presetDraft?.images || designStore.images), imageOptions = () => studioOptions(presetDraft?.images || designStore.images);
@@ -146,6 +149,10 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const full = !session || ratioOverlays().items.length >= MAX_OVERLAYS;
     $('add-text').disabled = !editable() || full;
     $('overlay-image').disabled = !editable() || full;
+    for (const id of Object.keys(LOCAL_PICKERS)) $('local-' + id + '-load').disabled = !editable() || !$('local-' + id + '-select').value || (id === 'overlay' && full);
+    for (const id of Object.keys(LOCAL_PICKERS)) {
+      $('local-' + id + '-load').disabled = !editable() || !$('local-' + id + '-select').value || (id === 'overlay' && full);
+    }
     $('draft-state').textContent = !session ? '' : presetDraft ? 'プリセットを確認（編集不可）' : saving ? '適用中…' : session.stale ? '別の画面で変更されました' : session.dirty ? '下書き・未適用' : '変更なし';
   }
   function targets() {
@@ -474,7 +481,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
 
   async function openPreview(preset = null, onApply = null) {
     if (session) return;
-    beginDraft(); if (!preset) themeEditor.beginChange(); invalidate(); const token = epoch;
+    invalidate(); const token = epoch;
     presetDraft = preset; presetApply = onApply; returnFocus = document.activeElement;
     while (returnFocus?.shadowRoot?.activeElement) returnFocus = returnFocus.shadowRoot.activeElement;
     dialog.dataset.mode = preset ? 'preset' : 'editor';
@@ -489,6 +496,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     ratio = nearestRatio(...size(start.outputSize)); setPreviewSize(ratio, start.outputSize); selected = 'screen'; compiledCSS = ''; compiledSource = null; cssError = '';
     compileDraftCSS(); tab('targets');
     dialog.showModal(); status('プレビューを準備しています…'); refresh(); scale();
+    if (!preset) refreshLocal();
     try {
       if (!previewCSS) {
         const [cssResponse, imageResponse] = await Promise.all([fetch('./style.css'), fetch('./speech-background.svg')]);
@@ -603,14 +611,14 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     if (!await confirmAction('この比率の配置を標準に戻しますか？', destination + 'の5パネルと立ち絵画像の配置を標準に戻します。追加の文字・画像と全比率共通の見た目、ほかの比率は残します。', 'この比率の配置を標準に戻す', 'キャンセル') || !editable()) return;
     session.seal(); edit(resetTalkRatio(design(), destination), { label: 'この比率の配置を標準に戻す', ratio: destination });
   };
-  $('overlay-image').onchange = async () => {
-    const file = $('overlay-image').files[0]; $('overlay-image').value = '';
-    if (!file || !editable() || ratioOverlays().items.length >= MAX_OVERLAYS) return;
+  async function addImage(read) {
+    if (!editable() || ratioOverlays().items.length >= MAX_OVERLAYS) return;
     // The image belongs to the ratio shown when it was chosen, even if the view switches meanwhile.
     const token = epoch, request = Symbol(), target = ratio;
     if (requests.has('add-image')) pending--;
     requests.set('add-image', request); pending++; buttons(); status('画像を確認しています…');
     try {
+      const file = await read();
       await checkImageFile(file);
       if (!isCurrent(token) || requests.get('add-image') !== request) return;
       // The file is stored now, but stays unused until the draft is applied.
@@ -626,7 +634,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       status(target === ratio ? '画像を追加しました。適用するまでは見た目に反映されません。' : `画像を${target}の配置に追加しました。適用するまでは見た目に反映されません。`);
     } catch (error) { if (isCurrent(token) && requests.get('add-image') === request) status(error.message); }
     finally { if (isCurrent(token) && requests.get('add-image') === request) { requests.delete('add-image'); pending--; buttons(); } }
-  };
+  }
+  $('overlay-image').onchange = () => { const file = $('overlay-image').files[0]; $('overlay-image').value = ''; if (file) return addImage(() => file); };
   for (const key of FIELD_KEYS) {
     const element = $(`draft-${key}`), typed = TYPED_KEYS.includes(key);
     const value = () => element.type === 'checkbox' ? element.checked
@@ -652,14 +661,14 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   });
   $('draft-outputSize').addEventListener('change', () => { if (session) { session.seal(); edit({ ...design(), outputSize: $('draft-outputSize').value }, { label: '出力の大きさ' }); } });
   // Images are stored as files first; the draft only refers to them until Apply.
-  async function draftImage(input, key, patch) {
-    const file = input.files[0]; input.value = '';
-    if (!file || !editable()) return;
+  async function draftImage(read, key, patch) {
+    if (!editable()) return;
     const token = epoch, request = Symbol();
     if (requests.has(key)) pending--;
     requests.set(key, request); pending++; buttons(); status('画像を確認しています…');
     const current = () => isCurrent(token) && requests.get(key) === request;
     try {
+      const file = await read();
       await checkImageFile(file);
       if (!current()) return;
       const { ref } = await designStore.uploadImage(file);
@@ -671,8 +680,9 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   }
   // A newer choice wins over a file still being read or uploaded.
   function dropRequest(key) { if (requests.delete(key)) { pending--; buttons(); } }
-  $('draft-image').onchange = () => draftImage($('draft-image'), 'actor-image', ref => ({ source: 'image', image: ref }));
-  $('draft-speechImage').onchange = () => draftImage($('draft-speechImage'), 'speech-image', ref => ({ speechStyle: 'image', speechImage: ref }));
+  for (const [id, key, patch] of [['draft-image', 'actor-image', ref => ({ source: 'image', image: ref })], ['draft-speechImage', 'speech-image', ref => ({ speechStyle: 'image', speechImage: ref })]]) {
+    $(id).onchange = () => { const file = $(id).files[0]; $(id).value = ''; if (file) return draftImage(() => file, key, patch); };
+  }
   $('draft-image-remove').onclick = () => { if (session) { dropRequest('actor-image'); session.seal(); editStudio({ image: '' }, { label: '画像の削除' }); } };
   $('draft-speechImage-reset').onclick = () => { if (session) { dropRequest('speech-image'); session.seal(); editStudio({ speechImage: '', speechStyle: 'image' }, { label: '標準の背景画像' }); } };
   for (const key of ACTOR_KEYS) $(`actor-${key}`).addEventListener('change', () => {
@@ -685,26 +695,78 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   });
   $('draft-css').addEventListener('input', () => {
     if (!editable()) return;
+    dropRequest('css-file');
     edit({ ...design(), theme: $('draft-css').value }, { label: 'テーマCSS', merge: 'css' });
     status(cssError ? `入力したCSSは未反映です：${cssError}` : 'CSSをプレビューしました。適用するまでは保存されません。');
   });
   $('draft-css').addEventListener('change', () => session?.seal());
-  $('draft-css-file').onchange = async () => {
-    const file = $('draft-css-file').files[0]; $('draft-css-file').value = '';
-    if (!file || !editable()) return;
+  async function draftCSS(read) {
+    if (!editable()) return;
     const token = epoch, request = Symbol();
-    // Apply waits for the file, so the draft cannot be stored without it.
     if (requests.has('css-file')) pending--;
-    requests.set('css-file', request); pending++; buttons();
+    requests.set('css-file', request); pending++; buttons(); status('CSSを読み込んでいます…');
+    const current = () => isCurrent(token) && requests.get('css-file') === request;
     try {
+      const file = await read();
       if (file.size > MAX_THEME_CSS_BYTES) throw new Error('CSSは1MB以内にしてください。');
       const css = await file.text();
-      if (!isCurrent(token) || requests.get('css-file') !== request) return;
+      if (!current()) return;
       session.seal(); edit({ ...design(), theme: css }, { label: 'CSSファイル' });
       status(cssError ? `入力したCSSは未反映です：${cssError}` : 'CSSファイルを下書きに読み込みました。適用するまでは保存されません。');
-    } catch (error) { if (isCurrent(token)) status(`読み込めませんでした：${error.message}`); }
-    finally { if (isCurrent(token) && requests.get('css-file') === request) dropRequest('css-file'); }
-  };
+    } catch (error) { if (current()) status(`読み込めませんでした：${error.message}`); }
+    finally { if (current()) dropRequest('css-file'); }
+  }
+  $('draft-css-file').onchange = () => { const file = $('draft-css-file').files[0]; $('draft-css-file').value = ''; if (file) return draftCSS(() => file); };
+  async function localRequest(path = '') {
+    const response = await fetch('./api/customizations' + path, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (!response.ok) {
+      let message = 'ファイルを取得できません。一覧を更新し、保存場所とファイルを確認してください。';
+      try { const body = await response.json(); if (typeof body.error === 'string') message = body.error; } catch { /* Interrupted servers may return text. */ }
+      throw new Error(message);
+    }
+    return response;
+  }
+  let listingGeneration = 0;
+  async function refreshLocal() {
+    const token = epoch, generation = ++listingGeneration;
+    const current = () => isCurrent(token) && generation === listingGeneration;
+    const nodes = selector => shadow.querySelectorAll(selector);
+    for (const node of nodes('.local-status')) node.textContent = '一覧を取得しています…';
+    try {
+      const listing = await (await localRequest()).json();
+      if (!current()) return;
+      for (const node of nodes('.local-directory')) node.textContent = typeof listing.directory === 'string' ? listing.directory : 'customization';
+      for (const [id, kind] of Object.entries(LOCAL_PICKERS)) {
+        const select = $('local-' + id + '-select'), previous = select.value;
+        const files = Array.isArray(listing[kind]) ? listing[kind].filter(file => typeof file?.name === 'string' && Number.isFinite(file.size) && file.size >= 0) : [];
+        select.replaceChildren();
+        for (const file of [{ name: '', label: files.length ? 'ファイルを選択してください' : 'ファイルがありません' }, ...files]) {
+          const option = document.createElement('option'); option.value = file.name; option.textContent = file.label || `${file.name}（${Math.ceil(file.size / 1024)}KB）`; select.append(option);
+        }
+        if (files.some(file => file.name === previous)) select.value = previous;
+        select.disabled = !files.length;
+        $('local-' + id).querySelector('.local-status').textContent = `${files.length}件。${listing.skipped ? '対象外・読み込めないファイルは除外しました。' : ''}`;
+      }
+    } catch (error) {
+      if (!current()) return;
+      for (const node of nodes('.local-directory')) node.textContent = '取得できませんでした';
+      for (const node of nodes('.local-status')) node.textContent = error.message + '「一覧を更新」で再試行してください。';
+      for (const id of Object.keys(LOCAL_PICKERS)) { $('local-' + id + '-select').replaceChildren(); $('local-' + id + '-select').disabled = true; }
+    }
+    if (current()) buttons();
+  }
+  for (const [id, kind] of Object.entries(LOCAL_PICKERS)) {
+    const select = $('local-' + id + '-select'), key = { css: 'css-file', actor: 'actor-image', speech: 'speech-image', overlay: 'add-image' }[id];
+    $('local-' + id).querySelector('.local-refresh').onclick = refreshLocal;
+    select.onchange = () => { dropRequest(key); buttons(); };
+    $('local-' + id + '-load').onclick = () => {
+      const name = select.value; if (!name || !editable()) return;
+      const read = async () => (await localRequest('/' + kind + '/' + encodeURIComponent(name))).blob();
+      if (id === 'css') return draftCSS(read);
+      if (id === 'overlay') return addImage(read);
+      return draftImage(read, key, ref => id === 'actor' ? { source: 'image', image: ref } : { speechStyle: 'image', speechImage: ref });
+    };
+  }
   $('draft-css-clear').onclick = () => { if (session) { dropRequest('css-file'); session.seal(); edit({ ...design(), theme: '' }, { label: 'CSSの解除' }); status('CSSを解除しました。適用するまでは保存されません。'); } };
   $('draft-css-export').onclick = () => {
     if (!session) return;

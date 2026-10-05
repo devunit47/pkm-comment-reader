@@ -57,8 +57,6 @@ const outputPublisher = new OutputPublisher({ onStatus: status => outputPanel?.s
 // null means the preview shows a selection; a string snapshots played audio.
 let previewSpeechCredit = null;
 let speechDisplayTimer;
-let imageGeneration = 0;
-let speechImageGeneration = 0;
 try {
   const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
   for (const platform of Object.keys(states)) states[platform].speechOptions = normalizeSpeechOptions(saved?.[platform]);
@@ -746,24 +744,6 @@ for (const [id, key, label, limit] of [
     dialog.showModal(); input.focus(); input.select();
   };
 }
-function beginImageChange(target) {
-  return target === 'speechImage' ? ++speechImageGeneration : ++imageGeneration;
-}
-async function applyImageFile(file, target, generation = beginImageChange(target)) {
-  const isSpeech = target === 'speechImage';
-  const isCurrent = () => generation === (isSpeech ? speechImageGeneration : imageGeneration);
-  if (!isCurrent()) return false;
-  await checkImageFile(file);
-  if (!isCurrent()) return false;
-  const { ref } = await designStore.uploadImage(file);
-  if (!isCurrent()) return false;
-  const next = normalizeStudio({ ...studio, ...(isSpeech ? { speechStyle: 'image', speechImage: ref } : { source: 'image', image: ref }) }, keepImages());
-  // Commit only after decoding and saving the design both succeed.
-  await designStore.save({ ...designStore.design, studio: next });
-  if (!isCurrent()) return false;
-  studio = next; renderStudio();
-  return true;
-}
 renderStudio();
 renderStageSpeech();
 
@@ -839,14 +819,12 @@ let showLiveOverlays = () => {};
 const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioChange: ratio => {
   shownTalkRatio = ratio; renderTalkAppearance(); showLiveOverlays();
 } });
-const designPreview = initializeDesignPreview({ designStore, themeEditor,
-  beginDraft() { imageGeneration++; speechImageGeneration++; },
+const designPreview = initializeDesignPreview({ designStore,
   getLiveRatio: () => workspaceEditor.talkRatio(),
 });
-initializeCustomization({ platforms: enabledPlatforms, themeEditor, designStore, beginImageChange, applyImageFile,
+initializeCustomization({ platforms: enabledPlatforms, designStore,
   async resetAppearance() {
     designPreview.reset();
-    imageGeneration++; speechImageGeneration++;
     // Preserve the operating UI too when the server protects an unreadable original.
     await designStore.reset();
     const design = defaultDesign();
@@ -858,12 +836,9 @@ initializeCustomization({ platforms: enabledPlatforms, themeEditor, designStore,
 });
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, onSizeChange: () => workspaceEditor.reload() });
-initializeDesignPresets({ designStore, designPreview,
-  beginChange() { imageGeneration++; speechImageGeneration++; },
-});
+initializeDesignPresets({ designStore, designPreview });
 // Another page changed the design, or a failed save was undone: show the saved design.
 designStore.subscribe(detail => {
-  imageGeneration++; speechImageGeneration++;
   studio = designStore.design.studio;
   themeEditor.reflectTheme(designStore.design.theme);
   workspaceEditor.reload();
