@@ -73,35 +73,27 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.deepEqual(await page.locator('.stage-wave').boundingBox(), wavePosition);
     await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '待機中'; });
     const initialCount = await page.locator('.stage-comment').count();
-    await page.locator('#stage-title').hover();
-    await page.locator('#talk-stage').focus();
-    assert.equal(await page.locator('#stage-comment-settings').evaluate(element => getComputedStyle(element).opacity), '0');
-    await page.locator('.stage-chat .stage-panel-label').hover();
-    assert.equal(await page.locator('#stage-comment-settings').evaluate(element => getComputedStyle(element).opacity), '1');
-    assert.equal(await page.locator('.stage-font-controls').evaluate(element => getComputedStyle(element).opacity), '1');
-    assert.equal(await page.locator('#stage-comment-style').isVisible(), false);
-    await page.getByRole('button', { name: 'コメントの表示設定', exact: true }).click();
-    await page.locator('#stage-comment-style').selectOption('anonymous');
-    assert.equal(await page.locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
-    assert.equal(await page.locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
-    await page.locator('#stage-comment-style').selectOption('inline');
-    assert.notEqual(await page.locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
-    assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
-    await page.locator('#stage-comment-style').selectOption('compact');
-    assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
-    assert.equal((await waitForDesign(`http://127.0.0.1:${server.address().port}`, design => design.studio.commentStyle === 'compact')).studio.commentStyle, 'compact');
-    assert.equal(await page.locator('.stage-comment').count(), initialCount);
-    await page.locator('#stage-comment-style').selectOption('stacked');
-    await page.keyboard.press('Escape');
-    assert.equal(await page.locator('#stage-comment-settings-dialog').isVisible(), false);
-    assert.equal(await page.locator('#talk-stage').isVisible(), true);
-    const initialSize = await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize);
-    const subtitleBefore = await page.locator('#stage-subtitle').boundingBox();
-    await page.locator('#stage-font-plus').click();
-    assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize), `${parseFloat(initialSize) + 2}px`);
-    assert.equal(await page.locator('.stage-comment').count(), initialCount);
-    assert.deepEqual(await page.locator('#stage-subtitle').boundingBox(), subtitleBefore);
-    await page.locator('#stage-font-minus').click();
+    const canvas = page.locator('#design-preview-editor');
+    async function editTalk(steps) {
+      await page.locator('#stage-design-edit').click(); await canvas.locator('#apply-design:not(:disabled)').waitFor();
+      await steps(canvas); await canvas.locator('#apply-design').click(); await canvas.locator('#design-dialog').waitFor({ state: 'hidden' });
+    }
+    assert.equal(await page.locator('#stage-font-plus,#stage-comment-settings,.stage-edit-pencil').count(), 0);
+    for (const style of ['anonymous', 'inline', 'compact', 'stacked']) {
+      await editTalk(async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-commentStyle').selectOption(style); });
+      assert.equal((await readDesign(new URL(page.url()).origin)).studio.commentStyle, style);
+      if (style === 'anonymous') {
+        assert.equal(await page.locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
+        assert.equal(await page.locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
+      }
+      if (style === 'inline') assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
+      if (style === 'compact') assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
+      assert.equal(await page.locator('.stage-comment').count(), initialCount);
+    }
+    const initialSize = await page.locator('.stage-comment p').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+    await editTalk(async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-fontSize').fill(String(initialSize + 2)); });
+    assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize), (initialSize + 2) + 'px');
+    await editTalk(async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-fontSize').fill(String(initialSize)); });
     await page.locator('#stage-chat-list').evaluate(list => {
       list.style.flex = 'none';
       list.style.height = `${list.firstElementChild.getBoundingClientRect().height + 20}px`;
@@ -112,29 +104,17 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.locator('#stage-chat-list').evaluate(list => { list.scrollTop = 0; list.dispatchEvent(new Event('scroll')); });
     assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'visible');
     await page.locator('#stage-chat-list').evaluate(list => { list.style.removeProperty('flex'); list.style.removeProperty('height'); });
-    for (const [id, label, key] of [['stage-title', '配信タイトル', 'title'], ['stage-subtitle', 'ひとこと', 'subtitle'], ['stage-footer-text', '画面下の文章', 'footer'], ['stage-speech-title', '読み上げ枠の見出し', 'speechTitle']]) {
-      await page.locator(`#${id}`).hover();
-      const alignment = await page.locator(`#${id}`).evaluate(element => {
-        const text = element.getBoundingClientRect(), pencil = element.parentElement.querySelector('.stage-edit-pencil').getBoundingClientRect();
-        return Math.abs((text.top + text.bottom) / 2 - (pencil.top + pencil.bottom) / 2);
-      });
-      assert.ok(alignment < 2, `${label}: pencil center differs by ${alignment}px`);
-      await page.getByRole('button', { name: `${label}を編集`, exact: true }).click();
-      assert.equal(await page.locator('.stage-text-dialog[open]').evaluate(dialog => dialog.matches(':modal')), true);
-      await page.getByRole('textbox', { name: label, exact: true }).fill(`<新しい${label}>`);
-      await page.locator('.stage-text-editor').getByRole('button', { name: '保存', exact: true }).click();
-      assert.equal(await page.locator(`#${id}`).textContent(), `<新しい${label}>`);
-      assert.equal((await waitForDesign(`http://127.0.0.1:${server.address().port}`, design => design.studio[key] === `<新しい${label}>`)).studio[key], `<新しい${label}>`);
+    for (const [id, target, key] of [['stage-title', 'header', 'title'], ['stage-subtitle', 'header', 'subtitle'], ['stage-footer-text', 'footer', 'footer'], ['stage-speech-title', 'speech', 'speechTitle']]) {
+      await editTalk(async editor => { await editorTarget(editor, target); await editor.locator('#draft-' + key).fill('<新しい' + key + '>'); });
+      assert.equal(await page.locator('#' + id).textContent(), '<新しい' + key + '>');
+      assert.equal((await readDesign(new URL(page.url()).origin)).studio[key], '<新しい' + key + '>');
     }
-    await page.locator('#stage-title').hover();
-    await page.getByRole('button', { name: '配信タイトルを編集', exact: true }).click();
-    await page.getByRole('textbox', { name: '配信タイトル', exact: true }).fill('保存しない');
-    await page.keyboard.press('Escape');
+    await page.locator('#stage-design-edit').click(); await canvas.locator('#apply-design:not(:disabled)').waitFor();
+    await page.keyboard.press('Escape'); await canvas.locator('#design-dialog').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#talk-stage').isVisible(), true);
-    assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
     await page.keyboard.press('Escape');
     await page.reload(); await appReady(page);
-    assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
+    assert.equal(await page.locator('#stage-title').textContent(), '<新しいtitle>');
     await page.locator('[data-page="settings"]').click();
     await page.locator('#studio-list-count').fill('3');
     await page.locator('#studio-list-count').dispatchEvent('change');

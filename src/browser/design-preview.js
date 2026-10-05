@@ -87,7 +87,7 @@ ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本�
 // getLiveRatio tells which ratio the talk screen shows.
 export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:9' }) {
   const live = document.getElementById('talk-stage');
-  let presetDraft = null, presetApply = null, returnFocus = null;
+  let presetDraft = null, presetApply = null, returnFocus = null, hostOrigin = null;
   const assetOptions = () => overlayOptions(presetDraft?.images || designStore.images), imageOptions = () => studioOptions(presetDraft?.images || designStore.images);
   const imageScope = () => presetDraft ? `presets/${presetDraft.id}` : 'current';
   const storedOverlays = () => talkOverlays(designStore.design, getLiveRatio());
@@ -100,6 +100,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
   document.getElementById('studio-page').prepend(host);
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>${STYLE}${CANVAS_STYLE}${SNAP_STYLE}</style>${MARKUP}`;
+  shadow.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
   const $ = id => shadow.getElementById(id), dialog = $('design-dialog'), frame = $('design-preview-frame');
   const status = message => { $('design-status').textContent = message; };
   const design = () => session.design;
@@ -462,7 +463,9 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     finishConfirmation(false);
     invalidate(); session = null; saving = false; previewStage = null; renderedStudio = null; renderedActorImage = null; renderedRatio = null; frameDoc = null; frame.removeAttribute('srcdoc');
     presetDraft = null; presetApply = null; compiledSource = ''; cssError = '';
-    if (dialog.open) dialog.close(); (returnFocus || $('open-design-preview')).focus(); returnFocus = null;
+    if (dialog.open) dialog.close();
+    if (hostOrigin) { hostOrigin.replaceWith(host); hostOrigin = null; shadow.querySelector('.entry').hidden = false; }
+    (returnFocus || $('open-design-preview')).focus(); returnFocus = null;
   }
   // Leaving with changes asks first; the draft is never written back.
   async function requestClose() {
@@ -495,6 +498,8 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     session = createDraftSession(start, designStore.revision);
     ratio = nearestRatio(...size(start.outputSize)); setPreviewSize(ratio, start.outputSize); selected = 'screen'; compiledCSS = ''; compiledSource = null; cssError = '';
     compileDraftCSS(); tab('targets');
+    // A hidden operating page would hide even a top-layer dialog opened from talk mode.
+    hostOrigin = document.createComment('design editor'); host.before(hostOrigin); document.body.append(host); shadow.querySelector('.entry').hidden = true;
     dialog.showModal(); status('プレビューを準備しています…'); refresh(); scale();
     if (!preset) refreshLocal();
     try {
@@ -513,7 +518,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
       frameDoc = frame.contentDocument;
       const css = frameDoc.createElement('style'); css.textContent = previewCSS;
       const theme = frameDoc.createElement('style'); theme.id = 'preview-theme';
-      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,.stage-font-controls,.stage-edit-pencil,[data-layout-handle]{visibility:hidden!important}#talk-stage button{pointer-events:none}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}.guide-line{position:absolute;border:2px dashed #ffcc6fcc;color:#ffcc6f;text-shadow:0 1px 2px #000;padding:4px}`;
+      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,[data-layout-handle]{visibility:hidden!important}#talk-stage button{pointer-events:none}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}.guide-line{position:absolute;border:2px dashed #ffcc6fcc;color:#ffcc6f;text-shadow:0 1px 2px #000;padding:4px}`;
       frameDoc.head.append(css, theme, controls);
       previewStage = frameDoc.importNode(live, true); previewStage.hidden = false;
       // The copy carries the live ratio's layout and edit frame; show the preview ratio's own.
@@ -855,6 +860,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
   };
   function showLive() { overlays = storedOverlays(); renderOverlays(live, resolveOverlayAssets(overlays)); }
   return {
+    openEditor() { return openPreview(); },
     openPreset(preset, onApply) { return openPreview(structuredClone(preset), onApply); },
     reset() { if (session) close(); overlays = normalizeOverlays(); renderOverlays(live, overlays); },
     // The talk screen switched ratio: show that ratio's additions.

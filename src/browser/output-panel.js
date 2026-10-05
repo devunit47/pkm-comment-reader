@@ -6,7 +6,7 @@ const SIZE_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 ×
 // so everything a streamer needs to set up OBS lives on this page.
 // The output size belongs to the design (saved in the customization folder);
 // the background mode and key color depend on this PC's OBS setup and stay here.
-export function initializeOutputPanel({ storage, designStore, publisher, getStudio = () => null, onSizeChange = () => {} }) {
+export function initializeOutputPanel({ storage, designStore, publisher, getStudio = () => null, openEditor = () => {} }) {
   let preferences;
   try { preferences = normalizeOutputPreferences(JSON.parse(storage?.getItem(OUTPUT_PREFERENCES_KEY) || 'null')); }
   catch { preferences = normalizeOutputPreferences(); }
@@ -23,7 +23,7 @@ export function initializeOutputPanel({ storage, designStore, publisher, getStud
     <label>背景<select id="output-background"><option value="theme">テーマの背景をそのまま映す</option><option value="key">単色にする（OBSのクロマキーで抜く）</option></select></label>
     <label>抜く色<select id="output-key" aria-describedby="output-key-help"><option value="00ff00">緑</option><option value="ff00ff">マゼンタ</option><option value="0000ff">青</option></select></label>
     <p class="muted" id="output-key-help">OBSで取り込んだソースに「クロマキー」フィルターを追加し、同じ色を選びます。文字の縁取り・影・半透明の枠には背景色がにじむことがあります。きれいに重ねたい場合は②を使ってください。</p>
-    <label>出力の大きさ<select id="output-size">${Object.keys(OUTPUT_SIZES).map(size => `<option value="${size}">${SIZE_LABELS[size]}</option>`).join('')}</select></label>
+    <p>適用中の出力の大きさ：<span id="output-size-value"></span></p><div><button id="edit-output-size" class="button" type="button">エディタで変更</button></div>
     <div><button id="open-output-window" class="button primary" type="button">配信出力ウィンドウを開く</button></div>
     <ul class="muted output-notes"><li>OBSのキャプチャ方式は「Windows 10（1903以降）」を選んでください。</li><li>上端のアドレス表示は、OBSでソースをAltキーを押しながらドラッグして切り取ります。</li><li>出力ウィンドウを最小化したり、ほかのウィンドウで完全に隠したりすると、表示が止まることがあります。</li><li>画面より大きいサイズは、ブラウザが画面に収まる大きさに縮めます。実際の大きさは上の状態表示で確認できます。</li></ul>
     </fieldset>
@@ -45,21 +45,16 @@ export function initializeOutputPanel({ storage, designStore, publisher, getStud
     $('output-background').value = preferences.background;
     $('output-key').value = preferences.key;
     $('output-key').disabled = preferences.background !== 'key';
-    $('output-size').value = preferences.size;
+    $('output-size-value').textContent = SIZE_LABELS[preferences.size];
   }
   function update() {
-    preferences = normalizeOutputPreferences({ background: $('output-background').value, key: $('output-key').value, size: $('output-size').value });
+    preferences = normalizeOutputPreferences({ background: $('output-background').value, key: $('output-key').value, size: designStore.design.outputSize });
     try { storage?.setItem(OUTPUT_PREFERENCES_KEY, JSON.stringify({ background: preferences.background, key: preferences.key })); } catch { /* Preferences are a convenience. */ }
-    if (preferences.size !== designStore.design.outputSize) {
-      const saving = designStore.save({ ...designStore.design, outputSize: preferences.size });
-      // The talk screen previews the stream, so it follows the new size at once.
-      onSizeChange();
-      saving.catch(error => { message = `出力の大きさを保存できません。${error.message}`; setStatus(publisher.status()); });
-    }
     render();
     setStatus(publisher.status());
   }
-  for (const id of ['output-background', 'output-key', 'output-size']) $(id).onchange = update;
+  for (const id of ['output-background', 'output-key']) $(id).onchange = update;
+  $('edit-output-size').onclick = openEditor;
   $('open-output-window').onclick = () => {
     const [width, height] = OUTPUT_SIZES[preferences.size];
     // A fixed name reuses one output window instead of opening another.

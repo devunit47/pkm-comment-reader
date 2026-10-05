@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorThemeCSS, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
@@ -77,7 +77,7 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   await saveTalk(url, { layout: null });
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, '9:16': { layout: portrait, overlays: { version: 1, items: [createOverlay('text', { id: 'portrait-text', text: '縦だけ' })], assets: {} } } } }));
   await page.locator('[data-page="studio"]').click();
-  await page.locator('#output-size').selectOption('1080x1920');
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await waitForDesign(url, design => design.outputSize === '1080x1920');
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   const box = await stageBox(page);
@@ -91,7 +91,7 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   assert.equal((await panelStyle(page, '.stage-chat')).top, '50%');
   await page.locator('#leave-talk').click();
   await page.locator('[data-page="studio"]').click();
-  await page.locator('#output-size').selectOption('1280x720');
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1280x720'));
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   assert.equal((await stageBox(page)).ratio, '16:9');
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0, 'portrait additions stay in 9:16');
@@ -101,7 +101,7 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
 browserTest('the portrait default keeps the speech minimum off the comments on a short talk screen', async t => {
   const { page, url, errors } = await fixture(t, { width: 1280, height: 720 });
   await page.locator('[data-page="studio"]').click();
-  await page.locator('#output-size').selectOption('1080x1920');
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await waitForDesign(url, design => design.outputSize === '1080x1920');
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   const boxes = await page.locator('#talk-stage').evaluate(stage => Object.fromEntries(['.stage-speech', '.stage-chat', '.stage-footer'].map(selector => {

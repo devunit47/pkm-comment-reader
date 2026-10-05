@@ -42,7 +42,10 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 #stage-volume-dialog input{writing-mode:vertical-lr;direction:rtl;width:24px;height:130px;min-width:0;padding:0;touch-action:none}
 #stage-volume-dialog output{text-align:center;min-width:0}
 #stage-volume-dialog::backdrop{background:transparent}
-.stage-controls{flex-direction:column;align-items:flex-end;gap:6px}
+.stage-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px;opacity:0}
+.stage-controls #leave-talk,.stage-controls .stage-exit-hint{grid-column:1 / -1}
+.stage-actions:hover .stage-controls,.stage-actions:focus-within .stage-controls{opacity:1}
+@media(hover:none){.stage-controls{opacity:1}}
 .stage-actions .stage-service{display:flex;align-items:center;justify-content:flex-end;gap:8px;max-width:none}
 .stage-switch{width:auto;flex-shrink:0}
 .stage-actions .stage-service>#stage-channel{order:1;width:100%;text-align:right}
@@ -78,31 +81,11 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 
 .pokome-workspace .pokome-comment__author{color:var(--pk-accent-color,var(--mint))}
 .studio-fields textarea{width:100%;font:13px monospace;min-height:200px;resize:vertical;background:var(--bg);color:var(--text);padding:12px;border:1px solid var(--line)}
-.stage-editable{position:relative;display:inline-flex;align-items:center;gap:8px;min-width:44px;min-height:32px;max-width:100%;vertical-align:middle}
 #talk-stage .stage-header>div:first-child{display:flex;flex-direction:column;align-items:flex-start;min-width:0;flex:1}
-.stage-edit-pencil{flex-shrink:0;width:32px;height:32px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--stage-border);border-radius:6px;background:var(--stage-surface);color:var(--stage-text);font-size:20px;line-height:1;opacity:0;pointer-events:none}
-.stage-edit-pencil[hidden]{display:none}
-.stage-editable:hover>.stage-edit-pencil,.stage-editable:focus-within>.stage-edit-pencil{opacity:1;pointer-events:auto}
-.stage-text-editor{position:relative;z-index:101;background:var(--stage-surface);color:var(--stage-text);border:1px solid var(--stage-accent);border-radius:8px;padding:12px;font-size:14px;letter-spacing:normal;min-width:min(280px,60vw);display:flex;flex-wrap:wrap;gap:8px}
-.stage-text-editor label{display:grid;gap:8px;width:100%;font-size:13px}
-.stage-text-editor input{width:100%;min-width:0;color:var(--stage-text);background:var(--stage-bg);border:1px solid var(--stage-border);padding:8px;font-size:16px}
-.stage-text-dialog{padding:0;border:0;border-radius:8px;background:var(--stage-surface);color:var(--stage-text);width:min(420px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
-.stage-text-dialog::backdrop{background:#0006}
-@media(hover:none){.stage-edit-pencil{opacity:1;pointer-events:auto}}
 
 #stage-chat-list{flex:1;display:block;overflow:auto;font-size:var(--stage-font-size,20px)}
-.stage-font-controls{display:flex;align-items:center;gap:8px}.stage-font-controls button{min-width:36px;min-height:36px;font-size:22px}.stage-font-controls output{font-size:12px}
 .stage-comment-clipped{visibility:hidden}
 .stage-panel-label{flex-wrap:wrap}
-.stage-style-label{display:flex;align-items:center;gap:6px;font-size:12px}
-.stage-style-label select{font-size:12px;max-width:180px;min-height:32px}
-#stage-comment-settings{min-width:36px;min-height:36px;font-size:20px}
-.stage-chat .stage-font-controls,.stage-chat #stage-comment-settings{opacity:0;pointer-events:none}
-.stage-chat .stage-panel-label:hover .stage-font-controls,.stage-chat .stage-panel-label:focus-within .stage-font-controls,.stage-chat .stage-panel-label:hover #stage-comment-settings,.stage-chat .stage-panel-label:focus-within #stage-comment-settings{opacity:1;pointer-events:auto}
-@media(hover:none){.stage-chat .stage-font-controls,.stage-chat #stage-comment-settings{opacity:1;pointer-events:auto}}
-#stage-comment-settings-dialog .stage-style-label{display:grid;gap:8px;width:100%}
-#stage-comment-settings-dialog select{max-width:none;width:100%}
-#stage-comment-settings-dialog p{font-size:13px;line-height:1.6;margin:0}
 #stage-chat-list[data-comment-style=anonymous] .stage-comment strong{display:none}
 #stage-chat-list[data-comment-style=anonymous] .stage-comment p{margin:0}
 #stage-chat-list[data-comment-style=inline] .stage-comment,#stage-chat-list[data-comment-style=compact] .stage-comment{display:flex;align-items:baseline;gap:10px;padding:8px 0}
@@ -196,7 +179,9 @@ footer{color:var(--muted);font-size:12px}
   #talk-stage .stage-header h1{font-size:22px}
   #talk-stage .stage-header p{font-size:12px;margin:6px 0 0}
   #talk-stage .stage-actions{max-width:55%;gap:8px}
-  #talk-stage .stage-controls{display:grid;grid-template-columns:auto auto;gap:4px 8px}
+  #talk-stage .stage-controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px}
+  #talk-stage .stage-controls #leave-talk{grid-column:auto}
+  #talk-stage .stage-controls .button{min-width:0;overflow-wrap:anywhere;padding:8px}
   #talk-stage .stage-exit-hint{grid-column:1 / -1;text-align:right}
   #talk-stage .stage-grid{min-height:320px}
   #talk-stage .stage-speech{max-height:none}

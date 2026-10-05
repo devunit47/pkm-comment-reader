@@ -6,13 +6,13 @@ import { initializeDesignPresets } from './design-presets.js';
 import { initializeCustomization } from './customization.js';
 import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
 import { compileTheme } from '../shared/theme.js';
-import { createDesignStore, checkImageFile, LEGACY_RATIO } from './design-client.js';
-import { defaultDesign, resolveStudioImages, studioOptions, nearestRatio, talkActorImage } from '../shared/design-model.js';
+import { createDesignStore, LEGACY_RATIO } from './design-client.js';
+import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { normalizeStudio, readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
+import { readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
 import { enabledPlatforms } from '../shared/app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from '../shared/theme.js';
@@ -42,14 +42,10 @@ const savedVoices = readSavedVoices(storage);
 for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
 // The appearance lives in customization/current, served by the local server.
 const designStore = await createDesignStore();
-const keepImages = () => studioOptions(designStore.images);
 let studio = designStore.design.studio;
 let shownTalkRatio = nearestRatio(...(OUTPUT_SIZES[designStore.design.outputSize] ?? OUTPUT_SIZES['1280x720']));
 let historyLimit = readHistoryLimit(storage);
 for (const state of Object.values(states)) state.historyLimit = historyLimit;
-function saveStudio() {
-  return designStore.save({ ...designStore.design, studio }).catch(error => { notify(error.message); throw error; });
-}
 let currentSpeech = null;
 let stageCredit = '';
 let outputPanel;
@@ -597,7 +593,6 @@ function renderTalkAppearance() {
 function renderStudio() {
   const stage = $('talk-stage');
   renderTalkAppearance();
-  $('stage-comment-style').value = studio.commentStyle;
   const preview = document.querySelector('.speech-bubble');
   preview.dataset.style = studio.speechStyle;
   for (const property of ['--speech-background', '--speech-ink', '--speech-image', '--speech-image-ink']) {
@@ -608,9 +603,6 @@ function renderStudio() {
   preview.style.setProperty('--stage-text', stageColors.getPropertyValue('--stage-text'));
   preview.style.setProperty('--stage-border', stageColors.getPropertyValue('--stage-border'));
   preview.style.setProperty('--stage-accent', stageColors.getPropertyValue('--stage-accent'));
-  $('stage-font-value').textContent = `${studio.fontSize}px`;
-  $('stage-font-minus').disabled = studio.fontSize <= 16;
-  $('stage-font-plus').disabled = studio.fontSize >= 64;
   $('studio-list-count').value = historyLimit;
   $('history-limit-label').textContent = `サービスごとに直近${historyLimit}件 · ユーザー名・コメントから操作`;
   outputPanel?.refresh();
@@ -634,7 +626,6 @@ function leaveTalk(fromHistory = false) {
   if (fromHistory !== true && history.state?.pokomeTalk) history.back();
   if ($('stage-connection-dialog').open) $('stage-connection-dialog').close();
   if ($('stage-volume-dialog').matches(':popover-open')) $('stage-volume-dialog').hidePopover();
-  closeTextEditor?.();
   document.body.classList.remove('talk-mode');
   $('talk-stage').hidden = true;
   page('home');
@@ -684,66 +675,6 @@ function applyHistoryLimit(value) {
   render();
 }
 $('studio-list-count').onchange = () => applyHistoryLimit(Number($('studio-list-count').value));
-$('stage-comment-style').onchange = () => {
-  const list = $('stage-chat-list');
-  const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-  studio = normalizeStudio({ ...studio, commentStyle: $('stage-comment-style').value }, keepImages());
-  saveStudio().catch(() => {}); renderStudio();
-  if (bottom) list.scrollTop = list.scrollHeight;
-  updateStageCommentVisibility();
-};
-$('stage-comment-settings').onclick = () => $('stage-comment-settings-dialog').showModal();
-$('stage-comment-settings-dialog').addEventListener('keydown', event => {
-  if (event.key === 'Escape') event.stopPropagation();
-});
-for (const [id, step] of [['stage-font-minus', -2], ['stage-font-plus', 2]]) {
-  $(id).onclick = () => {
-    const list = $('stage-chat-list');
-    const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-    studio = normalizeStudio({ ...studio, fontSize: Math.max(16, Math.min(64, studio.fontSize + step)) }, keepImages());
-    saveStudio().catch(() => {}); renderStudio();
-    if (bottom) list.scrollTop = list.scrollHeight;
-    updateStageCommentVisibility();
-  };
-}
-let closeTextEditor = null;
-for (const [id, key, label, limit] of [
-  ['stage-title', 'title', '配信タイトル', 60],
-  ['stage-subtitle', 'subtitle', 'ひとこと', 100],
-  ['stage-footer-text', 'footer', '画面下の文章', 100],
-  ['stage-speech-title', 'speechTitle', '読み上げ枠の見出し', 40],
-]) {
-  const text = $(id);
-  const wrapper = make('span', 'stage-editable', '');
-  text.replaceWith(wrapper);
-  wrapper.append(text);
-  const edit = make('button', 'stage-edit-pencil', '✎');
-  edit.type = 'button'; edit.setAttribute('aria-label', `${label}を編集`); edit.title = `${label}を編集`;
-  wrapper.append(edit);
-  edit.onclick = () => {
-    closeTextEditor?.();
-    const dialog = document.createElement('dialog');
-    dialog.className = 'stage-text-dialog';
-    dialog.setAttribute('aria-label', `${label}を編集`);
-    const form = make('form', 'stage-text-editor', '');
-    const caption = make('label', '', `${label}（${limit}文字まで）`);
-    const input = document.createElement('input'); input.value = studio[key]; input.maxLength = limit; input.setAttribute('aria-label', label);
-    caption.append(input);
-    const submit = make('button', 'button primary', '保存'); submit.type = 'submit';
-    const cancel = make('button', 'button', 'キャンセル'); cancel.type = 'button';
-    form.append(caption, submit, cancel); dialog.append(form); wrapper.append(dialog); edit.hidden = true;
-    const close = () => { dialog.close(); dialog.remove(); edit.hidden = false; edit.focus({ preventScroll: true }); closeTextEditor = null; };
-    closeTextEditor = close;
-    cancel.onclick = close;
-    dialog.oncancel = event => { event.preventDefault(); close(); };
-    form.onkeydown = event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } };
-    form.onsubmit = event => {
-      event.preventDefault(); studio = normalizeStudio({ ...studio, [key]: input.value }, keepImages());
-      saveStudio().catch(() => {}); renderStudio(); close();
-    };
-    dialog.showModal(); input.focus(); input.select();
-  };
-}
 renderStudio();
 renderStageSpeech();
 
@@ -834,8 +765,9 @@ initializeCustomization({ platforms: enabledPlatforms, designStore,
     return true;
   },
 });
+$('stage-design-edit').onclick = () => designPreview.openEditor();
 showLiveOverlays = designPreview.showLive;
-outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, onSizeChange: () => workspaceEditor.reload() });
+outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });
 initializeDesignPresets({ designStore, designPreview });
 // Another page changed the design, or a failed save was undone: show the saved design.
 designStore.subscribe(detail => {

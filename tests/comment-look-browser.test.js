@@ -63,7 +63,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
   assert.equal(outline.author, 'rgb(255, 255, 255)');
   assert.match(outline.shadow, /rgb\(0, 0, 0\) 1px 0px 0px/);
   assert.equal(outline.divider, '0px');
-  // The live stage keeps its label row for the controls; only the text hides.
+  // The live stage keeps its label row for live status; only the text hides.
   assert.deepEqual([outline.heading, outline.label], ['hidden', 'flex']);
 
   // The output removes the label row entirely.
@@ -75,7 +75,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
 
   await page.bringToFront();
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('dense'));
-  assert.equal(await page.locator('#stage-comment-style').inputValue(), 'anonymous');
+  assert.equal(await page.locator('#stage-chat-list').getAttribute('data-comment-style'), 'anonymous');
   const dense = await look(page);
   assert.deepEqual([dense.lineHeight, dense.paddingTop], [`${20 * 1.35}px`, '2px']);
   await output.waitForFunction(() => document.querySelector('#stage-chat-list').dataset.commentStyle === 'anonymous');
@@ -115,7 +115,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
   assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
   // Returning to the theme preset restores every value, names included.
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
-  assert.equal(await page.locator('#stage-comment-style').inputValue(), 'stacked');
+  assert.equal(await page.locator('#stage-chat-list').getAttribute('data-comment-style'), 'stacked');
   assert.equal(await page.locator('#stage-speech-user').evaluate(element => element.hidden), false);
   assert.deepEqual(await look(page), original);
   assert.deepEqual(errors, []);

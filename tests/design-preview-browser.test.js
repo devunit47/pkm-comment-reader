@@ -9,7 +9,7 @@ import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -391,8 +391,8 @@ browserTest('a draft whose save failed and was cancelled is never saved by a lat
   assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
   await closeEditor(editor);
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
-  // A remaining instant-save field stores the design through the same queue.
-  await page.locator('#output-size').selectOption('1920x1080');
+  // A later editor session stores only its own changes through the same queue.
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1920x1080'));
   const saved = await waitForDesign(url, design => design.outputSize === '1920x1080');
   assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');
   await page.reload(); await appReady(page);

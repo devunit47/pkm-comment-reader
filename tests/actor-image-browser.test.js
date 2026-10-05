@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, viewport = { width: 1280, height: 720 }) {
@@ -191,7 +191,7 @@ browserTest('live, output and preview choose their own actor ratio and follow sa
     ['4:3', '1440x1080', { width: 720, height: 540 }],
   ];
   for (const [ratio, size, viewport] of cases) {
-    await page.locator('[data-page="studio"]').click(); await page.locator('#output-size').selectOption(size);
+    await page.locator('[data-page="studio"]').click(); await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption(size));
     await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
     await waitActor(page, ratios[ratio]);
     await output.setViewportSize(viewport); await waitActor(output, ratios[ratio]);
