@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -177,19 +177,11 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await session.isVisible(), false);
     assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
     await page.locator('[data-page="studio"]').click();
-    await editor.locator('#mode').selectOption('talk');
-    await editor.locator('#edit').click();
-    await session.locator('#finish').click();
-    await editor.locator('.fields summary').click();
-    await editor.locator('#hidden').check();
-    await page.locator('[data-page="home"]').click();
-    await page.locator('#enter-talk').click();
+    await applyInEditor(page, async canvas => { await editorTarget(canvas, 'header'); await canvas.locator('#panel-hidden').check(); });
+    await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
     await page.locator('.stage-header').waitFor({ state: 'hidden' });
     await page.keyboard.press('Escape');
     await page.locator('[data-page="studio"]').click();
-    await editor.locator('#edit').click();
-    await session.locator('#finish').click();
-    await page.locator('#talk-stage').waitFor({ state: 'hidden' });
     await applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill('.pokome-workspace .pokome-panel { border-radius: 3px; }'); });
     assert.match(await page.locator('#pokome-user-theme').textContent(), /border-radius: 3px/);
     await applyInEditor(page, async editor => {
@@ -464,5 +456,20 @@ test('leaving talk mode after a reload in talk mode returns to the operating scr
     await page.locator('[data-page="studio"]').click();
     assert.equal(await page.locator('#studio-page').isVisible(), true);
     assert.deepEqual(errors, []);
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+});
+
+
+test('home layout controls contain no talk editing entry points', { skip: !browserAvailable }, async () => {
+  const browser = await chromium.launch({ headless: true, executablePath });
+  const server = createServer({ customizationDirectory: await scratch() });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const page = await browser.newPage(); await blockExternalFonts(page);
+    await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
+    const editor = page.locator('#workspace-editor');
+    assert.equal(await editor.locator('#mode, #ratio, #copy-ratio-button').count(), 0);
+    assert.equal(await editor.locator('h2').textContent(), 'ホームの配置');
+    assert.equal(await page.locator('#talk-stage [data-layout-handle]').count(), 0);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });

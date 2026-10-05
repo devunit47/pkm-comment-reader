@@ -242,6 +242,6 @@ body:is(.pokome-output,.pokome-preview) #talk-stage,body.talk-mode #talk-stage[d
 }
 #talk-stage:is([data-comment-item-background=light],[data-comment-item-background=dark]) #stage-chat-list .stage-comment{margin-bottom:14px}
 /* The talk stage previews the stream: it is framed to its ratio inside the window (outlined while editing). */
-body.talk-mode #talk-stage[data-frame-ratio]{aspect-ratio:var(--frame);width:min(100vw,calc(100dvh * var(--frame)));height:auto;max-height:100dvh;margin:0 auto;overflow:hidden}body.talk-mode #talk-stage[data-frame-editing]{outline:2px dashed color-mix(in srgb,var(--stage-accent) 70%,transparent);outline-offset:-2px}
+body.talk-mode #talk-stage[data-frame-ratio]{aspect-ratio:var(--frame);width:min(100vw,calc(100dvh * var(--frame)));height:auto;max-height:100dvh;margin:0 auto;overflow:hidden}
 body.talk-mode:has(#talk-stage[data-frame-ratio]),body.talk-mode:has(#talk-stage[data-frame-ratio]) main{background:#05090a}
 .history-settings{margin-top:16px}.history-settings label{display:grid;gap:6px;max-width:320px}

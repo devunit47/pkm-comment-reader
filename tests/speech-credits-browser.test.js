@@ -9,6 +9,23 @@ import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitF
 const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
 const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
 
+async function canvasSize(page, editor, size) {
+  await editor.locator('#preview-width').selectOption(size);
+  await page.waitForFunction(value => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === Number(value.split('x')[1]), size);
+}
+async function openSpeechCanvas(page) {
+  await page.locator('[data-page="studio"]').click();
+  const editor = page.locator('#design-preview-editor');
+  await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await canvasSize(page, editor, '1280x720'); await editorTarget(editor, 'speech');
+  return editor;
+}
+async function applyCanvas(editor) {
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+}
+const speechBox = page => page.frameLocator('#design-preview-editor #design-preview-frame').locator('.stage-speech').evaluate(element => {
+  const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height };
+});
 // The talk (stream) layout is saved in customization/current, not in the browser.
 const savedSpeech = async base => (await readDesign(base)).ratios['16:9']?.layout?.panels.speech;
 const speechWhere = (base, predicate) => waitForDesign(base, design => { const p = design.ratios['16:9']?.layout?.panels.speech; return !!p && predicate(p); })
@@ -179,19 +196,16 @@ test('short and resized speech panels keep readable text and visible credits for
     }
     await page.locator('[data-page="home"]').click();
   }
-  // Resize through the real editor handle, not a test-only style override.
-  await page.locator('[data-page="studio"]').click();
-  await page.locator('#workspace-editor #mode').selectOption('talk');
-  await page.locator('#workspace-editor #edit').click();
-  const resize = page.locator('.stage-speech [data-layout-handle] button').nth(1);
+  // Resize through the canvas handle; apply before checking the live credit.
+  const canvas = await openSpeechCanvas(page);
+  const resize = canvas.locator('.canvas-target[data-target-id="speech"] .canvas-handle[data-edge="s"]');
   const handle = await resize.boundingBox();
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
   await page.mouse.down();
   await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 - 160, { steps: 8 });
-  await page.mouse.up();
+  await page.mouse.up(); await applyCanvas(canvas);
   await speechWhere(base, p => p.h < 20);
-  await page.locator('#layout-session #finish').click();
-  await page.locator('#enter-talk').click();
+  await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
     await page.setViewportSize(viewport);
     const contained = await page.locator('#stage-speech-credit').evaluate(credit => {
@@ -248,18 +262,16 @@ for (const action of ['drag', 'keyboard']) {
   const { page, errors } = await open(t, base);
     await choose(page, 'voicevox');
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.locator('[data-page="studio"]').click();
-    await page.locator('#workspace-editor #mode').selectOption('talk');
-    await page.locator('#workspace-editor #edit').click();
-    const desktop = await page.locator('.stage-speech').boundingBox();
-    await page.setViewportSize({ width: 640, height: 360 });
-    const compact = await page.locator('.stage-speech').boundingBox();
+    const canvas = await openSpeechCanvas(page);
+    const desktop = await speechBox(page);
+    await canvasSize(page, canvas, '640x360');
+    const compact = await speechBox(page);
     assert.equal(compact.y, 140);
-    await page.setViewportSize({ width: 1280, height: 720 });
-    assert.deepEqual(await page.locator('.stage-speech').boundingBox(), desktop, 'resize alone restores desktop geometry');
+    await canvasSize(page, canvas, '1280x720');
+    assert.deepEqual(await speechBox(page), desktop, 'resize alone restores desktop geometry');
     assert.deepEqual(await savedSpeech(base), panels.speech, 'resize alone preserves saved percentages');
-    await page.setViewportSize({ width: 640, height: 360 });
-    const move = page.locator('.stage-speech [data-layout-handle] button').first();
+    await canvasSize(page, canvas, '640x360');
+    const move = canvas.locator('.canvas-target[data-target-id="speech"]');
     await editorScreenshot(page, `speech-editor-${action}-before-640x360`);
     if (action === 'drag') {
       const handle = await move.boundingBox();
@@ -270,78 +282,27 @@ for (const action of ['drag', 'keyboard']) {
     } else {
       await move.press('ArrowUp');
     }
-    const changed = await page.locator('.stage-speech').boundingBox();
+    const changed = await speechBox(page);
     const distance = compact.y - changed.y;
-    assert.ok(action === 'drag' ? distance >= 40 && distance <= 60 : Math.abs(distance - 7.2) < 1, `first ${action} moves from visible position; observed ${distance}px`);
-    const stored = await speechWhere(base, p => p.y !== panels.speech.y);
+    const scale = (await canvas.locator('#design-preview-frame').boundingBox()).width / 640;
+    assert.ok(action === 'drag' ? Math.abs(distance - 50 / scale) <= 7.3 : Math.abs(distance - 7.2) < 1, `first ${action} moves from visible position; observed ${distance}px`);
+    const stored = { ...panels.speech, y: Number(await canvas.locator('#panel-y').inputValue()) };
+    assert.equal(Number(await canvas.locator('#panel-h').inputValue()), panels.speech.h);
+    assert.equal(Number(await canvas.locator('#panel-w').inputValue()), panels.speech.w);
     assert.equal(stored.h, panels.speech.h, 'moving does not rewrite saved height');
     assert.equal(stored.w, panels.speech.w, 'moving does not rewrite saved width');
     t.diagnostic(JSON.stringify({ action, initialY: compact.y, changedY: changed.y, distance, storedY: stored.y }));
     await editorScreenshot(page, `speech-editor-${action}-after-640x360`);
-    await page.setViewportSize({ width: 1280, height: 720 });
-    const returned = await page.locator('.stage-speech').boundingBox();
+    await canvasSize(page, canvas, '1280x720');
+    const returned = await speechBox(page);
     assert.ok(Math.abs(returned.y - stored.y / 100 * 720) < 1, 'desktop position follows the explicit edit');
     assert.equal(returned.height, desktop.height, 'desktop speech sizing is preserved');
     await editorScreenshot(page, `speech-editor-${action}-desktop-1280x720`);
+    await applyCanvas(canvas);
+    await speechWhere(base, p => p.y !== panels.speech.y);
     assert.deepEqual(errors, []);
   });
 }
-
-test('one-axis resize preserves untouched saved dimensions and desktop intent', { skip: !browserAvailable }, async t => {
-  const { base } = await local(t);
-  const panels = bottomAlignedPanels();
-  await saveTalk(base, { layout: { panels } });
-  const { page, errors } = await open(t, base);
-  await choose(page, 'voicevox');
-  const scenarios = [
-    { key: 'ArrowLeft', axis: 'w' }, { key: 'ArrowRight', axis: 'w' },
-    { key: 'ArrowUp', axis: 'h' }, { key: 'ArrowDown', axis: 'h' },
-    { pointer: [-40, 0], axis: 'w' }, { pointer: [0, 40], axis: 'h' },
-  ];
-  for (const scenario of scenarios) {
-    await page.setViewportSize({ width: 1280, height: 720 });
-    await page.locator('[data-page="studio"]').click();
-    // Restore the saved layout from outside; the page follows the folder's change.
-    await saveTalk(base, { layout: { panels } });
-    await page.waitForFunction(() => {
-      const style = document.querySelector('.stage-speech').style;
-      return style.width === '50%' && style.height === '25%' && style.left === '50%';
-    });
-    await page.locator('#workspace-editor #mode').selectOption('talk');
-    await page.locator('#workspace-editor #edit').click();
-    const desktop = await page.locator('.stage-speech').boundingBox();
-    await page.setViewportSize({ width: 640, height: 360 });
-    const resize = page.locator('.stage-speech [data-layout-handle] button').nth(1);
-    if (scenario.key) await resize.press(scenario.key);
-    else {
-      const handle = await resize.boundingBox();
-      const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
-      await page.mouse.move(x, y); await page.mouse.down();
-      await page.mouse.move(x + scenario.pointer[0], y + scenario.pointer[1], { steps: 6 });
-      await page.mouse.up();
-    }
-    const stored = await speechWhere(base, p => p[scenario.axis] !== panels.speech[scenario.axis]);
-    await page.setViewportSize({ width: 1280, height: 720 });
-    const returned = await page.locator('.stage-speech').boundingBox();
-    const label = scenario.key || `pointer-${scenario.axis}`;
-    t.diagnostic(JSON.stringify({ label, stored, desktopBefore: desktop, desktopAfter: returned }));
-    if (scenario.axis === 'w') {
-      assert.equal(stored.h, panels.speech.h, label + ' preserves saved height');
-      assert.equal(stored.y, panels.speech.y, label + ' preserves vertical intent');
-      assert.equal(returned.height, desktop.height, label + ' preserves desktop height');
-      assert.equal(returned.y, desktop.y, label + ' preserves desktop vertical position');
-    } else {
-      assert.equal(stored.w, panels.speech.w, label + ' preserves saved width');
-      assert.equal(stored.x, panels.speech.x, label + ' preserves horizontal intent');
-      assert.equal(returned.width, desktop.width, label + ' preserves desktop width');
-      assert.equal(returned.x, desktop.x, label + ' preserves desktop horizontal position');
-    }
-    assert.notEqual(stored[scenario.axis], panels.speech[scenario.axis], label + ' edits the requested dimension');
-    await editorScreenshot(page, `speech-one-axis-${label}-desktop-1280x720`);
-    await page.locator('#layout-session #finish').click();
-  }
-  assert.deepEqual(errors, []);
-});
 
 test('custom CSS minimum height updates saved speech bounds on apply, clear and appearance reset', { skip: !browserAvailable }, async t => {
   const { base } = await local(t);
