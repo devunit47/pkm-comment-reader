@@ -1,6 +1,8 @@
 import { normalizeDesign, defaultDesign, normalizePresetName, validPresetId, imageUrl, designImageRefs, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, IMAGE_TYPES } from '../shared/design-model.js';
 import { compileTheme } from '../shared/theme.js';
 
+export const STALE_DRAFT = '別の画面でデザインが変更されました。最新のデザインから編集をやり直してください。';
+
 // Backups from the browser-storage era held one landscape layout.
 export const LEGACY_RATIO = '16:9';
 
@@ -138,6 +140,22 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
       if (!validPresetId(preset.id) || !preset.revision) throw new Error('プリセットを読み直してください。');
       replacing = true;
       try { await put({ presetId: preset.id, presetRevision: preset.revision }, { expectedRevision, replacement: true }); }
+      finally { replacing = false; }
+    },
+    // The editor's single save. The revision is the one the draft started from,
+    // so a design saved elsewhere since then is answered with a conflict.
+    async applyDraft(design, expectedRevision) {
+      await store.waitForSaves();
+      requireWritable();
+      if (replacing) throw new Error('デザインを適用中です。完了後にもう一度操作してください。');
+      if (!expectedRevision || confirmed.revision !== expectedRevision) throw Object.assign(new Error(STALE_DRAFT), { conflict: true });
+      const normalized = normalizeDesign(design, images());
+      // Normalizing drops unknown images silently; a draft must not lose one.
+      const kept = designImageRefs(normalized);
+      if ([...designImageRefs(design)].some(ref => !kept.has(ref))) throw new Error('下書きで使っている画像が見つかりません。画像を選び直してください。');
+      replacing = true;
+      try { await put(normalized, { expectedRevision, replacement: true }); }
+      catch (error) { throw error.conflict ? Object.assign(new Error(STALE_DRAFT), { conflict: true }) : error; }
       finally { replacing = false; }
     },
     async reset(expectedRevision = null) {
