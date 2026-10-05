@@ -396,7 +396,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const move = e => {
       if (!isCurrent(token)) return;
       const dx = (e.clientX - event.clientX) / width * 100, dy = (e.clientY - event.clientY) / height * 100;
-      if (!dx && !dy) return;
+      if (!dx && !dy) {
+        // Returning to the origin restores the whole gesture, including a materialized layout.
+        if (session.cancelOpen()) refresh();
+        $('snap-lines').hidden = true;
+        return;
+      }
       const patch = edge ? resizeTarget(original, dx, dy, edge, e.shiftKey) : limitPanelMove(id, { ...original, x: original.x + dx, y: original.y + dy });
       // A CSS minimum may expand the other dimension; leave an untouched axis stored as it was.
       if (edge && !(e.shiftKey && original.type === 'image')) {

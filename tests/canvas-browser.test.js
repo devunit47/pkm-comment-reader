@@ -125,3 +125,38 @@ browserTest('west and north panel resize stop at the boundary without moving the
     assert.equal(position, 0); assert.equal(position + dimension, 20 + extent, `${edge}, snap=${snap}, extent=${extent} preserves the opposite edge`);
   }
 });
+
+browserTest('returning a drag to its start restores geometry and keeps only earlier history', async t => {
+  const { page, editor } = await fixture(t);
+  await editor.locator('#canvas-snap').uncheck();
+  async function returnGesture(id, prefix) {
+    const hit = editor.locator(`.canvas-target[data-target-id="${id}"]`);
+    const geometry = async () => Promise.all(['x', 'y', 'w', 'h'].map(key => editor.locator(`#${prefix}-${key}`).inputValue()));
+    for (const edge of ['', 'se']) {
+      const before = await geometry(), box = await (edge ? hit.locator('[data-edge=se]') : hit).boundingBox();
+      const x = box.x + box.width / 2, y = box.y + box.height / 2;
+      await page.mouse.move(x, y); await page.mouse.down();
+      await page.mouse.move(x - 20, y - 10);
+      assert.notDeepEqual(await geometry(), before, 'the gesture first changes geometry');
+      await page.mouse.move(x, y); await page.mouse.up();
+      assert.deepEqual(await geometry(), before, `${id} ${edge || 'move'} returns to the start`);
+    }
+  }
+  await editorTarget(editor, 'actor');
+  await returnGesture('actor', 'panel');
+  assert.equal(await editor.locator('#draft-state').textContent(), '変更なし', 'a standard layout stays unmaterialized');
+  assert.equal(await editor.locator('#undo-design').isDisabled(), true);
+  await editor.locator('#add-text').click();
+  const id = await editor.locator('#target-select').inputValue();
+  await returnGesture(id, 'overlay');
+  await editor.locator('#undo-design').click();
+  assert.equal(await editor.locator(`.canvas-target[data-target-id="${id}"]`).count(), 0, 'one undo removes the earlier addition');
+  assert.equal(await editor.locator('#undo-design').isDisabled(), true);
+  await editorTarget(editor, 'actor'); await number(editor, 'panel-x', 10);
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await editorTarget(editor, 'actor');
+  await returnGesture('actor', 'panel');
+  assert.equal(await editor.locator('#draft-state').textContent(), '変更なし', 'a saved layout also returns unchanged');
+  assert.equal(await editor.locator('#undo-design').isDisabled(), true);
+});

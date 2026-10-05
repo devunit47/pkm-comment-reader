@@ -100,4 +100,3 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
   }
   assert.deepEqual(errors, []);
 });
-
