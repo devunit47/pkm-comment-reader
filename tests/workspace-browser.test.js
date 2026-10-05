@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -22,7 +22,8 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
     for (const style of ['panel', 'bubble', 'image']) {
-      await page.locator('#studio-speech-style').evaluate((select, value) => { select.value = value; select.dispatchEvent(new Event('change')); }, style);
+      await saveStudio(`http://127.0.0.1:${server.address().port}`, { speechStyle: style });
+      await page.waitForFunction(style => document.querySelector('.speech-bubble').dataset.style === style, style);
       const appearance = await page.evaluate(style => {
         const preview = getComputedStyle(document.querySelector('.speech-bubble'));
         const stage = getComputedStyle(document.querySelector(style === 'image' ? '.stage-speech-content' : '.stage-speech'));
@@ -134,7 +135,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await page.keyboard.press('Escape');
     await page.reload(); await appReady(page);
     assert.equal(await page.locator('#stage-title').textContent(), '<新しい配信タイトル>');
-    await page.locator('[data-page="studio"]').click();
+    await page.locator('[data-page="settings"]').click();
     await page.locator('#studio-list-count').fill('3');
     await page.locator('#studio-list-count').dispatchEvent('change');
     await page.locator('[data-page="home"]').click();
@@ -189,19 +190,20 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     await editor.locator('#edit').click();
     await session.locator('#finish').click();
     await page.locator('#talk-stage').waitFor({ state: 'hidden' });
-    await page.locator('[data-page="studio"]').click();
-    await page.locator('#theme-css').locator('xpath=ancestor::details').locator('summary').click();
-    await page.locator('#theme-css').fill('.pokome-workspace .pokome-panel { border-radius: 3px; }');
-    await page.locator('#theme-apply').click();
+    await applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill('.pokome-workspace .pokome-panel { border-radius: 3px; }'); });
     assert.match(await page.locator('#pokome-user-theme').textContent(), /border-radius: 3px/);
-    await page.locator('#theme-import').setInputFiles({ name: 'theme.css', mimeType: 'text/css', buffer: Buffer.from('.pokome-workspace { color: rgb(1, 2, 3); }') });
+    await applyInEditor(page, async editor => {
+      await editorThemeCSS(editor);
+      assert.equal(await editor.locator('#draft-css-file').getAttribute('accept'), '.css,text/css');
+      await editor.locator('#draft-css-file').setInputFiles({ name: 'theme.css', mimeType: 'text/css', buffer: Buffer.from('.pokome-workspace { color: rgb(1, 2, 3); }') });
+      await page.waitForFunction(() => document.querySelector('#design-preview-editor').shadowRoot.getElementById('draft-css').value.includes('rgb(1, 2, 3)'));
+    });
     await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('rgb(1, 2, 3)'));
     // The talk layout and theme are saved to the folder; the home layout stays in this browser.
     const base = `http://127.0.0.1:${server.address().port}`;
     const saved = await waitForDesign(base, design => design.theme.includes('rgb(1, 2, 3)') && design.ratios['16:9']?.layout?.panels.header.hidden === true);
     assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1'))), { version: 1, home, talk: null });
     assert.equal(await page.locator('#design-export').count(), 0, 'the old design file export is gone');
-    assert.equal(await page.locator('#theme-import').getAttribute('accept'), '.css,text/css');
     await page.reload(); await appReady(page);
     assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(1, 2, 3\)/);
     assert.equal(await page.locator('.stage-header').evaluate(element => element.style.display), 'none');
@@ -395,15 +397,15 @@ test('first setup guide and full settings backup restore work through the UI', {
     await page.locator('#open-setup').click(); await page.locator('#complete-setup').click();
     assert.equal(await page.locator('#setup-welcome').isVisible(), false);
     const base = 'http://127.0.0.1:' + server.address().port;
-    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
     await page.locator('[data-page="settings"]').click();
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
     const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
     // Backups hold operating settings only: no appearance, no images.
     assert.doesNotMatch(backup.toString(), /pokome-studio|pokome-theme|pokome-overlays|data:image/);
-    await page.locator('[data-page="studio"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
-    await page.locator('#studio-theme').selectOption('rose');
+    await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
     await waitForDesign(base, design => design.studio.theme === 'rose');
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
@@ -411,9 +413,9 @@ test('first setup guide and full settings backup restore work through the UI', {
     await page.locator('#restore-settings').setInputFiles({ name: 'settings.json', mimeType: 'application/json', buffer: backup });
     assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
-    await page.locator('[data-page="studio"]').click();
+    await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
-    assert.equal(await page.locator('#studio-theme').inputValue(), 'rose', 'restoring settings leaves the folder design alone');
+    assert.equal((await readDesign(base)).studio.theme, 'rose', 'restoring settings leaves the folder design alone');
     // A backup from the browser-only edition imports its appearance and images into the folder.
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     const legacy = JSON.parse(backup.toString());
@@ -425,14 +427,14 @@ test('first setup guide and full settings backup restore work through the UI', {
     delete legacy.settings['pokome-history-limit'];
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
-    assert.match(await page.locator('#backup-status').textContent(), /取り込みます/);
+    await page.locator('#backup-status').filter({ hasText: '取り込みます' }).waitFor();
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     const imported = await waitForDesign(base, design => design.studio.theme === 'violet');
     assert.equal(imported.studio.title, '旧版のタイトル');
     assert.match(imported.studio.image, /^images\/[0-9a-f]{64}\.png$/);
     assert.equal(imported.ratios['16:9'].overlays.assets['asset-1'], imported.studio.image, 'the same image is stored once');
     assert.equal(imported.theme, '.pokome-workspace { color: rgb(9, 8, 7); }');
-    await page.locator('[data-page="studio"]').click();
+    await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
     assert.equal(await page.locator('#actor-image').evaluate(image => image.complete && image.naturalWidth), 1);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);

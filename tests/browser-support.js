@@ -85,3 +85,13 @@ export async function closeEditor(editor) {
   if (await editor.locator('#editor-confirm').isVisible()) await editor.locator('#editor-confirm-accept').click();
   await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
 }
+// Changes the design through the editor and applies it in one write.
+export async function applyInEditor(page, steps) {
+  const editor = page.locator('#design-preview-editor');
+  await page.locator('[data-page="studio"]').click();
+  await editor.locator('#open-design-preview').click();
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await steps(editor);
+  await editor.locator('#apply-design').click();
+  await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+}

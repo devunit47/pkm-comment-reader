@@ -1,5 +1,6 @@
-import { normalizeStudio } from '../shared/studio.js';
-import { compileTheme } from '../shared/theme.js';
+import { normalizeStudio, applyCommentPreset, matchCommentPreset, COMMENT_PRESETS } from '../shared/studio.js';
+import { compileTheme, DEFAULT_THEME_CSS, MAX_THEME_CSS_BYTES } from '../shared/theme.js';
+import { OUTPUT_SIZES } from '../shared/output-protocol.js';
 import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { MAX_OVERLAYS, normalizeOverlays, createOverlay, removeOverlay, addOverlayAsset, overlayBounds } from '../shared/overlay-model.js';
 import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOptions, RATIOS, PREVIEW_SIZES, SAFE_AREAS, nearestRatio, talkLayout, talkOverlays, talkActorImage, normalizeActorImage, defaultActorImage, withTalk } from '../shared/design-model.js';
@@ -18,9 +19,13 @@ const SAMPLE_COMMENTS = Object.freeze([
 const size = value => value.split('x').map(Number);
 // The five panels are chosen from the list; their placement is edited in E3.
 const PANEL_TARGETS = Object.freeze([['screen', '画面全体'], ['header', 'ヘッダー（タイトル）'], ['chat', 'コメント欄'], ['speech', '読み上げ'], ['actor', '立ち絵'], ['footer', 'フッター']]);
-const TYPED_KEYS = ['title', 'subtitle', 'footer', 'speechTitle', 'accent', 'speechBackground', 'speechTextColor', 'fontSize', 'commentItemOpacity'];
-const NUMBER_KEYS = ['fontSize', 'speechFontSize', 'maxVisible', 'holdSeconds', 'commentItemOpacity'], NULLABLE_KEYS = ['commentMaxLines', 'commentGap'];
-const FIELD_KEYS = ['theme', 'accentMode', 'accent', 'decoration', 'title', 'subtitle', 'footer', 'speechTitle', 'fontSize', 'speechFontSize', 'speechStyle', 'speechBackground', 'speechTextColor', 'commentStyle', 'maxVisible', 'holdSeconds', 'newestPosition', 'actorAppearance', 'commentItemBackground', 'commentItemOpacity', 'commentMaxLines', 'commentGap'];
+const TYPED_KEYS = ['title', 'subtitle', 'footer', 'speechTitle', 'accent', 'speechBackground', 'speechTextColor', 'fontSize', 'commentItemOpacity', 'commentPanelOpacity', 'commentOutlineColor'];
+const NUMBER_KEYS = ['fontSize', 'speechFontSize', 'maxVisible', 'holdSeconds', 'commentItemOpacity', 'commentPanelOpacity'], NULLABLE_KEYS = ['commentMaxLines', 'commentGap', 'commentLineHeight'];
+// '' keeps the theme's color; the mode select chooses between it and the color input.
+const COLOR_MODE_KEYS = ['commentTextColor', 'commentAuthorColor'];
+const FIELD_KEYS = ['theme', 'accentMode', 'accent', 'decoration', 'title', 'subtitle', 'footer', 'speechTitle', 'fontSize', 'speechFontSize', 'speechStyle', 'speechBackground', 'speechTextColor', 'commentStyle', 'maxVisible', 'holdSeconds', 'newestPosition', 'source', 'actorAppearance', 'commentPanel', 'commentPanelOpacity', 'commentItemBackground', 'commentItemOpacity', 'commentOutline', 'commentOutlineColor', 'commentLineHeight', 'commentMaxLines', 'commentGap', 'commentDivider', 'commentLabel'];
+const OUTPUT_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）', '1440x1080': '1440 × 1080（4:3）' };
+const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 const ACTOR_KEYS = ['mode', 'scale', 'alignX', 'alignY', 'offsetX', 'offsetY', 'overflow'];
 const options = pairs => pairs.map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
 const textField = (key, label, max) => `<label>${label}<input id="draft-${key}" type="text" maxlength="${max}"></label>`;
@@ -39,7 +44,7 @@ dialog[data-mode=preset] .side,dialog[data-mode=preset] .edit-only{display:none}
 @media(max-width:1199px){.editor{grid-template-columns:170px minmax(0,1fr) 290px}}
 @media(max-width:767px){#design-dialog[open]{display:block;overflow:auto}.bar{position:sticky;top:0;z-index:1;background:#101a18}.editor{display:flex;flex-direction:column}.center{order:-1}.side,.center{overflow:visible}.left,.right{border:0}.stage-box{flex:none;min-height:0}.tabs{display:flex;gap:8px;padding:8px 14px 0}.tabs button[aria-pressed=true]{background:#ace5cd;color:#11271e}#design-dialog[data-tab=targets] .right,#design-dialog[data-tab=settings] .left{display:none}dialog[data-mode=preset] .tabs{display:none}}`;
 
-const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><button id="open-design-preview" class="primary" type="button">デザインを編集</button><p id="preview-result" role="status"></p><p><small>このページの下にある設定・配置の欄は、これまでどおり変更するとすぐに保存されます。まとめて試すにはデザインエディタを使ってください。</small></p></section>
+const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><button id="open-design-preview" class="primary" type="button">デザインを編集</button><p id="preview-result" role="status"></p><p><small>このページの「画面の配置」と「配信出力（OBS用）」の出力の大きさは、移行中のため変更するとすぐに保存されます。</small></p></section>
 <dialog id="design-dialog" aria-labelledby="design-title" data-tab="targets"><div class="bar"><div class="title"><h2 id="design-title">デザインエディタ</h2><span id="draft-state" role="status"></span></div><div class="actions"><button id="restart-design" type="button" hidden>最新のデザインからやり直す</button><button id="discard-design" class="edit-only danger" type="button">変更をすべて破棄</button><button id="apply-design" class="primary" type="button">適用</button><button id="cancel-design" type="button">閉じる</button></div></div>
 <p id="design-status" role="status" aria-live="polite"></p>
 <div class="editor"><div class="tabs edit-only" role="group" aria-label="表示する欄"><button id="show-targets" type="button" aria-pressed="true">対象</button><button id="show-settings" type="button" aria-pressed="false">設定</button></div>
@@ -47,14 +52,19 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 <div class="center"><div class="view"><label>確認サイズ（編集する比率）<select id="preview-width">${PREVIEW_SIZES.map(value => `<option value="${value}">${value.replace('x', ' × ')}（${nearestRatio(...size(value))}）</option>`).join('')}</select></label><label class="check"><input id="preview-guides" type="checkbox" checked>画面端のガイドを表示</label></div><p id="preview-ratio-help"><small>比率ごとに、配置・追加の文字と画像・立ち絵画像の配置を別々に保存します。</small></p><div class="stage-box" id="stage-box"><div class="viewport" id="preview-viewport"><iframe id="design-preview-frame" title="雑談画面のデザインプレビュー" sandbox="allow-same-origin"></iframe></div></div><p class="edit-only"><small>サンプル表示です。チャット接続・音声再生は行いません。外部フォントを読み込まないため、文字の折り返しは適用後も確認してください。追加した文字・画像は「移動」「大きさ」をドラッグできます。矢印キーで移動、Shift＋矢印でサイズ変更。画面収録・ウィンドウキャプチャ中は、この編集画面も映るためOBSの別シーンなどで編集してください。</small></p></div>
 <aside class="side right" aria-labelledby="target-heading"><h3 id="target-heading">画面全体</h3>
 <div data-target="screen"><span class="scope">全比率共通の見た目</span><label>テーマ<select id="draft-theme">${options([['mint', 'ミントの夜'], ['rose', 'ローズの夜'], ['violet', 'すみれの夜'], ['paper', 'お昼の喫茶室']])}</select></label><label>配色モード<select id="draft-accentMode">${options([['theme', 'テーマに合わせる'], ['custom', '自分で設定']])}</select></label><label>アクセントカラー<input id="draft-accent" type="color"></label><label class="check"><input id="draft-decoration" type="checkbox">星やハートの装飾を表示</label>
-<details><summary>詳細：テーマCSS</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。</small></p></details>
+<label>出力の大きさ<select id="draft-outputSize">${options(Object.keys(OUTPUT_SIZES).map(value => [value, OUTPUT_LABELS[value]]))}</select></label><p><small>配信出力と雑談画面はこの大きさの比率で表示します。確認サイズを変えても出力の大きさは変わりません。</small></p>
+<details><summary>詳細：テーマCSS</summary><label>CSS<textarea id="draft-css" rows="8" spellcheck="false" placeholder="${DEFAULT_THEME_CSS.replace(/"/g, '&quot;')}"></textarea></label><p><small>.pokome-workspace 以下のCSSだけを使えます。画像URL・外部フォントは使えません。CSSエラー中は最後の有効なプレビューを表示し、適用できません。CSSで位置や大きさを指定すると、設定と重なる場合があります。動かせないときはCSSを解除または編集してください。</small></p><label>CSSファイルを読み込む<input id="draft-css-file" type="file" accept=".css,text/css"></label><div class="actions"><button id="draft-css-clear" type="button">CSSを解除</button><button id="draft-css-export" type="button">編集中のCSSを書き出す</button></div><p><small>書き出すのはCSSだけです。配置・画像・そのほかの設定は含みません。</small></p></details>
 <button id="draft-reset" type="button">追加項目・配色・文章・画像・立ち絵画像の配置・CSSを標準に戻して試す</button><p><small>立ち絵画像の配置は全比率で標準に戻します。既存の枠の配置は変わりません。「適用」までは元のデザインを保持します。</small></p></div>
 <div data-target="header" hidden><span class="scope">全比率共通の見た目</span>${textField('title', 'タイトル', 60)}${textField('subtitle', 'サブタイトル', 100)}</div>
-<div data-target="chat" hidden><span class="scope">全比率共通の見た目</span><label>コメントの表示<select id="draft-commentStyle">${options([['stacked', '名前を上に表示'], ['anonymous', '名前なし'], ['inline', '名前と本文を横並び'], ['compact', '1行コンパクト']])}</select></label><label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="64" step="1"></label><p><small>テーマCSSに文字サイズの指定がある場合は、その指定が優先されます。</small></p>
+<div data-target="chat" hidden><span class="scope">全比率共通の見た目</span><label>コメント欄の見た目をまとめて切り替え<select id="draft-commentPreset">${options([...Object.entries(COMMENT_PRESETS).map(([value, preset]) => [value, preset.label]), ['', '個別に調整中']])}</select></label><p><small>選ぶと下の見た目とコメントの表示をまとめて変更します。配置・文字サイズ・表示件数は変えません。</small></p><label>コメントの表示<select id="draft-commentStyle">${options([['stacked', '名前を上に表示'], ['anonymous', '名前なし'], ['inline', '名前と本文を横並び'], ['compact', '1行コンパクト']])}</select></label><label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="64" step="1"></label><p><small>テーマCSSに文字サイズの指定がある場合は、その指定が優先されます。</small></p>
 <label>配信出力の表示件数<select id="draft-maxVisible">${options([['0', '制限なし'], ...Array.from({ length: 30 }, (_, index) => [String(index + 1), `${index + 1}件`])])}</select></label><label>配信出力の表示時間<select id="draft-holdSeconds">${options([['0', '時間では消さない'], ['5', '5秒'], ['15', '15秒'], ['30', '30秒']])}</select></label><label>配信出力の新着位置<select id="draft-newestPosition">${options([['bottom', '下'], ['top', '上']])}</select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p>
-<label>投稿ごとの背景<select id="draft-commentItemBackground">${options([['theme', 'テーマのまま'], ['none', 'なし'], ['light', '白い丸い背景'], ['dark', '黒い丸い背景']])}</select></label><label>投稿背景の不透明度（%）<input id="draft-commentItemOpacity" type="number" min="0" max="100" step="1"></label><label>本文の最大行数<select id="draft-commentMaxLines">${options([['', 'テーマのまま'], ['0', '制限なし'], ...[1, 2, 3, 4, 5].map(lines => [String(lines), `${lines}行`])])}</select></label><p><small>本文だけを省略して表示します。保存した本文と読み上げには影響しません。「1行コンパクト」にも優先します。</small></p><label>コメント同士の間隔<select id="draft-commentGap">${options([['', 'テーマのまま'], ...[0, 4, 8, 12, 14, 16, 24].map(gap => [String(gap), `${gap}px`])])}</select></label></div>
-<div data-target="speech" hidden><span class="scope">全比率共通の見た目</span>${textField('speechTitle', '読み上げ枠の見出し', 40)}<label>読み上げの文字サイズ<select id="draft-speechFontSize">${options([16, 22, 28, 32].map(px => [String(px), `${px}px`]))}</select></label><label>読み上げ枠<select id="draft-speechStyle">${options([['panel', '通常のパネル'], ['bubble', 'セリフの吹き出し'], ['image', '背景画像']])}</select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label></div>
-<div data-target="actor" hidden><span class="scope">全比率共通の見た目</span><label>立ち絵の枠・背景・キャプション<select id="draft-actorAppearance">${options([['theme', 'テーマのまま'], ['none', 'すべて消す']])}</select></label>
+<label>投稿ごとの背景<select id="draft-commentItemBackground">${options([['theme', 'テーマのまま'], ['none', 'なし'], ['light', '白い丸い背景'], ['dark', '黒い丸い背景']])}</select></label><label>投稿背景の不透明度（%）<input id="draft-commentItemOpacity" type="number" min="0" max="100" step="1"></label><label>本文の最大行数<select id="draft-commentMaxLines">${options([['', 'テーマのまま'], ['0', '制限なし'], ...[1, 2, 3, 4, 5].map(lines => [String(lines), `${lines}行`])])}</select></label><p><small>本文だけを省略して表示します。保存した本文と読み上げには影響しません。「1行コンパクト」にも優先します。</small></p><label>コメント同士の間隔<select id="draft-commentGap">${options([['', 'テーマのまま'], ...[0, 4, 8, 12, 14, 16, 24].map(gap => [String(gap), `${gap}px`])])}</select></label>
+<label>パネルの背景<select id="draft-commentPanel">${options([['theme', 'テーマのまま'], ['none', 'なし（枠も消す）'], ['light', '白'], ['dark', '黒']])}</select></label><label>パネルの不透明度（%）<input id="draft-commentPanelOpacity" type="number" min="0" max="100" step="5"></label>
+${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本文の色' : '名前の色'; return `<label>${label}<select id="draft-${key}Mode">${options([['theme', 'テーマのまま'], ['custom', '色を指定']])}</select></label><label>${label}（指定色）<input id="draft-${key}" type="color"></label>`; }).join('')}
+<label>文字の縁取り<select id="draft-commentOutline">${options([['none', 'なし'], ['thin', '細い'], ['thick', '太い']])}</select></label><label>縁取りの色<input id="draft-commentOutlineColor" type="color"></label><label>行間<select id="draft-commentLineHeight">${options([['', 'テーマのまま'], ['1.2', '1.2（詰める）'], ['1.35', '1.35'], ['1.5', '1.5'], ['1.75', '1.75'], ['2', '2.0（広い）']])}</select></label>
+<label class="check"><input id="draft-commentDivider" type="checkbox">コメントの区切り線を表示</label><label class="check"><input id="draft-commentLabel" type="checkbox">見出し（「みんなのコメント」と件数）を表示</label><p><small>「テーマのまま」以外を選んだ項目は、テーマCSSより優先します。</small></p></div>
+<div data-target="speech" hidden><span class="scope">全比率共通の見た目</span>${textField('speechTitle', '読み上げ枠の見出し', 40)}<label>読み上げの文字サイズ<select id="draft-speechFontSize">${options([16, 22, 28, 32].map(px => [String(px), `${px}px`]))}</select></label><label>読み上げ枠<select id="draft-speechStyle">${options([['panel', '通常のパネル'], ['bubble', 'セリフの吹き出し'], ['image', '背景画像']])}</select></label><label>吹き出し背景<input id="draft-speechBackground" type="color"></label><label>背景画像内の文字色<input id="draft-speechTextColor" type="color"></label><label>名前・コメントの背景画像<input id="draft-speechImage" type="file" accept="${IMAGE_ACCEPT}"></label><p id="speech-image-status" role="status"></p><button id="draft-speechImage-reset" type="button">標準の背景画像に戻す</button><p><small>PNG・JPEG・WebP・GIF、20MB・1600万画素まで。画像は名前と本文だけの背景に表示します。</small></p></div>
+<div data-target="actor" hidden><span class="scope">全比率共通の見た目</span><label>表示するもの<select id="draft-source">${options([['space', '空き枠 / OBSで映像を重ねる'], ['image', '立ち絵画像']])}</select></label><label>立ち絵画像<input id="draft-image" type="file" accept="${IMAGE_ACCEPT}"></label><p id="actor-image-status" role="status"></p><button id="draft-image-remove" type="button">画像を削除</button><p><small>PNG・JPEG・WebP・GIF、20MB・1600万画素まで。透過PNGにも対応します。動くVtuberモデルや外部のワイプ映像は、空き枠にOBSのソースを重ねて使えます。</small></p><label>立ち絵の枠・背景・キャプション<select id="draft-actorAppearance">${options([['theme', 'テーマのまま'], ['none', 'すべて消す']])}</select></label>
 <h3 id="draft-actor-heading">この比率の立ち絵画像の配置</h3><span class="scope">この比率の配置</span><label>画像の配置方法<select id="actor-mode">${options([['theme', 'テーマのまま'], ['custom', '自分で調整']])}</select></label><label>拡大率（%）<input id="actor-scale" type="number" min="100" max="200" step="1"></label><label>横位置合わせ<select id="actor-alignX">${options([['left', '左'], ['center', '中央'], ['right', '右']])}</select></label><label>縦位置合わせ<select id="actor-alignY">${options([['top', '上'], ['center', '中央'], ['bottom', '下（画像ファイルの下端）']])}</select></label><div class="numbers"><label>横の微調整（%）<input id="actor-offsetX" type="number" min="-100" max="100" step="any"></label><label>縦の微調整（%）<input id="actor-offsetY" type="number" min="-100" max="100" step="any"></label></div><label class="check"><input id="actor-overflow" type="checkbox">枠からはみ出す</label><p><small id="draft-actor-help"></small></p></div>
 <div data-target="footer" hidden><span class="scope">全比率共通の見た目</span>${textField('footer', '画面下のひとこと', 100)}</div>
 <div data-target="overlay" hidden><span class="scope">この比率の配置</span><label class="check"><input id="overlay-hidden" type="checkbox">この項目を非表示</label><div id="overlay-text-fields"><label>表示する文章<textarea id="overlay-text" maxlength="1000" rows="3"></textarea></label><label>文字の色<input id="overlay-color" type="color"></label><label>文字の大きさ（px）<input id="overlay-font-size" type="number" min="12" max="160"></label></div><div class="numbers">${[['x', '横位置（%）'], ['y', '縦位置（%）'], ['w', '幅（%）'], ['h', '高さ（%）'], ['z', '重なり順 0〜99']].map(([key, label]) => `<label>${label}<input id="overlay-${key}" type="number" min="${['w', 'h'].includes(key) ? 2 : 0}" max="${key === 'z' ? 99 : 100}" step="1"></label>`).join('')}</div><p><small>画像は各辺に画面1枚分まで、幅・高さ200%まで置けます。枠は画面内に幅・高さ各2%残すよう補正します。文字は画面内に収めます。大きい重なり順の項目ほど手前に表示します。既存の枠の位置は、このページの下の「画面の配置」で変更できます。</small></p><button id="delete-overlay" class="danger" type="button">この項目を削除</button></div>
@@ -166,8 +176,22 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       const value = element.type === 'checkbox' ? studio[key] : String(studio[key] ?? '');
       if (element.type === 'checkbox') element.checked = value; else if (element.value !== value) element.value = value;
     }
+    for (const key of COLOR_MODE_KEYS) {
+      $(`draft-${key}Mode`).value = studio[key] ? 'custom' : 'theme';
+      $(`draft-${key}`).disabled = !studio[key];
+      if (studio[key] && $(`draft-${key}`) !== typing) $(`draft-${key}`).value = studio[key];
+    }
+    $('draft-commentPreset').value = matchCommentPreset(studio);
+    $('draft-outputSize').value = design().outputSize;
     if ($('draft-css').value !== design().theme) $('draft-css').value = design().theme;
     $('draft-commentItemOpacity').disabled = !['light', 'dark'].includes(studio.commentItemBackground);
+    $('draft-commentPanelOpacity').disabled = !['light', 'dark'].includes(studio.commentPanel);
+    $('draft-commentOutlineColor').disabled = studio.commentOutline === 'none';
+    $('draft-speechBackground').disabled = studio.speechStyle !== 'bubble';
+    $('speech-image-status').textContent = studio.speechImage ? 'ユーザーの背景画像を登録済みです。' : '標準の背景画像を使用します。';
+    $('actor-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
+    $('draft-speechImage-reset').disabled = !studio.speechImage;
+    $('draft-image-remove').disabled = !studio.image;
     actorFields();
   }
   function actorFields() {
@@ -471,6 +495,42 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       element.addEventListener('change', () => { if (session) { session.seal(); studioFields(); } });
     } else element.addEventListener('change', () => { if (session) { session.seal(); editStudio({ [key]: value() }, { label: '見た目' }); studioFields(); } });
   }
+  for (const key of COLOR_MODE_KEYS) {
+    const mode = $(`draft-${key}Mode`), color = $(`draft-${key}`);
+    mode.addEventListener('change', () => { if (session) { session.seal(); editStudio({ [key]: mode.value === 'custom' ? color.value : '' }, { label: '見た目' }); } });
+    color.addEventListener('input', () => { if (session && mode.value === 'custom') editStudio({ [key]: color.value }, { label: '見た目', merge: `studio:${key}` }, color); });
+    color.addEventListener('change', () => session?.seal());
+  }
+  $('draft-commentPreset').addEventListener('change', () => {
+    if (!session || !$('draft-commentPreset').value) return;
+    session.seal();
+    edit({ ...design(), studio: applyCommentPreset(design().studio, $('draft-commentPreset').value, imageOptions()) }, { label: 'コメント欄の見た目' });
+  });
+  $('draft-outputSize').addEventListener('change', () => { if (session) { session.seal(); edit({ ...design(), outputSize: $('draft-outputSize').value }, { label: '出力の大きさ' }); } });
+  // Images are stored as files first; the draft only refers to them until Apply.
+  async function draftImage(input, key, patch) {
+    const file = input.files[0]; input.value = '';
+    if (!file || !editable()) return;
+    const token = epoch, request = Symbol();
+    if (requests.has(key)) pending--;
+    requests.set(key, request); pending++; buttons(); status('画像を確認しています…');
+    const current = () => isCurrent(token) && requests.get(key) === request;
+    try {
+      await checkImageFile(file);
+      if (!current()) return;
+      const { ref } = await designStore.uploadImage(file);
+      if (!current()) return;
+      session.seal(); editStudio(patch(ref), { label: '画像' });
+      status('画像を下書きに入れました。適用するまでは見た目に反映されません。');
+    } catch (error) { if (current()) status(error.message); }
+    finally { if (current()) { requests.delete(key); pending--; buttons(); } }
+  }
+  // A newer choice wins over an upload still in progress.
+  function dropImageRequest(key) { if (requests.delete(key)) { pending--; buttons(); } }
+  $('draft-image').onchange = () => draftImage($('draft-image'), 'actor-image', ref => ({ source: 'image', image: ref }));
+  $('draft-speechImage').onchange = () => draftImage($('draft-speechImage'), 'speech-image', ref => ({ speechStyle: 'image', speechImage: ref }));
+  $('draft-image-remove').onclick = () => { if (session) { dropImageRequest('actor-image'); session.seal(); editStudio({ image: '' }, { label: '画像の削除' }); } };
+  $('draft-speechImage-reset').onclick = () => { if (session) { dropImageRequest('speech-image'); session.seal(); editStudio({ speechImage: '', speechStyle: 'image' }, { label: '標準の背景画像' }); } };
   for (const key of ACTOR_KEYS) $(`actor-${key}`).addEventListener('change', () => {
     if (!editable()) return;
     const element = $(`actor-${key}`), current = talkActorImage(design(), ratio);
@@ -485,6 +545,27 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     status(cssError ? `入力したCSSは未反映です：${cssError}` : 'CSSをプレビューしました。適用するまでは保存されません。');
   });
   $('draft-css').addEventListener('change', () => session?.seal());
+  $('draft-css-file').onchange = async () => {
+    const file = $('draft-css-file').files[0]; $('draft-css-file').value = '';
+    if (!file || !editable()) return;
+    const token = epoch, request = Symbol();
+    requests.set('css-file', request);
+    try {
+      if (file.size > MAX_THEME_CSS_BYTES) throw new Error('CSSは1MB以内にしてください。');
+      const css = await file.text();
+      if (!isCurrent(token) || requests.get('css-file') !== request) return;
+      session.seal(); edit({ ...design(), theme: css }, { label: 'CSSファイル' });
+      status(cssError ? `入力したCSSは未反映です：${cssError}` : 'CSSファイルを下書きに読み込みました。適用するまでは保存されません。');
+    } catch (error) { if (isCurrent(token)) status(`読み込めませんでした：${error.message}`); }
+    finally { if (isCurrent(token) && requests.get('css-file') === request) requests.delete('css-file'); }
+  };
+  $('draft-css-clear').onclick = () => { if (session) { requests.delete('css-file'); session.seal(); edit({ ...design(), theme: '' }, { label: 'CSSの解除' }); status('CSSを解除しました。適用するまでは保存されません。'); } };
+  $('draft-css-export').onclick = () => {
+    if (!session) return;
+    const url = URL.createObjectURL(new Blob([design().theme], { type: 'text/css' }));
+    const link = document.createElement('a'); link.href = url; link.download = 'pokome-theme.css'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   $('draft-reset').onclick = () => {
     if (!editable() || !previewStage) return;
     invalidate();

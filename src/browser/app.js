@@ -12,7 +12,7 @@ import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredi
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { normalizeStudio, readSavedVoices, THEME_ACCENTS, applyCommentPreset, matchCommentPreset, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
+import { normalizeStudio, readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
 import { enabledPlatforms } from '../shared/app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from '../shared/theme.js';
@@ -610,62 +610,12 @@ function renderStudio() {
   preview.style.setProperty('--stage-text', stageColors.getPropertyValue('--stage-text'));
   preview.style.setProperty('--stage-border', stageColors.getPropertyValue('--stage-border'));
   preview.style.setProperty('--stage-accent', stageColors.getPropertyValue('--stage-accent'));
-  $('studio-speech-font-size').value = studio.speechFontSize;
-  $('studio-speech-style').value = studio.speechStyle;
-  $('studio-speech-background').value = studio.speechBackground;
-  $('studio-speech-background').disabled = studio.speechStyle !== 'bubble';
-  $('speech-background-field').classList.toggle('inactive-field', studio.speechStyle !== 'bubble');
-  $('speech-background-help').textContent = studio.speechStyle === 'bubble' ? 'セリフの吹き出しの背景に使う色です。' : '「読み上げ枠のスタイル」で「セリフの吹き出し」を選ぶと変更できます。';
-  $('studio-speech-text-color').value = studio.speechTextColor;
-  $('studio-speech-image-status').textContent = studio.speechImage ? 'ユーザーの背景画像を登録済みです。' : '標準の背景画像を使用します。';
-  $('reset-speech-image').disabled = !studio.speechImage;
-  for (const key of ['theme', 'source']) $(`studio-${key}`).value = studio[key];
-  $('studio-font-size').value = studio.fontSize;
-  $('studio-actor-appearance').value = studio.actorAppearance;
   $('stage-font-value').textContent = `${studio.fontSize}px`;
   $('stage-font-minus').disabled = studio.fontSize <= 16;
   $('stage-font-plus').disabled = studio.fontSize >= 64;
-  $('studio-accent-mode').value = studio.accentMode;
-  $('studio-accent').disabled = studio.accentMode === 'theme';
-  $('studio-accent').value = studio.accentMode === 'theme' ? THEME_ACCENTS[studio.theme] : studio.accent;
-  $('studio-accent-help').textContent = studio.accentMode === 'theme' ? 'テーマに合わせて配色します。色を指定する場合は「自分で設定」に切り替えてください。' : '背景は選んだテーマ、アクセントカラーは指定した色を使います。';
   $('studio-list-count').value = historyLimit;
-  $('studio-max-visible').value = studio.maxVisible;
-  $('studio-hold-seconds').value = studio.holdSeconds;
-  $('studio-newest-position').value = studio.newestPosition;
   $('history-limit-label').textContent = `サービスごとに直近${historyLimit}件 · ユーザー名・コメントから操作`;
-  $('studio-decoration').checked = studio.decoration;
-  $('studio-image-status').textContent = studio.image ? '立ち絵画像を登録済みです。' : '画像は未登録です。';
-  $('remove-actor-image').disabled = !studio.image;
-  renderCommentLookFields();
   outputPanel?.refresh();
-}
-// Empty fields retain their value; finite entries stay within the accepted bounds.
-function studioNumberInput(id, current, min, max) {
-  const field = $(id), value = Number(field.value);
-  return field.value === '' || !Number.isFinite(value) ? current : Math.min(max, Math.max(min, Math.round(value)));
-}
-function renderCommentLookFields() {
-  $('studio-comment-preset').value = matchCommentPreset(studio);
-  $('studio-comment-panel').value = studio.commentPanel;
-  $('studio-comment-item-background').value = studio.commentItemBackground;
-  $('studio-comment-item-opacity').value = studio.commentItemOpacity;
-  $('studio-comment-item-opacity').disabled = !['light', 'dark'].includes(studio.commentItemBackground);
-  $('studio-comment-max-lines').value = studio.commentMaxLines === null ? '' : String(studio.commentMaxLines);
-  $('studio-comment-panel-opacity').value = studio.commentPanelOpacity;
-  $('studio-comment-panel-opacity').disabled = !['light', 'dark'].includes(studio.commentPanel);
-  for (const [id, key] of [['comment-text', 'commentTextColor'], ['comment-author', 'commentAuthorColor']]) {
-    $(`studio-${id}-mode`).value = studio[key] ? 'custom' : 'theme';
-    $(`studio-${id}`).disabled = !studio[key];
-    if (studio[key]) $(`studio-${id}`).value = studio[key];
-  }
-  $('studio-comment-outline').value = studio.commentOutline;
-  $('studio-comment-outline-color').value = studio.commentOutlineColor;
-  $('studio-comment-outline-color').disabled = studio.commentOutline === 'none';
-  $('studio-comment-line-height').value = studio.commentLineHeight === null ? '' : String(studio.commentLineHeight);
-  $('studio-comment-gap').value = studio.commentGap === null ? '' : String(studio.commentGap);
-  $('studio-comment-divider').checked = studio.commentDivider;
-  $('studio-comment-label').checked = studio.commentLabel;
 }
 
 function enterTalk(fromHistory = false) {
@@ -724,33 +674,6 @@ document.querySelectorAll('[data-stage-platform]').forEach(button => {
   button.onclick = () => switchPlatform(button.dataset.stagePlatform);
 });
 
-function updateStudio() {
-  const source = $('studio-source').value;
-  studio = normalizeStudio({ ...studio,
-    theme: $('studio-theme').value, accentMode: $('studio-accent-mode').value,
-    accent: studio.accentMode === 'custom' ? $('studio-accent').value : studio.accent,
-    speechFontSize: Number($('studio-speech-font-size').value),
-    speechStyle: $('studio-speech-style').value, speechBackground: $('studio-speech-background').value,
-    speechTextColor: $('studio-speech-text-color').value,
-    maxVisible: Number($('studio-max-visible').value), holdSeconds: Number($('studio-hold-seconds').value),
-    newestPosition: $('studio-newest-position').value,
-    decoration: $('studio-decoration').checked, source,
-    fontSize: studioNumberInput('studio-font-size', studio.fontSize, 16, 64), actorAppearance: $('studio-actor-appearance').value,
-    commentItemBackground: $('studio-comment-item-background').value,
-    commentItemOpacity: studioNumberInput('studio-comment-item-opacity', studio.commentItemOpacity, 0, 100),
-    commentMaxLines: $('studio-comment-max-lines').value === '' ? null : Number($('studio-comment-max-lines').value),
-    commentPanel: $('studio-comment-panel').value, commentPanelOpacity: studioNumberInput('studio-comment-panel-opacity', studio.commentPanelOpacity, 0, 100),
-    commentTextColor: $('studio-comment-text-mode').value === 'custom' ? $('studio-comment-text').value : '',
-    commentAuthorColor: $('studio-comment-author-mode').value === 'custom' ? $('studio-comment-author').value : '',
-    commentOutline: $('studio-comment-outline').value, commentOutlineColor: $('studio-comment-outline-color').value,
-    commentLineHeight: $('studio-comment-line-height').value === '' ? null : Number($('studio-comment-line-height').value),
-    commentGap: $('studio-comment-gap').value === '' ? null : Number($('studio-comment-gap').value),
-    commentDivider: $('studio-comment-divider').checked, commentLabel: $('studio-comment-label').checked,
-  }, keepImages());
-  saveStudio().catch(() => {});
-  renderStudio();
-  render();
-}
 // The history limit is an operating setting kept in this browser, not in the design.
 function applyHistoryLimit(value) {
   historyLimit = normalizeHistoryLimit(value);
@@ -763,18 +686,6 @@ function applyHistoryLimit(value) {
   render();
 }
 $('studio-list-count').onchange = () => applyHistoryLimit(Number($('studio-list-count').value));
-for (const id of ['theme', 'accent', 'font-size', 'actor-appearance', 'comment-item-background', 'comment-item-opacity', 'comment-max-lines', 'speech-font-size', 'speech-style', 'speech-background', 'speech-text-color', 'max-visible', 'hold-seconds', 'newest-position', 'decoration', 'source',
-  'comment-panel', 'comment-panel-opacity', 'comment-text-mode', 'comment-text', 'comment-author-mode', 'comment-author',
-  'comment-outline', 'comment-outline-color', 'comment-line-height', 'comment-gap', 'comment-divider', 'comment-label']) {
-  $(`studio-${id}`).onchange = updateStudio;
-}
-$('studio-comment-preset').onchange = () => {
-  studio = applyCommentPreset(studio, $('studio-comment-preset').value, keepImages());
-  saveStudio().catch(() => {});
-  renderStudio();
-  render();
-};
-$('studio-accent-mode').onchange = updateStudio;
 $('stage-comment-style').onchange = () => {
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
@@ -853,28 +764,6 @@ async function applyImageFile(file, target, generation = beginImageChange(target
   studio = next; renderStudio();
   return true;
 }
-async function uploadStudioImage(input, target) {
-  const file = input.files[0];
-  if (!file) return;
-  try { await applyImageFile(file, target); }
-  catch (error) { notify(error.message); }
-  input.value = '';
-}
-$('studio-image').onchange = () => uploadStudioImage($('studio-image'), 'image');
-$('studio-speech-image').onchange = () => uploadStudioImage($('studio-speech-image'), 'speechImage');
-$('reset-speech-image').onclick = () => {
-  speechImageGeneration++;
-  studio = { ...studio, speechImage: '', speechStyle: 'image' };
-  saveStudio().catch(() => {});
-  renderStudio();
-};
-$('remove-actor-image').onclick = () => {
-  imageGeneration++;
-  studio = { ...studio, image: '' };
-  saveStudio().catch(() => {});
-  renderStudio();
-};
-
 renderStudio();
 renderStageSpeech();
 

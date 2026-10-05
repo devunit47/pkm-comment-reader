@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, appReady, blockExternalFonts, editorTarget, closeEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, appReady, blockExternalFonts, uploadDesignImage, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
 
 // The full-screen editor: one target's settings at a time, a single draft for
 // every ratio, and nothing written before Apply.
@@ -164,5 +164,97 @@ browserTest('preset confirmation hides the editing tools and discarding', async 
   for (const selector of ['#target-select', '#add-text', '#discard-design', '#draft-theme']) assert.equal(await editor.locator(selector).isVisible(), false, selector);
   assert.equal(await editor.locator('#preview-width').isVisible(), true);
   await closeEditor(editor);
+  assert.deepEqual(errors, []);
+});
+
+// A 1×1 PNG; the editor uploads it as a file reference.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+const pngFile = name => ({ name, mimeType: 'image/png', buffer: PNG });
+
+browserTest('every appearance setting is edited in the draft and applied in one write', async t => {
+  const { page, url, editor, errors, puts } = await fixture(t);
+  const before = await readDesign(url);
+  await open(page, editor);
+  await editorTarget(editor, 'screen');
+  await editor.locator('#draft-outputSize').selectOption('1080x1920');
+  await editorThemeCSS(editor);
+  const css = '.pokome-workspace .pokome-comment__author { color: #123456; }';
+  await editor.locator('#draft-css-file').setInputFiles({ name: 'look.css', mimeType: 'text/css', buffer: Buffer.from(css) });
+  await page.waitForFunction(([root, value]) => document.querySelector(root).shadowRoot.getElementById('draft-css').value === value, [ROOT, css]);
+  const download = page.waitForEvent('download');
+  await editor.locator('#draft-css-export').click();
+  assert.equal(await readFile(await (await download).path(), 'utf8'), css, 'the CSS being edited is exported');
+  await editor.locator('#draft-css-clear').click();
+  assert.equal(await editor.locator('#draft-css').inputValue(), '');
+  await editor.locator('#draft-css-file').setInputFiles({ name: 'look.css', mimeType: 'text/css', buffer: Buffer.from(css) });
+  await page.waitForFunction(([root, value]) => document.querySelector(root).shadowRoot.getElementById('draft-css').value === value, [ROOT, css]);
+  await editorTarget(editor, 'chat');
+  await editor.locator('#draft-commentPreset').selectOption('chips');
+  assert.equal(await editor.locator('#draft-commentStyle').inputValue(), 'anonymous', 'a comment preset also sets the comment format');
+  await editor.locator('#draft-commentOutline').selectOption('thin');
+  assert.equal(await editor.locator('#draft-commentPreset').inputValue(), '', 'a changed look no longer matches a preset');
+  await editor.locator('#draft-commentTextColorMode').selectOption('custom');
+  await editor.locator('#draft-commentTextColor').evaluate(input => { input.value = '#223344'; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); });
+  await editor.locator('#draft-commentLabel').uncheck();
+  await editorTarget(editor, 'speech');
+  await editor.locator('#draft-speechImage').setInputFiles(pngFile('speech.png'));
+  await editor.locator('#speech-image-status').filter({ hasText: '登録' }).waitFor();
+  await editorTarget(editor, 'actor');
+  await editor.locator('#draft-source').selectOption('image');
+  await editor.locator('#draft-image').setInputFiles(pngFile('actor.png'));
+  await editor.locator('#actor-image-status').filter({ hasText: '登録' }).waitFor();
+  assert.deepEqual(await readDesign(url), before); assert.equal(puts.length, 0);
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  assert.equal(puts.length, 1);
+  const saved = await readDesign(url);
+  assert.equal(saved.outputSize, '1080x1920');
+  assert.equal(saved.theme, css);
+  assert.deepEqual([saved.studio.commentItemBackground, saved.studio.commentOutline, saved.studio.commentTextColor, saved.studio.commentLabel], ['light', 'thin', '#223344', false]);
+  assert.match(saved.studio.speechImage, /^images\/[0-9a-f]{64}\.png$/);
+  assert.equal(saved.studio.speechStyle, 'image');
+  assert.match(saved.studio.image, /^images\/[0-9a-f]{64}\.png$/);
+  assert.equal(saved.studio.source, 'image');
+  await open(page, editor);
+  await editorTarget(editor, 'actor'); await editor.locator('#draft-image-remove').click();
+  await editorTarget(editor, 'speech'); await editor.locator('#draft-speechImage-reset').click();
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  const cleared = await readDesign(url);
+  assert.deepEqual([cleared.studio.image, cleared.studio.speechImage], ['', '']);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('appearance moved into the editor has no instant-save fields left, and the history limit lives in settings', async t => {
+  const { page, editor, errors } = await fixture(t);
+  await page.locator('[data-page="studio"]').click();
+  for (const selector of ['#studio-theme', '#studio-comment-preset', '#studio-speech-style', '#studio-image', '#studio-font-size', '#theme-css', '#theme-import', '#theme-reset']) {
+    assert.equal(await page.locator(selector).count(), 0, selector);
+  }
+  assert.equal(await editor.locator('#open-design-preview').isVisible(), true);
+  await page.locator('[data-page="settings"]').click();
+  assert.equal(await page.locator('#studio-list-count').isVisible(), true);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('removing an image while its upload is checked keeps Apply usable and the late upload out of the draft', async t => {
+  const { page, url, editor, errors } = await fixture(t);
+  const { ref } = await uploadDesignImage(url, PNG);
+  await saveDesign(url, design => ({ ...design, studio: { ...design.studio, source: 'image', image: ref } }));
+  await page.reload(); await appReady(page);
+  await open(page, editor); await editorTarget(editor, 'actor');
+  await page.evaluate(() => {
+    const native = HTMLImageElement.prototype.decode;
+    window.__release = null;
+    const gate = new Promise(resolve => { window.__release = resolve; });
+    HTMLImageElement.prototype.decode = async function () { await native.call(this); await gate; };
+  });
+  await editor.locator('#draft-image').setInputFiles(pngFile('slow.png'));
+  await editor.locator('#apply-design:disabled').waitFor();
+  await editor.locator('#draft-image-remove').click();
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await page.evaluate(() => window.__release());
+  await page.evaluate(() => new Promise(resolve => setTimeout(resolve, 300)));
+  assert.equal(await editor.locator('#actor-image-status').textContent(), '画像は未登録です。');
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  assert.equal((await readDesign(url)).studio.image, '');
   assert.deepEqual(errors, []);
 });

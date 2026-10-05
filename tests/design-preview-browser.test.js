@@ -387,8 +387,9 @@ browserTest('a draft whose save failed and was cancelled is never saved by a lat
   assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
   await closeEditor(editor);
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
-  await page.locator('#studio-theme').selectOption('rose');
-  const saved = await waitForDesign(url, design => design.studio.theme === 'rose');
+  // A remaining instant-save field stores the design through the same queue.
+  await page.locator('#output-size').selectOption('1920x1080');
+  const saved = await waitForDesign(url, design => design.outputSize === '1920x1080');
   assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');
   await page.reload(); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -84,7 +84,7 @@ browserTest('display count controls offer every integer from unlimited through t
   const { page, errors } = await fixture(t, { maxVisible: null });
   await page.locator('.nav[data-page="studio"]').click();
   await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
-  for (const selector of ['#studio-max-visible', '#draft-maxVisible']) {
+  for (const selector of ['#draft-maxVisible']) {
     const field = page.locator(selector);
     assert.equal(await field.evaluate(element => element.tagName), 'SELECT');
     assert.deepEqual(await field.locator('option').evaluateAll(options => options.map(option => option.value)), Array.from({ length: 31 }, (_, i) => String(i)));
@@ -95,7 +95,7 @@ browserTest('display count controls offer every integer from unlimited through t
 });
 
 browserTest('preview has ten persistent samples and count and direction changes are visible before apply', async t => {
-  const { page, errors } = await fixture(t, { maxVisible: null });
+  const { page, url, errors } = await fixture(t, { maxVisible: null });
   await page.locator('.nav[data-page="studio"]').click();
   await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   const frame = page.frameLocator('#design-preview-frame');
@@ -116,7 +116,7 @@ browserTest('preview has ten persistent samples and count and direction changes 
   await page.locator('#draft-newestPosition').selectOption('bottom');
   assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all);
   await closeEditor(page);
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
+  assert.equal((await readDesign(url)).studio.maxVisible, 0);
   assert.deepEqual(errors, []);
 });
 
@@ -186,18 +186,8 @@ browserTest('output defaults to unlimited comments and switching eight and unlim
   assert.equal((await comments(output)).length, 12);
   assert.equal(await page.locator('#comment-list .username').count(), 12);
   await page.locator('.nav[data-page="studio"]').click();
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
-  assert.equal(await page.locator('#studio-hold-seconds').inputValue(), '0');
-  assert.equal(await page.locator('#studio-newest-position').inputValue(), 'bottom');
-  await page.locator('#studio-max-visible').selectOption('8');
-  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
-  await page.locator('#studio-max-visible').selectOption('0');
-  await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
-  await page.reload(); await appReady(page);
-  await page.locator('.nav[data-page="studio"]').click();
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
   await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
-  assert.equal(await page.locator('#draft-maxVisible').inputValue(), '0');
+  assert.deepEqual([await page.locator('#draft-maxVisible').inputValue(), await page.locator('#draft-holdSeconds').inputValue(), await page.locator('#draft-newestPosition').inputValue()], ['0', '0', 'bottom']);
   await page.locator('#draft-maxVisible').selectOption('8');
   await page.locator('#apply-design').click();
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
@@ -206,18 +196,19 @@ browserTest('output defaults to unlimited comments and switching eight and unlim
   await page.locator('#apply-design').click();
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
   assert.equal((await waitForDesign(url, design => design.studio.maxVisible === 0)).studio.maxVisible, 0);
-  await page.locator('#studio-max-visible').selectOption('3');
+  const chat = steps => applyInEditor(page, async editor => { await editorTarget(editor, 'chat'); await steps(editor); });
+  await chat(editor => editor.locator('#draft-maxVisible').selectOption('3'));
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 3);
   const initialBottom = await comments(output);
-  await page.locator('#studio-newest-position').selectOption('top');
+  await chat(editor => editor.locator('#draft-newestPosition').selectOption('top'));
   await output.waitForFunction(first => document.querySelector('.stage-comment').textContent === first, initialBottom.at(-1));
   const bottom = await comments(output);
-  await page.locator('#studio-newest-position').selectOption('bottom');
+  await chat(editor => editor.locator('#draft-newestPosition').selectOption('bottom'));
   await output.waitForFunction(first => document.querySelector('.stage-comment').textContent !== first, bottom[0]);
   assert.deepEqual(await comments(output), bottom.reverse());
   await page.reload(); await appReady(page);
-  await page.locator('.nav[data-page="studio"]').click();
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '3');
+  assert.equal((await readDesign(url)).studio.maxVisible, 3);
+  await page.locator('[data-page="settings"]').click();
   await page.locator('#studio-list-count').fill('2');
   await page.locator('#studio-list-count').dispatchEvent('change');
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 2);
@@ -289,19 +280,15 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   assert.equal(await frame.locator('.stage-comment').count(), 1);
   assert.equal((await comments(output)).length, 8);
   await closeEditor(page);
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '8');
+  assert.equal((await readDesign(url)).studio.maxVisible, 8);
   await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   await page.locator('#draft-maxVisible').selectOption('1');
   await page.locator('#draft-holdSeconds').selectOption('15');
   await page.locator('#draft-newestPosition').selectOption('top');
   await page.locator('#apply-design').click();
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 1);
-  assert.equal(await page.locator('#studio-max-visible').inputValue(), '1');
-  assert.equal(await page.locator('#studio-hold-seconds').inputValue(), '15');
-  await page.reload(); await appReady(page);
-  await page.locator('.nav[data-page="studio"]').click();
-  assert.equal(await page.locator('#studio-newest-position').inputValue(), 'top');
-  assert.equal(await page.locator('#studio-hold-seconds').inputValue(), '15');
+  const saved = (await waitForDesign(url, design => design.studio.maxVisible === 1)).studio;
+  assert.deepEqual([saved.holdSeconds, saved.newestPosition], [15, 'top']);
   // Replace the producer to check a single card taller than its viewport.
   await page.close();
   await output.close();
@@ -364,8 +351,7 @@ browserTest('output window mirrors visible comments without controls and follows
   await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '13 COMMENTS');
 
   // Appearance arrives through shared storage.
-  await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#studio-theme').selectOption('rose');
+  await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
   await output.waitForFunction(() => document.querySelector('#talk-stage').dataset.theme === 'rose');
   assert.deepEqual(errors, []);
 });
