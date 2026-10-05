@@ -362,7 +362,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       hit.dataset.selected = String(selected === target.id); hit.tabIndex = selected === target.id ? 0 : -1;
       hit.setAttribute('aria-label', `${PANEL_TARGETS.find(([id]) => id === target.id)?.[1] || (item.type === 'image' ? '追加した画像' : '追加した文字')}：矢印キーで移動、Shiftと矢印キーでサイズ変更`);
       const element = isPanel(target.id) ? panelElement(target.id) : previewStage.querySelector(`.pokome-overlay[data-overlay-id="${overlayId(target.id)}"]`);
-      const rect = item.hidden ? { left: canvas.left + canvas.width * item.x / 100, top: canvas.top + canvas.height * item.y / 100, width: canvas.width * item.w / 100, height: canvas.height * item.h / 100 } : element.getBoundingClientRect();
+      const rect = item.hidden ? { left: canvas.left + canvas.width * item.x / 100 - previewStage.scrollLeft, top: canvas.top + canvas.height * item.y / 100 - previewStage.scrollTop, width: canvas.width * item.w / 100, height: canvas.height * item.h / 100 } : element.getBoundingClientRect();
       // DOM order controls hit testing; an auto z lets the selected handles sit above every hit area.
       Object.assign(hit.style, { left: `${rect.left * factor}px`, top: `${rect.top * factor}px`, width: `${rect.width * factor}px`, height: `${rect.height * factor}px` });
       if (layer.children[index] !== hit) layer.insertBefore(hit, layer.children[index] || null);

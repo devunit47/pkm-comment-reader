@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget, editorThemeCSS } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t) {
@@ -181,4 +181,27 @@ for (const method of ['pointer', 'keyboard', 'number']) browserTest(`east and so
     assert.equal(position, origin, `${edge}, snap=${snap}, origin=${origin} keeps the opposite edge`);
     assert.equal(dimension, 100 - origin, `${edge} stops at the canvas edge`);
   }
+});
+
+for (const kind of ['panel', 'addition']) browserTest(`hidden ${kind} selection stays aligned with its visible rectangle after preview scrolling`, async t => {
+  const { page, editor } = await fixture(t);
+  await editor.locator('#preview-width').selectOption('640x360');
+  await page.waitForFunction(() => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').contentWindow.innerWidth === 640);
+  await editorThemeCSS(editor);
+  await editor.locator('#draft-css').fill('.pokome-workspace .stage-grid::after { content: ""; position: absolute; left: 900px; top: 500px; width: 1px; height: 1px; }');
+  await editor.locator('#draft-css').dispatchEvent('change');
+  let id = 'actor', prefix = 'panel';
+  if (kind === 'addition') {
+    await editor.locator('#add-text').click(); id = await editor.locator('#target-select').inputValue(); prefix = 'overlay';
+  } else await editorTarget(editor, id);
+  for (const [key, value] of Object.entries({ w: 25, h: 30, x: 55, y: 10 })) await number(editor, `${prefix}-${key}`, value);
+  const frame = page.frameLocator('#design-preview-frame'), stage = frame.locator('#talk-stage');
+  const scroll = await stage.evaluate(stage => { stage.scrollLeft = 40; stage.scrollTop = 60; return [stage.scrollLeft, stage.scrollTop]; });
+  assert.deepEqual(scroll, [40, 60], 'the fixture scrolls in both directions');
+  const element = frame.locator(kind === 'panel' ? '.stage-actor' : `.pokome-overlay[data-overlay-id="${id}"]`);
+  const expected = await element.boundingBox();
+  await editor.locator(`#${prefix}-hidden`).check();
+  await editorTarget(editor, 'screen'); await editorTarget(editor, id);
+  const actual = await editor.locator(`.canvas-target[data-target-id="${id}"]`).boundingBox();
+  for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(actual[key] - expected[key]) < 1, `${key} stays aligned: ${actual[key]} versus ${expected[key]}`);
 });
