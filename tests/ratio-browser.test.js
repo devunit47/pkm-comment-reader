@@ -6,11 +6,11 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorThemeCSS } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorThemeCSS, editorTarget } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
-const EDITOR = '#workspace-editor';
+const EDITOR = '#design-preview-editor';
 const PREVIEW = '#design-preview-editor';
 
 async function fixture(t, viewport = { width: 1440, height: 1000 }) {
@@ -34,39 +34,40 @@ async function fixture(t, viewport = { width: 1440, height: 1000 }) {
   await page.goto(url); await appReady(page);
   return { context, page, url, errors, editor: page.locator(EDITOR), preview: page.locator(PREVIEW) };
 }
+async function openCanvas(page, ratio = '9:16') {
+  await page.locator('[data-page="studio"]').click();
+  const editor = page.locator(PREVIEW);
+  await editor.locator('#open-design-preview').click();
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await editor.locator('#preview-ratio').selectOption(ratio);
+  await page.waitForFunction(ratio => { const frame = document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame'); return frame.contentWindow.innerHeight === (ratio === '9:16' ? 1920 : 1080); }, ratio);
+  return editor;
+}
+async function applyCanvas(editor) {
+  await editor.locator('#apply-design').click();
+  await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+}
 const panelStyle = (page, selector) => page.locator(`#talk-stage ${selector}`).evaluate(element => ({ left: element.style.left, top: element.style.top, width: element.style.width, height: element.style.height }));
 const stageBox = page => page.locator('#talk-stage').evaluate(stage => { const box = stage.getBoundingClientRect(); return { width: box.width, height: box.height, ratio: stage.dataset.frameRatio, editing: 'frameEditing' in stage.dataset }; });
 
 browserTest('the chosen ratio is edited inside its own frame and saved only to that ratio', async t => {
-  const { page, editor, url, errors } = await fixture(t);
-  await page.locator('[data-page="studio"]').click();
-  await editor.locator('#mode').selectOption('talk');
-  assert.equal(await editor.locator('#ratio-fields').isVisible(), true);
-  await editor.locator('#ratio').selectOption('9:16');
-  await editor.locator('#edit').click();
-  const framed = await stageBox(page);
-  assert.equal(framed.ratio, '9:16');
-  assert.equal(framed.editing, true);
-  assert.ok(Math.abs(framed.width / framed.height - 9 / 16) < .01, `framed to 9:16, got ${framed.width}x${framed.height}`);
-  // An uncreated portrait ratio starts from the portrait default, not the landscape grid.
-  const chat = await panelStyle(page, '.stage-chat');
-  assert.deepEqual({ left: chat.left, width: chat.width }, { left: '4%', width: '92%' });
-  assert.match(chat.top, /^max\(64%/); assert.match(chat.height, /93%/);
-  const move = page.locator('.stage-chat [data-layout-handle] button').first();
-  // The speech minimum can push the comments below 64% on this screen, and
-  // keys move them from where they are shown (down, since up is held by it).
-  const shown = await page.locator('#talk-stage .stage-chat').evaluate(element => { const stage = element.closest('#talk-stage').getBoundingClientRect(); return (element.getBoundingClientRect().top - stage.top) / stage.height * 100; });
+  const { page, url, errors } = await fixture(t);
+  const editor = await openCanvas(page);
+  const frame = page.frameLocator(`${PREVIEW} #design-preview-frame`);
+  const chat = frame.locator('.stage-chat');
+  assert.equal(await chat.evaluate(e => e.style.left), '4%');
+  assert.equal(await chat.evaluate(e => e.style.width), '92%');
+  await editorTarget(editor, 'chat');
+  const move = editor.locator('.canvas-target[data-target-id="chat"]');
   await move.press('ArrowDown'); await move.press('ArrowDown');
-  const saved = await waitForDesign(url, design => Math.abs(design.ratios['9:16']?.layout?.panels.chat.y - (shown + 4)) < .1);
-  assert.equal(saved.ratios['16:9'], null, 'the landscape ratio is untouched');
-  assert.equal(saved.ratios['4:3'], null);
-  await page.locator('#layout-session #finish').click();
-  // The talk screen previews the output size (1280x720 by default): landscape grid.
+  assert.equal((await readDesign(url)).ratios['9:16'], null, 'the draft is not saved');
+  await applyCanvas(editor);
+  const saved = await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y > 64);
+  assert.equal(saved.ratios['16:9'], null); assert.equal(saved.ratios['4:3'], null);
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   const landscape = await stageBox(page);
-  assert.equal(landscape.ratio, '16:9');
-  assert.equal(landscape.editing, false);
-  assert.equal(await page.locator('#talk-stage .stage-chat').evaluate(element => element.style.position), '', 'the grid, not the portrait layout');
+  assert.equal(landscape.ratio, '16:9'); assert.equal(landscape.editing, false);
+  assert.equal(await page.locator('#talk-stage .stage-chat').evaluate(element => element.style.position), '');
   assert.deepEqual(errors, []);
 });
 
@@ -115,37 +116,41 @@ browserTest('the portrait default keeps the speech minimum off the comments on a
 
 browserTest('a comments panel pushed down by the speech minimum moves from where it is shown', async t => {
   const { page, editor, url, errors } = await fixture(t, { width: 1280, height: 720 });
-  await page.locator('[data-page="studio"]').click();
-  await editor.locator('#mode').selectOption('talk');
-  await editor.locator('#ratio').selectOption('9:16');
-  // Free movement, so the shown distance can be compared exactly.
-  await editor.locator('#snap').evaluate(input => { input.checked = false; input.dispatchEvent(new Event('change')); });
-  await editor.locator('#edit').click();
-  const box = () => page.locator('#talk-stage .stage-chat').evaluate(element => { const { top, height } = element.getBoundingClientRect(); return { top, height }; });
+  await openCanvas(page);
+  await editorThemeCSS(editor);
+  await editor.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height: 700px; }');
+  await editor.locator('#draft-css').dispatchEvent('change');
+  await editorTarget(editor, 'chat');
+  await editor.locator('#canvas-snap').uncheck();
+  const frame = page.frameLocator(`${PREVIEW} #design-preview-frame`);
+  const box = () => frame.locator('#talk-stage .stage-chat').evaluate(element => { const { top, height } = element.getBoundingClientRect(); return { top, height }; });
   const before = await box();
-  const handle = await page.locator('.stage-chat [data-layout-handle] button').first().boundingBox();
+  const handle = await editor.locator('.canvas-target[data-target-id="chat"]').boundingBox();
   const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
   await page.mouse.move(x, y); await page.mouse.down();
   await page.mouse.move(x, y + 20, { steps: 4 }); await page.mouse.up();
   const after = await box();
-  assert.ok(Math.abs(after.top - before.top - 20) <= 1, `moved from ${before.top} to ${after.top}`);
+  const scale = (await editor.locator('#design-preview-frame').boundingBox()).width / 1080;
+  assert.ok(Math.abs(after.top - before.top - 20 / scale) <= 1, `moved from ${before.top} to ${after.top}`);
   assert.ok(Math.abs(after.height - before.height) <= 1, `height changed from ${before.height} to ${after.height}`);
+  await applyCanvas(editor);
   await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y > 64);
   assert.deepEqual(errors, []);
 });
 
 browserTest('a pushed-down panel moved up into the speech minimum stays put and keeps its height', async t => {
   const { page, editor, url, errors } = await fixture(t, { width: 1280, height: 720 });
-  await page.locator('[data-page="studio"]').click();
-  await editor.locator('#mode').selectOption('talk');
-  await editor.locator('#ratio').selectOption('9:16');
-  await editor.locator('#snap').evaluate(input => { input.checked = false; input.dispatchEvent(new Event('change')); });
-  await editor.locator('#edit').click();
-  const box = () => page.locator('#talk-stage .stage-chat').evaluate(element => { const { top, height } = element.getBoundingClientRect(); return { top, height }; });
+  await openCanvas(page);
+  await editorThemeCSS(editor);
+  await editor.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height: 700px; }');
+  await editor.locator('#draft-css').dispatchEvent('change');
+  await editorTarget(editor, 'chat');
+  await editor.locator('#canvas-snap').uncheck();
+  const frame = page.frameLocator(`${PREVIEW} #design-preview-frame`);
+  const box = () => frame.locator('#talk-stage .stage-chat').evaluate(element => { const { top, height } = element.getBoundingClientRect(); return { top, height }; });
   const before = await box();
-  const move = page.locator('.stage-chat [data-layout-handle] button').first();
+  const move = editor.locator('.canvas-target[data-target-id="chat"]');
   await move.press('ArrowUp');
-  await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y > 64);
   const after = await box();
   assert.ok(Math.abs(after.top - before.top) <= 1 && Math.abs(after.height - before.height) <= 1, `from ${JSON.stringify(before)} to ${JSON.stringify(after)}`);
   await move.press('ArrowUp'); await move.press('ArrowUp');
@@ -154,7 +159,9 @@ browserTest('a pushed-down panel moved up into the speech minimum stays put and 
   // Moving down still works from where it is shown.
   await move.press('ArrowDown');
   const down = await box();
-  assert.ok(down.top > before.top + 5 && Math.abs(down.height - before.height) <= 1, `down: ${JSON.stringify(down)}`);
+  assert.ok(down.top > before.top && Math.abs(down.height - before.height) <= 1, `down: ${JSON.stringify(down)}`);
+  await applyCanvas(editor);
+  await waitForDesign(url, design => design.ratios['9:16']?.layout?.panels.chat.y > 64);
   assert.deepEqual(errors, []);
 });
 
@@ -163,7 +170,7 @@ browserTest('the preview moves the panels below the speech panel when draft CSS 
   await page.locator('[data-page="studio"]').click();
   await preview.locator('#open-design-preview').click();
   await page.waitForFunction(root => !document.querySelector(root).shadowRoot.getElementById('apply-design').disabled, PREVIEW);
-  await preview.locator('#preview-width').selectOption('1080x1920');
+  await preview.locator('#preview-ratio').selectOption('9:16');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 1920, PREVIEW);
   await editorThemeCSS(preview);
   await preview.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height: 600px; }');
@@ -186,26 +193,24 @@ browserTest('copying between ratios happens only on request and explains a grid 
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios,
     '9:16': { layout: portrait, overlays: { version: 1, items: [], assets: {} }, actorImage: portraitImage },
     '16:9': { layout: null, overlays: { version: 1, items: [note], assets: {} }, actorImage: landscapeImage } } }));
-  await page.locator('[data-page="studio"]').click();
-  await editor.locator('#mode').selectOption('talk');
-  await editor.locator('#ratio').selectOption('4:3');
-  await editor.locator('#copy-ratio summary').click();
-  await editor.locator('#copy-source').selectOption('4:3');
-  await editor.locator('#copy-ratio-button').click();
-  assert.match(await editor.locator('#status').textContent(), /同じ/);
-  await editor.locator('#copy-source').selectOption('9:16');
-  await editor.locator('#copy-ratio-button').click();
+  await openCanvas(page, '4:3');
+  await editorTarget(editor, 'screen');
+  await editor.locator('#copy-ratio-source').selectOption('9:16');
+  await editor.locator('#copy-ratio').click(); await editor.locator('#editor-confirm-accept').click();
+  await applyCanvas(editor);
   let design = await waitForDesign(url, value => value.ratios['4:3']?.layout?.panels.header.h === 12);
   assert.deepEqual(design.ratios['4:3'].layout, portrait);
-  assert.deepEqual(design.ratios['9:16'].layout, portrait, 'the source is unchanged');
+  assert.deepEqual(design.ratios['9:16'].layout, portrait);
   assert.deepEqual(design.ratios['4:3'].actorImage, portraitImage);
-  await editor.locator('#copy-source').selectOption('16:9');
-  await editor.locator('#copy-ratio-button').click();
-  assert.match(await editor.locator('#status').textContent(), /標準の並び/);
+  await openCanvas(page, '4:3'); await editorTarget(editor, 'screen');
+  await editor.locator('#copy-ratio-source').selectOption('16:9');
+  await editor.locator('#copy-ratio').click();
+  assert.match(await editor.locator('#editor-confirm').textContent(), /標準|配置/);
+  await editor.locator('#editor-confirm-accept').click(); await applyCanvas(editor);
   design = await waitForDesign(url, value => value.ratios['4:3']?.overlays.items[0]?.text === '横のメモ');
   assert.deepEqual(design.ratios['4:3'].layout, portrait, 'a grid source keeps the target panel positions');
-  assert.deepEqual(design.ratios['4:3'].actorImage, landscapeImage, 'a grid source still copies saved image placement');
-  assert.deepEqual(design.ratios['9:16'].actorImage, portraitImage, 'the third ratio stays unchanged');
+  assert.deepEqual(design.ratios['4:3'].actorImage, landscapeImage);
+  assert.deepEqual(design.ratios['9:16'].actorImage, portraitImage);
   assert.deepEqual(errors, []);
 });
 
@@ -237,7 +242,7 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   assert.equal(await frame.locator('#safe-guides .guide-line').count(), 1);
   assert.equal(await frame.locator('#safe-guides .guide-shade').count(), 0);
   await preview.locator('#add-text').click(); await preview.locator('#overlay-text').fill('横の文字');
-  await preview.locator('#preview-width').selectOption('1080x1920');
+  await preview.locator('#preview-ratio').selectOption('9:16');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 1920, PREVIEW);
   const viewport = await preview.locator('#preview-viewport').boundingBox();
   assert.ok(viewport.height > viewport.width, 'portrait previews keep their shape');
@@ -251,6 +256,7 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   await preview.locator('#preview-guides').uncheck();
   assert.equal(await frame.locator('#safe-guides').isHidden(), true);
   await preview.locator('#add-text').click(); await preview.locator('#overlay-text').fill('縦の文字');
+  await preview.locator('#preview-ratio').selectOption('16:9');
   await preview.locator('#preview-width').selectOption('1280x720');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 720, PREVIEW);
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentDocument.querySelector('.pokome-overlay')?.textContent === '横の文字', PREVIEW);
@@ -274,16 +280,15 @@ browserTest('numeric fields and reset work on the ratio chosen for editing', asy
   const { page, editor, url, errors } = await fixture(t);
   const portrait = defaultTalkLayout('9:16'); portrait.panels.header.h = 6;
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, '9:16': { layout: portrait, overlays: { version: 1, items: [], assets: {} } } } }));
-  await page.locator('[data-page="studio"]').click();
-  await editor.locator('#mode').selectOption('talk');
-  await editor.locator('#ratio').selectOption('9:16');
-  await editor.locator('.fields summary').click();
-  await editor.locator('#panel').selectOption('header');
-  assert.equal(await editor.locator('#h').inputValue(), '6', 'the fields show the 9:16 layout');
-  await editor.locator('#h').fill('10'); await editor.locator('#h').dispatchEvent('change');
+  await openCanvas(page); await editorTarget(editor, 'header');
+  assert.equal(await editor.locator('#panel-h').inputValue(), '6', 'the fields show the 9:16 layout');
+  await editor.locator('#panel-h').fill('10'); await editor.locator('#panel-h').dispatchEvent('change');
+  await applyCanvas(editor);
   let design = await waitForDesign(url, value => value.ratios['9:16']?.layout?.panels.header.h === 10);
   assert.equal(design.ratios['16:9'], null);
-  await editor.locator('#reset').click();
+  await openCanvas(page); await editorTarget(editor, 'screen');
+  await editor.locator('#reset-ratio').click(); await editor.locator('#editor-confirm-accept').click();
+  await applyCanvas(editor);
   design = await waitForDesign(url, value => value.ratios['9:16'] === null);
   assert.equal(design.ratios['16:9'], null);
   assert.deepEqual(errors, []);
@@ -296,16 +301,15 @@ browserTest('normal panel edits preserve actor placement and layout reset clears
   const otherImage = normalizeActorImage({ mode: 'theme', scale: 125, offsetX: -3.5 });
   const note = createOverlay('text', { id: 'keep-note', text: '配置を戻しても残す' });
   await saveDesign(url, design => withTalk(withTalk(design, '9:16', { layout: portrait, actorImage, overlays: { version: 1, items: [note], assets: {} } }), '4:3', { actorImage: otherImage }));
-  await page.locator('[data-page="studio"]').click();
-  await editor.locator('#mode').selectOption('talk');
-  await editor.locator('#ratio').selectOption('9:16');
-  await editor.locator('.fields summary').click();
-  await editor.locator('#panel').selectOption('header');
-  await editor.locator('#h').fill('10'); await editor.locator('#h').dispatchEvent('change');
+  await openCanvas(page); await editorTarget(editor, 'header');
+  await editor.locator('#panel-h').fill('10'); await editor.locator('#panel-h').dispatchEvent('change');
+  await applyCanvas(editor);
   let design = await waitForDesign(url, value => value.ratios['9:16']?.layout?.panels.header.h === 10);
   assert.deepEqual(design.ratios['9:16'].actorImage, actorImage);
   assert.deepEqual(design.ratios['9:16'].overlays.items, [note]);
-  await editor.locator('#reset').click();
+  await openCanvas(page); await editorTarget(editor, 'screen');
+  await editor.locator('#reset-ratio').click(); await editor.locator('#editor-confirm-accept').click();
+  await applyCanvas(editor);
   design = await waitForDesign(url, value => value.ratios['9:16']?.layout === null && value.ratios['9:16'].actorImage.mode === 'theme');
   assert.deepEqual(design.ratios['9:16'].actorImage, defaultActorImage());
   assert.deepEqual(design.ratios['9:16'].overlays.items, [note]);

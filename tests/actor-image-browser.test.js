@@ -200,6 +200,7 @@ browserTest('live, output and preview choose their own actor ratio and follow sa
   await page.locator('[data-page="studio"]').click(); await page.locator('#open-design-preview').click();
   const frame = page.frameLocator('#design-preview-frame');
   for (const [ratio, size] of cases) {
+    await page.locator('#preview-ratio').selectOption(ratio);
     await page.locator('#preview-width').selectOption(size);
     await page.waitForFunction(scale => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').contentDocument?.getElementById('talk-stage')?.style.getPropertyValue('--actor-image-size') === `${scale}%`, ratios[ratio].scale);
     assert.equal(await frame.locator('#talk-stage').evaluate(stage => stage.style.getPropertyValue('--actor-image-position')), `${ratios[ratio].alignX} ${ratios[ratio].alignY}`);
@@ -267,7 +268,7 @@ browserTest('live, preview and output share actor and outside overlay geometry, 
   await page.waitForFunction(() => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').contentDocument.getElementById('talk-stage').dataset.actorImage === 'custom');
   assert.deepEqual(await preview.locator('#talk-stage').evaluate(geometry), live);
   assert.equal(live.clip, 'hidden'); assert.equal(live.actorClip, 'visible');
-  assert.deepEqual(live.overlays.map(item => item.z), ['1', '2', '4']);
+  assert.deepEqual(live.overlays.map(item => item.z), ['37', '70', '135']);
   assert.equal(live.overlays[0].x, -.6); assert.equal(live.overlays[1].w, 2);
   assert.ok(Math.abs(live.overlays[2].y - .085) < .0001, '8.5% survives browser subpixel rounding');
   await page.locator('#cancel-design').click();

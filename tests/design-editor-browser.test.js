@@ -54,6 +54,7 @@ browserTest('the target list shows the five panels and additions, and each targe
     assert.match(await editor.locator('#target-heading').textContent(), heading);
   }
   // Another ratio lists only its own additions; the selection falls back to the whole screen.
+  await editor.locator('#preview-ratio').selectOption('9:16');
   await editor.locator('#preview-width').selectOption('1080x1920');
   assert.equal(await editor.locator('#target-select option[value="note"]').count(), 0);
   assert.deepEqual(await shown(editor), ['screen']);
@@ -67,6 +68,7 @@ browserTest('closing with changes asks first; discarding every change keeps the 
   assert.equal(await editor.locator('#draft-state').textContent(), '変更なし');
   assert.equal(await editor.locator('#discard-design').isDisabled(), true);
   await editorTarget(editor, 'header'); await editor.locator('#draft-title').fill('下書きの題名');
+  await editor.locator('#preview-ratio').selectOption('9:16');
   await editor.locator('#preview-width').selectOption('1080x1920');
   await editor.locator('#add-text').click();
   assert.equal(await editor.locator('#draft-state').textContent(), '下書き・未適用');
@@ -269,13 +271,16 @@ browserTest('undo and redo step through edits across ratios, while typing keeps 
   await editor.locator('#draft-title').pressSequentially('一回の入力');
   await editor.locator('#draft-title').dispatchEvent('change');
   const typed = await editor.locator('#draft-title').inputValue();
+  await editor.locator('#preview-ratio').selectOption('9:16');
   await editor.locator('#preview-width').selectOption('1080x1920');
   await editor.locator('#add-text').click();
   const frame = page.frameLocator(`${ROOT} #design-preview-frame`);
   assert.equal(await frame.locator('.pokome-overlay').count(), 1);
+  await editor.locator('#preview-ratio').selectOption('16:9');
   await editor.locator('#preview-width').selectOption('1280x720');
   await editor.locator('#undo-design').click();
-  assert.match(await editor.locator('#preview-width').inputValue(), /^1080x1920$/, 'undoing a portrait edit shows that ratio');
+  assert.equal(await editor.locator('#preview-ratio').inputValue(), '9:16', 'undoing a portrait edit shows that ratio');
+  assert.equal(await editor.locator('#preview-width').inputValue(), '1080x1920');
   assert.match(await editor.locator('#design-status').textContent(), /9:16/);
   assert.equal(await frame.locator('.pokome-overlay').count(), 0);
   await editor.locator('#redo-design').click();
@@ -308,9 +313,9 @@ browserTest('one drag is one undo step', async t => {
   await editor.locator('#add-text').click();
   const x = async () => Number(await editor.locator('#overlay-x').inputValue());
   const start = await x();
-  const handle = await page.frameLocator(`${ROOT} #design-preview-frame`).locator('.overlay-hit button[data-resize="false"]').boundingBox();
-  await page.mouse.move(handle.x + 5, handle.y + 5); await page.mouse.down();
-  for (const step of [10, 20, 40]) await page.mouse.move(handle.x + 5 + step, handle.y + 5);
+  const handle = await editor.locator('.canvas-target[tabindex="0"]').boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
+  for (const step of [10, 20, 40]) await page.mouse.move(handle.x + handle.width / 2 + step, handle.y + handle.height / 2);
   await page.mouse.up();
   assert.ok(await x() > start);
   await editor.locator('#undo-design').click();

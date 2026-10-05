@@ -840,7 +840,7 @@ const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioC
   shownTalkRatio = ratio; renderTalkAppearance(); showLiveOverlays();
 } });
 const designPreview = initializeDesignPreview({ designStore, themeEditor,
-  beginDraft() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
+  beginDraft() { imageGeneration++; speechImageGeneration++; },
   getLiveRatio: () => workspaceEditor.talkRatio(),
 });
 initializeCustomization({ platforms: enabledPlatforms, themeEditor, designStore, beginImageChange, applyImageFile,
@@ -859,7 +859,7 @@ initializeCustomization({ platforms: enabledPlatforms, themeEditor, designStore,
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, onSizeChange: () => workspaceEditor.reload() });
 initializeDesignPresets({ designStore, designPreview,
-  beginChange() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
+  beginChange() { imageGeneration++; speechImageGeneration++; },
 });
 // Another page changed the design, or a failed save was undone: show the saved design.
 designStore.subscribe(detail => {

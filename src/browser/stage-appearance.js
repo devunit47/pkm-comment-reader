@@ -1,3 +1,4 @@
+import { canvasZIndex } from '../shared/canvas-model.js';
 import { talkSpeechStyles } from '../shared/workspace-model.js';
 import { THEME_ACCENTS } from '../shared/studio.js';
 
@@ -69,7 +70,7 @@ function renderActorImage(stage, settings) {
 export function renderOverlays(stage, state) {
   const existing = new Map([...stage.querySelectorAll(':scope > .pokome-overlay')].map(element => [element.dataset.overlayId, element]));
   const ordered = [];
-  for (const item of state.items) {
+  for (const [index, item] of state.items.entries()) {
     let element = existing.get(item.id);
     if (!element) {
       element = stage.ownerDocument.createElement('div');
@@ -80,7 +81,7 @@ export function renderOverlays(stage, state) {
     ordered.push(element);
     element.hidden = item.hidden;
     for (const [property, value] of Object.entries({ left: item.x, top: item.y, width: item.w, height: item.h })) element.style.setProperty(property, `${value}%`);
-    element.style.zIndex = item.z;
+    element.style.zIndex = canvasZIndex(item.z, index + 5);
     element.style.color = item.color || '';
     element.style.fontSize = `${item.fontSize || 32}px`;
     if (item.type === 'text') element.textContent = item.text;
@@ -137,15 +138,20 @@ export const TALK_PANEL_SELECTORS = Object.freeze({ header: '.stage-header', cha
 // Read-only application of a saved talk layout, matching workspace.js outside
 // of its editing mode. A null layout keeps the stylesheet's default grid.
 export function applyTalkLayout(stage, layout) {
-  for (const [id, selector] of Object.entries(TALK_PANEL_SELECTORS)) {
+  for (const [index, [id, selector]] of Object.entries(TALK_PANEL_SELECTORS).entries()) {
     const element = stage.querySelector(selector);
     if (!element) continue;
     element.classList.add('pokome-panel'); element.dataset.panelType = id;
     const p = layout?.panels?.[id];
-    if (!p) { element.removeAttribute('style'); continue; }
+    if (!p) {
+      element.removeAttribute('style');
+      // Zero keeps legacy additions above stylesheet panels, including after materialization.
+      element.style.zIndex = canvasZIndex(0, index);
+      continue;
+    }
     element.style.setProperty('position', 'absolute');
     for (const [property, value] of Object.entries({ left: p.x, top: p.y, width: p.w, height: p.h })) element.style.setProperty(property, `${value}%`);
-    element.style.zIndex = p.z; element.style.maxHeight = 'none'; element.style.margin = '0';
+    element.style.zIndex = canvasZIndex(p.z, index); element.style.maxHeight = 'none'; element.style.margin = '0';
     element.style.display = p.hidden ? 'none' : '';
   }
   const speech = stage.querySelector(TALK_PANEL_SELECTORS.speech);

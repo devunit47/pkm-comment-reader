@@ -223,7 +223,7 @@ test('overlay rendering creates owner-document nodes, preserves literal text and
   assert.equal(element.dataset.overlayId, 'text-one'); assert.equal(element.textContent, text);
   assert.equal(element.children.length, 0); assert.equal(element.hidden, true);
   assert.deepEqual(Object.fromEntries(element.style.values), {
-    left: '7%', top: '12%', width: '41%', height: '19%', 'z-index': '8', color: '#12abcd', 'font-size': '48px',
+    left: '7%', top: '12%', width: '41%', height: '19%', 'z-index': '261', color: '#12abcd', 'font-size': '48px',
   });
   assert.equal(preview.get('stage-title').textContent, '');
 });

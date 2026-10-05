@@ -51,9 +51,10 @@ browserTest('presets save complete scenes, readonly ratios never leak, cancel pr
   assert.equal(await editor.locator('#discard-design').isVisible(), false);
   const frame = page.frameLocator(`${preview} #design-preview-frame`);
   for (const [value, ratio] of [['1280x720', '16:9'], ['1080x1920', '9:16'], ['1440x1080', '4:3']]) {
+    await editor.locator('#preview-ratio').selectOption(ratio);
     await editor.locator('#preview-width').selectOption(value);
     await frame.locator('.pokome-overlay').filter({ hasText: `小さな画面例 ${ratio}` }).waitFor();
-    assert.equal(await frame.locator('.overlay-hit').count(), 0);
+    assert.equal(await editor.locator('.canvas-target').count(), 0);
     assert.equal(await frame.locator('#actor-image').getAttribute('src'), `/api/design/presets/${id}/images/${actorRef.slice(7)}`);
     assert.match(await frame.locator('#preview-theme').textContent(), /border-radius/);
     assert.deepEqual(await current(url), before, 'checking a different ratio never writes current');
@@ -143,6 +144,7 @@ browserTest('preset confirmation renders ratio actor placement and disables its 
   await openRead(ui, editor);
   const frame = page.frameLocator(preview + ' #design-preview-frame');
   for (const [value,scale] of [['1280x720',110],['1080x1920',130],['1440x1080',150]]) {
+    await editor.locator('#preview-ratio').selectOption(value === '1080x1920' ? '9:16' : value === '1440x1080' ? '4:3' : '16:9');
     await editor.locator('#preview-width').selectOption(value);
     await frame.locator('#talk-stage[data-actor-image="custom"]').waitFor();
     await page.waitForFunction(([selector,expected]) => {
