@@ -351,3 +351,41 @@ browserTest('leaving the page with a changed draft asks the browser to confirm',
   assert.equal(shown.type(), 'beforeunload');
   await shown.dismiss();
 });
+
+// Regression (PR #9 review): a 300px dock at 200% zoom leaves 150 CSS pixels.
+browserTest('a 150px wide editor keeps every target’s settings within the width', async t => {
+  const { page, editor, errors } = await fixture(t, { viewport: { width: 150, height: 700 } });
+  await open(page, editor);
+  const overflow = () => editor.locator('#design-dialog').evaluate(dialog => {
+    const width = dialog.clientWidth;
+    return { scroll: dialog.scrollWidth, width, wide: [...dialog.querySelectorAll('*')].filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && box.right > width + .5; }).map(element => element.id || element.tagName).slice(0, 10) };
+  });
+  const views = [['targets']];
+  for (const target of ['screen', 'header', 'chat', 'speech', 'actor', 'footer']) views.push([target]);
+  for (const [target] of views) {
+    if (target !== 'targets') await editorTarget(editor, target);
+    const result = await overflow();
+    assert.ok(result.scroll <= result.width && result.wide.length === 0, `${target}: ${JSON.stringify(result)}`);
+  }
+  assert.deepEqual(errors, []);
+});
+
+// Regression (PR #9 review): applying while a CSS file was still being read lost it.
+browserTest('Apply waits for a CSS file being read, and the file then reaches the stored design', async t => {
+  const { page, url, editor, errors } = await fixture(t);
+  await open(page, editor); await editorThemeCSS(editor);
+  await page.evaluate(() => {
+    const native = Blob.prototype.text;
+    const gate = new Promise(resolve => { window.__releaseCSS = resolve; });
+    Blob.prototype.text = async function () { const text = await native.call(this); await gate; return text; };
+  });
+  const css = '.pokome-workspace .pokome-comment__author { color: #123456; }';
+  await editor.locator('#draft-css-file').setInputFiles({ name: 'slow.css', mimeType: 'text/css', buffer: Buffer.from(css) });
+  await editor.locator('#apply-design:disabled').waitFor();
+  await page.evaluate(() => window.__releaseCSS());
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  assert.equal(await editor.locator('#draft-css').inputValue(), css);
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  assert.equal((await readDesign(url)).theme, css);
+  assert.deepEqual(errors, []);
+});

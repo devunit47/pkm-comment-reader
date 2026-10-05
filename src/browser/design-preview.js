@@ -32,11 +32,11 @@ const textField = (key, label, max) => `<label>${label}<input id="draft-${key}" 
 
 const STYLE = `:host{display:block;color:#edf4e9;font:14px system-ui;margin-bottom:24px}*{box-sizing:border-box}section.entry{background:#1a2325;border:1px solid #506960;border-radius:12px;padding:24px}h2,h3,p{margin:0 0 12px}h2{font-size:18px}h3{font-size:15px}p{line-height:1.7;color:#c0d0c8}
 button,input,select,textarea{font:inherit;background:#101b18;color:#edf4e9;border:1px solid #70877b;border-radius:6px;padding:8px;max-width:100%}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #ace5cd;outline-offset:2px}
-label{display:grid;min-width:0;gap:5px;margin:10px 0}textarea{width:100%;resize:vertical}input[type=file]{width:100%;min-width:0}input[type=color]{width:100%;height:40px;padding:3px}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.primary{background:#ace5cd;color:#11271e;font-weight:700}.danger{border-color:#e6a0a0}
+label{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:5px;margin:10px 0}select{width:100%;min-width:0}textarea{width:100%;resize:vertical}input[type=file]{width:100%;min-width:0}input[type=color]{width:100%;height:40px;padding:3px}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.primary{background:#ace5cd;color:#11271e;font-weight:700}.danger{border-color:#e6a0a0}
 dialog{background:#101a18;color:#edf4e9;padding:0;border:0}#design-dialog{position:fixed;inset:0;margin:0;width:100%;height:100%;max-width:none;max-height:none;overflow:hidden}#design-dialog[open]{display:grid;grid-template-rows:auto auto minmax(0,1fr)}dialog::backdrop{background:#000b}dialog:not([open]){display:none}
 .bar{display:flex;gap:8px 16px;justify-content:space-between;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #40554b}.bar h2{margin:0}.title{display:flex;gap:4px 12px;align-items:baseline;flex-wrap:wrap;min-width:0}#draft-state{color:#ffd88a;font-weight:700}
 #design-status{margin:0;padding:6px 16px;min-height:24px}.editor{display:grid;grid-template-columns:200px minmax(0,1fr) 320px;min-height:0}.side,.center{min-width:0;min-height:0;overflow:auto;padding:12px 14px}.left{border-right:1px solid #40554b}.right{border-left:1px solid #40554b}
-.center{display:flex;flex-direction:column;gap:6px}.center label{margin:0}.view{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:end}.stage-box{flex:1;min-height:160px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start}.viewport{position:relative;overflow:hidden;background:#080e0c;border:1px solid #5d776b;border-radius:8px;flex:none}
+.center{display:flex;flex-direction:column;gap:6px}.center label{margin:0}.view{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:end}.view>label{flex:0 1 auto;min-width:0;max-width:100%}.stage-box{flex:1;min-height:160px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start}.viewport{position:relative;overflow:hidden;background:#080e0c;border:1px solid #5d776b;border-radius:8px;flex:none}
 iframe{position:absolute;left:0;top:0;border:0;transform-origin:top left;background:#122321}#target-select{width:100%;min-height:200px;padding:4px}#target-select option{padding:4px 6px}#target-select optgroup{color:#c0d0c8}.numbers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}.numbers input{width:100%}
 details{margin:12px 0;border-top:1px solid #40554b;padding-top:10px}summary{cursor:pointer}small{line-height:1.6;color:#c0d0c8}.check{display:flex;gap:8px;align-items:center}.scope{display:inline-block;font-size:12px;border:1px solid #70877b;border-radius:999px;padding:1px 8px;margin:4px 0 2px;color:#c0d0c8}[data-target][hidden],#overlay-text-fields[hidden],#restart-design[hidden]{display:none}.tabs{display:none}
 #editor-confirm{max-width:min(480px,calc(100vw - 32px));border:1px solid #ace5cd;border-radius:12px;padding:20px}
@@ -527,12 +527,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     } catch (error) { if (current()) status(error.message); }
     finally { if (current()) { requests.delete(key); pending--; buttons(); } }
   }
-  // A newer choice wins over an upload still in progress.
-  function dropImageRequest(key) { if (requests.delete(key)) { pending--; buttons(); } }
+  // A newer choice wins over a file still being read or uploaded.
+  function dropRequest(key) { if (requests.delete(key)) { pending--; buttons(); } }
   $('draft-image').onchange = () => draftImage($('draft-image'), 'actor-image', ref => ({ source: 'image', image: ref }));
   $('draft-speechImage').onchange = () => draftImage($('draft-speechImage'), 'speech-image', ref => ({ speechStyle: 'image', speechImage: ref }));
-  $('draft-image-remove').onclick = () => { if (session) { dropImageRequest('actor-image'); session.seal(); editStudio({ image: '' }, { label: '画像の削除' }); } };
-  $('draft-speechImage-reset').onclick = () => { if (session) { dropImageRequest('speech-image'); session.seal(); editStudio({ speechImage: '', speechStyle: 'image' }, { label: '標準の背景画像' }); } };
+  $('draft-image-remove').onclick = () => { if (session) { dropRequest('actor-image'); session.seal(); editStudio({ image: '' }, { label: '画像の削除' }); } };
+  $('draft-speechImage-reset').onclick = () => { if (session) { dropRequest('speech-image'); session.seal(); editStudio({ speechImage: '', speechStyle: 'image' }, { label: '標準の背景画像' }); } };
   for (const key of ACTOR_KEYS) $(`actor-${key}`).addEventListener('change', () => {
     if (!editable()) return;
     const element = $(`actor-${key}`), current = talkActorImage(design(), ratio);
@@ -551,7 +551,9 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const file = $('draft-css-file').files[0]; $('draft-css-file').value = '';
     if (!file || !editable()) return;
     const token = epoch, request = Symbol();
-    requests.set('css-file', request);
+    // Apply waits for the file, so the draft cannot be stored without it.
+    if (requests.has('css-file')) pending--;
+    requests.set('css-file', request); pending++; buttons();
     try {
       if (file.size > MAX_THEME_CSS_BYTES) throw new Error('CSSは1MB以内にしてください。');
       const css = await file.text();
@@ -559,9 +561,9 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       session.seal(); edit({ ...design(), theme: css }, { label: 'CSSファイル' });
       status(cssError ? `入力したCSSは未反映です：${cssError}` : 'CSSファイルを下書きに読み込みました。適用するまでは保存されません。');
     } catch (error) { if (isCurrent(token)) status(`読み込めませんでした：${error.message}`); }
-    finally { if (isCurrent(token) && requests.get('css-file') === request) requests.delete('css-file'); }
+    finally { if (isCurrent(token) && requests.get('css-file') === request) dropRequest('css-file'); }
   };
-  $('draft-css-clear').onclick = () => { if (session) { requests.delete('css-file'); session.seal(); edit({ ...design(), theme: '' }, { label: 'CSSの解除' }); status('CSSを解除しました。適用するまでは保存されません。'); } };
+  $('draft-css-clear').onclick = () => { if (session) { dropRequest('css-file'); session.seal(); edit({ ...design(), theme: '' }, { label: 'CSSの解除' }); status('CSSを解除しました。適用するまでは保存されません。'); } };
   $('draft-css-export').onclick = () => {
     if (!session) return;
     const url = URL.createObjectURL(new Blob([design().theme], { type: 'text/css' }));
