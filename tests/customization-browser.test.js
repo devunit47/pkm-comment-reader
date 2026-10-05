@@ -5,13 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
-import { createHash } from 'node:crypto';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { defaultDesign } from '../src/shared/design-model.js';
 import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
-const cssTwo = '.pokome-workspace .pokome-panel { border-radius: 11px; }';
 const hidingCSS = '.pokome-workspace { display: none !important; }';
 const qaDirectory = process.env.CUSTOMIZATION_QA_DIRECTORY;
 
@@ -35,13 +33,7 @@ function png(red, green, blue) {
   for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) rows.set([red, green, blue, 255], y * 65 + 1 + x * 4);
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
-const redPNG = png(229, 80, 98), bluePNG = png(70, 100, 220);
-const paddedJPEG = Buffer.concat([Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64'), Buffer.from('\0\0trailing metadata')]);
-// Applied images are copied into customization/current under their SHA-256.
-const ref = (bytes, extension = 'png') => `images/${createHash('sha256').update(bytes).digest('hex')}.${extension}`;
-const redURL = ref(redPNG), blueURL = ref(bluePNG);
-const served = value => `/api/design/current/${value}`;
-
+const redPNG = png(229, 80, 98);
 async function fixture(t, files = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-customization-browser-'));
   await mkdir(join(directory, 'styles')); await mkdir(join(directory, 'images'));
@@ -75,7 +67,7 @@ async function openBrowser(t, url, initialStorage = {}) {
   return { page, errors, requests };
 }
 
-async function studio(page, local = true) {
+async function studio(page) {
   await page.locator('[data-page="studio"]').click();
 
 }
@@ -119,6 +111,8 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
     'pokome-users-v2': { twitch: { keep_user: { muted: true } }, kick: {} },
     'pokome-speech-options': { twitch: { volume: 0.3 }, kick: {} },
     'pokome-setup-complete': true,
+    'pokome-workspace-v1': { version: 1, home: { panels: { comments: { hidden: true } } } },
+    'pokome-theme-v1': { obsolete: true },
   };
   const base = await serve(t, createServer({ customizationDirectory: directory }));
   const { page, errors, requests } = await openBrowser(t, base, preserved);
@@ -127,10 +121,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   const beforeCancel = await savedStudio(page), beforeCSS = await currentCSS(page);
   await resetAppearance(page, false);
   assert.deepEqual(await savedStudio(page), beforeCancel); assert.equal(await currentCSS(page), beforeCSS);
-  await page.locator('#workspace-editor #edit').click();
-  assert.equal(await page.locator('#layout-session').isVisible(), true);
   await resetAppearance(page);
-  assert.equal(await page.locator('#layout-session').isVisible(), false);
   await studio(page);
   await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('violet'));
   await applyCSS(page, 'hide.css');
@@ -151,8 +142,8 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
   assert.match(await page.locator('#talk-stage').getAttribute('style'), /\.\/speech-background\.svg/);
   assert.deepEqual(await readDesign(base), defaultDesign());
-  assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).home), null);
-  for (const key of ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1']) assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null, key);
+  assert.equal(await page.locator('#workspace-editor,#layout-session').count(), 0);
+  for (const key of ['pokome-studio', 'pokome-overlays-v1']) assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null, key);
   for (const [key, value] of Object.entries(preserved)) assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key), value, key);
   await resetAppearance(page); await resetAppearance(page);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
@@ -170,4 +161,24 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal((await fetch(base + '/style.css')).status, 200);
   assert.equal((await fetch(base + '/speech-background.svg')).status, 200);
   assert.deepEqual(errors, []);
+});
+
+test('appearance recovery keeps an open draft stale until it is restarted', { skip: !browserAvailable }, async t => {
+  const directory = await fixture(t);
+  const base = await serve(t, createServer({ customizationDirectory: directory }));
+  const { page } = await openBrowser(t, base);
+  await studio(page);
+  const editor = page.locator('#design-preview-editor');
+  await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await editor.locator('#draft-theme').selectOption('rose');
+  // Activate the protected recovery while the modal draft is open on this page.
+  await page.locator('#appearance-recovery #open-reset').evaluate(button => button.click());
+  await page.locator('#appearance-recovery #confirm-reset').click();
+  await page.locator('#appearance-recovery #result').filter({ hasText: '標準の見た目に戻しました' }).waitFor();
+  assert.equal(await editor.locator('#design-dialog').isVisible(), true);
+  assert.equal(await editor.locator('#apply-design').isDisabled(), true);
+  await editor.locator('#restart-design').click(); await editor.locator('#editor-confirm-accept').click();
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  assert.equal(await editor.locator('#draft-theme').inputValue(), DEFAULT_STUDIO.theme);
+  await closeEditor(editor); assert.deepEqual(await readDesign(base), defaultDesign());
 });

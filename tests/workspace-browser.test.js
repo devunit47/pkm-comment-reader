@@ -123,39 +123,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('.stage-comment').count(), 3);
     await page.keyboard.press('Escape');
     await page.locator('[data-page="home"]').click();
-    const editor = page.locator('#workspace-editor');
-    const session = page.locator('#layout-session');
-    assert.equal(await editor.isVisible(), false);
-    assert.equal(await session.isVisible(), false);
-    await page.locator('[data-page="studio"]').click();
-    await editor.locator('#edit').click();
-    assert.equal(await session.isVisible(), true);
-    await session.locator('#finish').click();
-    await editor.locator('.fields summary').click();
-    assert.equal(await editor.locator('#x').getAttribute('aria-describedby'), 'x-help');
-    await editor.locator('#x').fill('10');
-    await editor.locator('#x').dispatchEvent('change');
-    await editor.locator('#w').fill('45');
-    await editor.locator('#w').dispatchEvent('change');
-    await editor.locator('#edit').click();
-    const move = page.getByRole('button', { name: 'コメント一覧 を移動', exact: true });
-    const before = await move.boundingBox();
-    await page.mouse.move(before.x + 12, before.y + 10);
-    await page.mouse.down();
-    await page.mouse.move(before.x + 65, before.y + 30, { steps: 4 });
-    await page.mouse.up();
-    const resize = page.getByRole('button', { name: 'コメント一覧 のサイズ変更', exact: true });
-    const handle = await resize.boundingBox();
-    await page.mouse.move(handle.x + 8, handle.y + 8);
-    await page.mouse.down();
-    await page.mouse.move(handle.x + 38, handle.y + 28, { steps: 4 });
-    await page.mouse.up();
-    const home = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1')).home);
-    assert.ok(home.panels.comments.x > 10);
-    assert.ok(home.panels.comments.w > 45);
-    await page.reload(); await appReady(page);
-    assert.equal(await session.isVisible(), false);
-    assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
+    assert.equal(await page.locator('#workspace-editor,#layout-session,[data-layout-handle]').count(), 0);
     await page.locator('[data-page="studio"]').click();
     await applyInEditor(page, async canvas => { await editorTarget(canvas, 'header'); await canvas.locator('#panel-hidden').check(); });
     await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
@@ -171,15 +139,15 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
       await page.waitForFunction(() => document.querySelector('#design-preview-editor').shadowRoot.getElementById('draft-css').value.includes('rgb(1, 2, 3)'));
     });
     await page.waitForFunction(() => document.querySelector('#pokome-user-theme').textContent.includes('rgb(1, 2, 3)'));
-    // The talk layout and theme are saved to the folder; the home layout stays in this browser.
+    // Talk layout and theme roundtrip through the folder; home stays responsive.
     const base = `http://127.0.0.1:${server.address().port}`;
     const saved = await waitForDesign(base, design => design.theme.includes('rgb(1, 2, 3)') && design.ratios['16:9']?.layout?.panels.header.hidden === true);
-    assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-workspace-v1'))), { version: 1, home, talk: null });
+    assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
     assert.equal(await page.locator('#design-export').count(), 0, 'the old design file export is gone');
     await page.reload(); await appReady(page);
     assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(1, 2, 3\)/);
     assert.equal(await page.locator('.stage-header').evaluate(element => element.style.display), 'none');
-    assert.equal(await page.locator('.comments').evaluate(element => element.style.left), `${home.panels.comments.x}%`);
+    assert.equal(await page.locator('.comments').evaluate(element => element.style.left), '');
     assert.deepEqual((await waitForDesign(base, () => true)).ratios['16:9'].layout, saved.ratios['16:9'].layout);
     assert.deepEqual(errors, []);
   } finally {
@@ -298,7 +266,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
 });
 
 
-test('fixed home side panels keep all controls reachable by scrolling', { skip: !browserAvailable }, async () => {
+test('standard home keeps operating controls reachable despite obsolete saved layout', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
@@ -333,13 +301,8 @@ test('fixed home side panels keep all controls reachable by scrolling', { skip: 
     await page.locator('[data-page="users"]').click();
     await page.locator('#user-list .user-row').filter({ hasText: username.slice(1) }).getByRole('button', { name: '非表示を解除', exact: true }).click();
     await page.locator('[data-page="home"]').click();
-    for (const selector of ['.reading']) {
-      const measurements = await page.locator(selector).evaluate(panel => ({ overflow: getComputedStyle(panel).overflowY, height: panel.clientHeight, content: panel.scrollHeight }));
-      assert.equal(measurements.overflow, 'auto'); assert.ok(measurements.content > measurements.height);
-    }
     const preview = await page.locator('.now').boundingBox();
     const settings = await page.locator('.reading').boundingBox();
-    assert.ok(preview.height > 280);
     assert.ok(preview.y + preview.height <= settings.y);
     await page.locator('#stop-speech').scrollIntoViewIfNeeded();
     const button = await page.locator('#stop-speech').boundingBox(); const panel = await page.locator('.reading').boundingBox();
@@ -374,8 +337,8 @@ test('first setup guide and full settings backup restore work through the UI', {
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
     const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
-    // Backups hold operating settings only: no appearance, no images.
-    assert.doesNotMatch(backup.toString(), /pokome-studio|pokome-theme|pokome-overlays|data:image/);
+    // Backups hold operating settings only: no appearance, images or home layout.
+    assert.doesNotMatch(backup.toString(), /pokome-studio|pokome-theme|pokome-overlays|pokome-workspace|data:image/);
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
     await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
     await waitForDesign(base, design => design.studio.theme === 'rose');
@@ -391,28 +354,28 @@ test('first setup guide and full settings backup restore work through the UI', {
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
     assert.equal((await readDesign(base)).studio.theme, 'rose', 'restoring settings leaves the folder design alone');
-    // A backup from the browser-only edition imports its appearance and images into the folder.
+    // A browser-only backup restores operating settings and ignores its obsolete appearance.
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
     const legacy = JSON.parse(backup.toString());
     Object.assign(legacy.settings, {
       'pokome-studio': JSON.stringify({ theme: 'violet', title: '旧版のタイトル', image: png, source: 'image', listCount: 7 }),
-      'pokome-theme-v1': '.pokome-workspace { color: rgb(9, 8, 7); }',
+      'pokome-theme-v1': '.pokome-workspace { invalid: ',
+      'pokome-workspace-v1': 'malformed obsolete layout',
       'pokome-overlays-v1': JSON.stringify({ version: 1, items: [{ id: 'item-1', type: 'image', assetId: 'asset-1' }], assets: { 'asset-1': png } }),
     });
     delete legacy.settings['pokome-history-limit'];
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
-    await page.locator('#backup-status').filter({ hasText: '取り込みます' }).waitFor();
+    await page.locator('#backup-status').filter({ hasText: '古い見た目・画像・配置は復元しません' }).waitFor();
     assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
-    const imported = await waitForDesign(base, design => design.studio.theme === 'violet');
-    assert.equal(imported.studio.title, '旧版のタイトル');
-    assert.match(imported.studio.image, /^images\/[0-9a-f]{64}\.png$/);
-    assert.equal(imported.ratios['16:9'].overlays.assets['asset-1'], imported.studio.image, 'the same image is stored once');
-    assert.equal(imported.theme, '.pokome-workspace { color: rgb(9, 8, 7); }');
+    assert.equal((await readDesign(base)).studio.theme, 'rose');
+    assert.equal((await readDesign(base)).theme, '');
+    assert.equal((await readDesign(base)).studio.image, '');
+    assert.equal((await readDesign(base)).ratios['16:9'], null);
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
-    assert.equal(await page.locator('#actor-image').evaluate(image => image.complete && image.naturalWidth), 1);
+    assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
@@ -440,16 +403,21 @@ test('leaving talk mode after a reload in talk mode returns to the operating scr
 });
 
 
-test('home layout controls contain no talk editing entry points', { skip: !browserAvailable }, async () => {
+test('home ignores obsolete layout without clearing the saved value', { skip: !browserAvailable }, async () => {
   const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer({ customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);
     await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
-    const editor = page.locator('#workspace-editor');
-    assert.equal(await editor.locator('#mode, #ratio, #copy-ratio-button').count(), 0);
-    assert.equal(await editor.locator('h2').textContent(), 'ホームの配置');
-    assert.equal(await page.locator('#talk-stage [data-layout-handle]').count(), 0);
+    const legacy = JSON.stringify({ version: 1, home: { panels: { comments: { hidden: true, x: 50, y: 50, w: 5, h: 5 } } } });
+    await page.evaluate(value => localStorage.setItem('pokome-workspace-v1', value), legacy);
+    await page.reload(); await appReady(page);
+    assert.equal(await page.locator('#workspace-editor,#layout-session,[data-layout-handle]').count(), 0);
+    assert.equal(await page.locator('.workspace').evaluate(element => element.hasAttribute('data-fixed-layout')), false);
+    assert.equal(await page.locator('.comments').isVisible(), true);
+    assert.equal(await page.locator('.comments').evaluate(element => element.style.left), '');
+    assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), legacy);
+
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });

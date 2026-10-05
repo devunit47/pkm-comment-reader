@@ -4,9 +4,8 @@ import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
 import { initializeDesignPresets } from './design-presets.js';
 import { initializeCustomization } from './customization.js';
-import { exportSettings, parseSettings, restoreSettings, extractLegacyAppearance, dataUrlToBlob, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
-import { compileTheme } from '../shared/theme.js';
-import { createDesignStore, LEGACY_RATIO } from './design-client.js';
+import { exportSettings, parseSettings, restoreSettings, LEGACY_APPEARANCE_KEYS, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
+import { createDesignStore } from './design-client.js';
 import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
@@ -747,7 +746,7 @@ render();
 const themeEditor = initializeTheme(designStore);
 // The talk screen may switch ratio before the preview exists; it catches up when created.
 let showLiveOverlays = () => {};
-const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioChange: ratio => {
+const workspaceEditor = initializeWorkspace(designStore, { onTalkRatioChange: ratio => {
   shownTalkRatio = ratio; renderTalkAppearance(); showLiveOverlays();
 } });
 const designPreview = initializeDesignPreview({ designStore,
@@ -755,12 +754,11 @@ const designPreview = initializeDesignPreview({ designStore,
 });
 initializeCustomization({ platforms: enabledPlatforms, designStore,
   async resetAppearance() {
-    designPreview.reset();
     // Preserve the operating UI too when the server protects an unreadable original.
     await designStore.reset();
     const design = defaultDesign();
     studio = design.studio;
-    themeEditor.reflectTheme(design.theme); workspaceEditor.reset();
+    themeEditor.reflectTheme(design.theme); workspaceEditor.reload();
     renderStudio(); render();
     return true;
   },
@@ -811,35 +809,22 @@ $('restore-settings').onchange = async event => {
   try {
     const file = event.target.files[0]; if (!file) return;
     if (file.size > MAX_SETTINGS_FILE_BYTES) throw new Error('設定ファイルは12MB以下にしてください。');
-    const settings = parseSettings(await file.text());
-    const legacy = extractLegacyAppearance(settings);
-    if (legacy?.theme) compileTheme(legacy.theme);
+    const text = await file.text(), settings = parseSettings(text);
+    const original = JSON.parse(text).settings;
+    const legacy = LEGACY_APPEARANCE_KEYS.some(key => Object.hasOwn(original, key));
     pendingSettings = settings;
     $('backup-status').textContent = legacy
-      ? '現在の接続先・音声・ユーザー設定を置き換え、バックアップに入っている見た目と画像をcustomizationフォルダーへ取り込みます。「復元する」で適用します。'
+      ? '現在の接続先・音声・ユーザー設定を置き換え、古い見た目・画像・配置は復元しません。見た目はcustomizationフォルダーのまま変わりません。「復元する」で適用します。'
       : '現在の接続先・音声・ユーザー設定を置き換えます。見た目はcustomizationフォルダーのまま変わりません。「復元する」で適用します。';
     $('confirm-restore').disabled = false;
   } catch (error) { $('backup-status').textContent = '読み込めませんでした。' + error.message; }
 };
-// Backups from the browser-only era carry the appearance as data URLs. Their
-// images become files and the appearance becomes the applied design.
-async function importLegacyAppearance(legacy) {
-  const upload = async dataURL => dataURL ? (await designStore.uploadImage(dataUrlToBlob(dataURL))).ref : '';
-  const assets = {};
-  for (const [id, dataURL] of Object.entries(legacy.overlays.assets)) assets[id] = await upload(dataURL);
-  const base = defaultDesign();
-  await designStore.save({ ...base, theme: legacy.theme,
-    studio: { ...legacy.studio, image: await upload(legacy.studio.image), speechImage: await upload(legacy.studio.speechImage) },
-    ratios: { ...base.ratios, [LEGACY_RATIO]: { layout: legacy.talk, overlays: { ...legacy.overlays, assets } } } });
-}
 $('confirm-restore').onclick = async () => {
   if (!pendingSettings) return;
   const settings = pendingSettings;
   $('confirm-restore').disabled = true;
   try {
     stop();
-    const legacy = extractLegacyAppearance(settings);
-    if (legacy) await importLegacyAppearance(legacy);
     restoreSettings(storage, settings); location.reload();
   } catch (error) {
     $('confirm-restore').disabled = false;

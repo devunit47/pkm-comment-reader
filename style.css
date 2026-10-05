@@ -122,7 +122,6 @@ main[data-view=updates]>.platform-tabs,main[data-view=updates]>header .eyebrow,m
 
 .comment .username,.comment .message{background:transparent;border:0;text-align:left;font:inherit;color:inherit;padding:0;min-width:0}.comment .username{color:var(--mint);font-weight:600;padding:5px 0}.comment .username:hover{text-decoration:underline}.comment .message{padding-right:10px;line-height:1.8}#user-actions{position:fixed;margin:0;width:280px;max-width:calc(100vw - 16px);padding:18px;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 36px #0006}#user-actions strong{display:block;overflow-wrap:anywhere;color:var(--mint)}#user-actions .mod-buttons{margin:16px 0 12px}#user-actions small{color:var(--muted);font-size:10px}
 
-.workspace .now[style*="position: absolute"]{display:flex;flex-direction:column}.workspace .now[style*="position: absolute"] .panel-heading{flex-shrink:0}.workspace .now[style*="position: absolute"] .speech-bubble{flex:1;min-height:0}.workspace .now[style*="position: absolute"]>.text-button{flex-shrink:0}
 
 #user-actions .mod-buttons{flex-direction:column}#user-actions .mod-buttons button{text-align:left;padding:10px 12px}#user-actions #hide-comment{border-color:#7d505b;background:#59393f;color:#efbbc6}
 

@@ -490,7 +490,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     dialog.dataset.mode = preset ? 'preset' : 'editor';
     $('design-title').textContent = preset ? `プリセットを確認：「${preset.design.name}」` : 'デザインエディタ';
     $('preview-ratio-help').textContent = preset ? '比率を切り替えて配置・追加の文字と画像・立ち絵画像の配置を確認してください。この画面では編集しません。「適用」までは今のデザインを変えません。' : '比率ごとに、配置・追加の文字と画像・立ち絵画像の配置を別々に保存します。確認サイズは見え方の確認だけに使い、配置と出力の大きさを変更しません。';
-    // Edits from the older inputs may still be saving; start from what is stored.
+    // Start from the saved revision after queued design writes finish.
     if (!preset) { try { await designStore.waitForSaves(); } catch { /* The store shows the saved design. */ } }
     if (epoch !== token) return;
     const start = preset?.design || designStore.design;
@@ -518,13 +518,13 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
       frameDoc = frame.contentDocument;
       const css = frameDoc.createElement('style'); css.textContent = previewCSS;
       const theme = frameDoc.createElement('style'); theme.id = 'preview-theme';
-      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch,[data-layout-handle]{visibility:hidden!important}#talk-stage button{pointer-events:none}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}.guide-line{position:absolute;border:2px dashed #ffcc6fcc;color:#ffcc6f;text-shadow:0 1px 2px #000;padding:4px}`;
+      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch{visibility:hidden!important}#talk-stage button{pointer-events:none}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}.guide-line{position:absolute;border:2px dashed #ffcc6fcc;color:#ffcc6f;text-shadow:0 1px 2px #000;padding:4px}`;
       frameDoc.head.append(css, theme, controls);
       previewStage = frameDoc.importNode(live, true); previewStage.hidden = false;
       // The copy carries the live ratio's layout and edit frame; show the preview ratio's own.
       delete previewStage.dataset.frameRatio; previewStage.style.removeProperty('--frame');
       applyTalkLayout(previewStage, talkLayout(design(), ratio));
-      for (const element of previewStage.querySelectorAll('dialog,[popover],[data-layout-handle],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
+      for (const element of previewStage.querySelectorAll('dialog,[popover],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
       for (const element of previewStage.querySelectorAll('button,input,select,textarea,a')) { element.setAttribute('tabindex', '-1'); element.removeAttribute('href'); }
       previewStage.querySelector('#stage-speech-user').textContent = 'サンプルさん'; previewStage.querySelector('#stage-speech-text').textContent = '表示の色と大きさを確認しています。';
       previewStage.querySelector('#stage-speech-status').textContent = 'プレビュー'; previewStage.querySelector('.stage-speech').dataset.speaking = 'false';
@@ -862,7 +862,6 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
   return {
     openEditor() { return openPreview(); },
     openPreset(preset, onApply) { return openPreview(structuredClone(preset), onApply); },
-    reset() { if (session) close(); overlays = normalizeOverlays(); renderOverlays(live, overlays); },
     // The talk screen switched ratio: show that ratio's additions.
     showLive,
     getOverlays: () => clone(overlays),
@@ -870,7 +869,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     // A failed save only restores the saved design; an open draft stays usable.
     reload(detail = { external: true }) {
       showLive();
-      if (session && detail.external && !saving) { session.markStale(); status(STALE_DRAFT); buttons(); }
+      if (session && (detail.external || detail.applied) && !saving) { session.markStale(); status(STALE_DRAFT); buttons(); }
     },
   };
 }

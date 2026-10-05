@@ -9,7 +9,7 @@ import { UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles } from './fixtures/preset-design.js';
 import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget } from './browser-support.js';
 
-async function open(t, raw = JSON.stringify(fixtureDesign())) {
+async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-unreadable-browser-'));
   const current = join(folder, 'current');
   const preset = join(folder, 'presets', 'kept');
@@ -36,6 +36,7 @@ async function open(t, raw = JSON.stringify(fixtureDesign())) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(8000);
   await blockExternalFonts(page);
+  if (obsoleteWorkspace !== undefined) await page.addInitScript(value => localStorage.setItem('pokome-workspace-v1', value), obsoleteWorkspace);
   const puts = [], errors = [];
   page.on('request', request => { if (request.method() === 'PUT' && request.url().endsWith('/api/design/current')) puts.push(request); });
   page.on('pageerror', error => errors.push(error.message));
@@ -74,9 +75,9 @@ for (const [kind, raw] of Object.entries({ 'broken JSON': '{broken', 'unknown ve
   });
 }
 
-test('reset discovers a newly broken original without resetting the operating layout', { skip: !browserAvailable }, async t => {
-  const app = await open(t), { page } = app;
-  const operatingLayout = await page.evaluate(() => localStorage.getItem('pokome-workspace-v1'));
+test('reset protects a newly broken original without clearing obsolete browser layout data', { skip: !browserAvailable }, async t => {
+  const obsoleteWorkspace = JSON.stringify({ version: 1, home: { panels: {} }, talk: null });
+  const app = await open(t, JSON.stringify(fixtureDesign()), obsoleteWorkspace), { page } = app;
   const raw = '{broken after load';
   await writeFile(join(app.current, 'design.json'), raw);
   await page.locator('#appearance-recovery #open-reset').click();
@@ -84,7 +85,7 @@ test('reset discovers a newly broken original without resetting the operating la
   await page.waitForFunction(() => document.querySelector('#appearance-recovery').shadowRoot.querySelector('#result').textContent.includes('標準に戻せませんでした'));
   assert.match(await page.locator('#appearance-recovery #result').textContent(), /退避/);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isDisabled(), true);
-  assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), operatingLayout);
+  assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), obsoleteWorkspace);
   assert.equal(app.puts.length, 1);
   await app.assertOriginal(raw);
   assert.deepEqual(app.errors, []);

@@ -3,9 +3,6 @@ import { compileTheme } from '../shared/theme.js';
 
 export const STALE_DRAFT = '別の画面でデザインが変更されました。最新のデザインから編集をやり直してください。';
 
-// Backups from the browser-storage era held one landscape layout.
-export const LEGACY_RATIO = '16:9';
-
 async function failureMessage(response, fallback) {
   try { return (await response.json()).error || fallback; } catch { return fallback; }
 }
