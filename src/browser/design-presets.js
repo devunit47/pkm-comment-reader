@@ -88,7 +88,6 @@ export function initializeDesignPresets({ designStore, designPreview }) {
   $('preset-refresh').onclick = () => run(async () => { await refresh(); status('プリセットの一覧を更新しました。'); });
   $('preset-load').onclick = () => run(async () => {
     const choice = selected(); if (!choice) return;
-    await designStore.waitForSaves();
     let preset;
     try { preset = await client.read(choice.id); }
     catch (error) { choice.error = error.message; renderList(); throw error; }
@@ -109,7 +108,7 @@ export function initializeDesignPresets({ designStore, designPreview }) {
     await client.remove(preset); await refresh(''); status('プリセットを削除しました。');
   });
   $('preset-reset').onclick = () => run(async () => {
-    const currentRevision = await designStore.waitForSaves();
+    const currentRevision = designStore.revision;
     if (!await confirm('標準へ戻す', '今のデザイン全体を標準に戻しますか？ 保存済みのプリセットは残ります。', '標準へ戻す')) { status('標準へ戻す操作をキャンセルしました。'); return; }
     await designStore.reset(currentRevision); status('今のデザイン全体を標準へ戻しました。');
   });

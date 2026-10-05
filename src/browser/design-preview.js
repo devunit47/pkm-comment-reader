@@ -38,7 +38,7 @@ const textField = (key, label, max) => `<label>${label}<input id="draft-${key}" 
 const LOCAL_PICKERS = { css: 'styles', actor: 'images', speech: 'images', overlay: 'images' };
 const localPicker = id => `<section id="local-${id}" class="local-picker"><details><summary>customizationフォルダーから選ぶ</summary><p><small>保存場所：<span class="local-directory">取得中…</span><br>${id === 'css' ? 'customization/styles のCSS（UTF-8・1MBまで）' : 'customization/images のPNG・JPEG・WebP・GIF（20MB・1600万画素まで）'}。直下のファイルだけが対象です。元ファイルを変えたら読み込み直してください。</small></p><button class="local-refresh" type="button">一覧を更新</button><p class="local-status" role="status"></p><label>${id === 'css' ? 'CSS' : '画像'}<select id="local-${id}-select" disabled></select></label><button id="local-${id}-load" type="button" disabled>下書きに読み込む</button></details></section>`;
 
-const STYLE = `:host{display:block;color:#edf4e9;font:14px system-ui;margin-bottom:24px}*{box-sizing:border-box}section.entry{background:#1a2325;border:1px solid #506960;border-radius:12px;padding:24px}h2,h3,p{margin:0 0 12px}h2{font-size:18px}h3{font-size:15px}p{line-height:1.7;color:#c0d0c8}
+const STYLE = `:host{display:block;color:#edf4e9;font:14px system-ui;margin-bottom:24px}*{box-sizing:border-box}section.entry{overflow-wrap:anywhere;background:#1a2325;border:1px solid #506960;border-radius:12px;padding:24px}h2,h3,p{margin:0 0 12px}h2{font-size:18px}h3{font-size:15px}p{line-height:1.7;color:#c0d0c8}
 button,input,select,textarea{font:inherit;background:#101b18;color:#edf4e9;border:1px solid #70877b;border-radius:6px;padding:8px;max-width:100%}button{cursor:pointer}button:disabled,input:disabled,select:disabled{opacity:.5;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:3px solid #ace5cd;outline-offset:2px}
 label{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:5px;margin:10px 0}select{width:100%;min-width:0}textarea{width:100%;resize:vertical}input[type=file]{width:100%;min-width:0}input[type=color]{width:100%;height:40px;padding:3px}.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.primary{background:#ace5cd;color:#11271e;font-weight:700}.danger{border-color:#e6a0a0}
 dialog{background:#101a18;color:#edf4e9;padding:0;border:0}#design-dialog{position:fixed;inset:0;margin:0;width:100%;height:100%;max-width:none;max-height:none;overflow:hidden}#design-dialog[open]{display:grid;grid-template-rows:auto auto minmax(0,1fr)}dialog::backdrop{background:#000b}dialog:not([open]){display:none}
@@ -55,7 +55,7 @@ dialog[data-mode=preset] .side,dialog[data-mode=preset] .edit-only{display:none}
 const SNAP_STYLE = `#canvas-order[hidden],#snap-lines[hidden]{display:none}#snap-lines{position:absolute;inset:0;pointer-events:none;z-index:100}#snap-lines i{position:absolute;border-color:#ffcc6f;border-style:solid}#snap-lines i:first-child{top:0;bottom:0;border-width:0 0 0 1px}#snap-lines i:last-child{left:0;right:0;border-width:1px 0 0}.canvas-target[data-selected=true]>.canvas-handle{z-index:100}`;
 const CANVAS_STYLE = "\n#canvas-layer{position:absolute;inset:0;pointer-events:none;isolation:isolate}.canvas-target{position:absolute;pointer-events:auto;touch-action:none;outline:0;cursor:move}.canvas-target[data-selected=true]{outline:2px solid #fff;box-shadow:0 0 0 3px #245a46}.canvas-target:focus-visible{outline:3px solid #ffcc6f}.canvas-target[hidden],#panel-placement[hidden]{display:none}.canvas-handle{display:none;position:absolute;width:16px;height:16px;background:#fff;border:2px solid #245a46;touch-action:none;transform:translate(-50%,-50%)}.canvas-target[data-selected=true]>.canvas-handle{display:block}.canvas-handle[data-edge=n]{left:50%;top:0;cursor:ns-resize}.canvas-handle[data-edge=s]{left:50%;top:100%;cursor:ns-resize}.canvas-handle[data-edge=e]{left:100%;top:50%;cursor:ew-resize}.canvas-handle[data-edge=w]{left:0;top:50%;cursor:ew-resize}.canvas-handle[data-edge=ne]{left:100%;top:0;cursor:nesw-resize}.canvas-handle[data-edge=nw]{left:0;top:0;cursor:nwse-resize}.canvas-handle[data-edge=se]{left:100%;top:100%;cursor:nwse-resize}.canvas-handle[data-edge=sw]{left:0;top:100%;cursor:nesw-resize}.stage-box{padding:28px;align-items:center;min-width:0;background:#080e0c}.viewport{overflow:visible;border-radius:0;border:0;outline:1px solid #c0d0c8}iframe{pointer-events:none}.bar,.side,.center{overflow-wrap:anywhere}@media(max-width:300px){.numbers{grid-template-columns:minmax(0,1fr)}.bar{padding:8px}.side,.center{padding:8px}.stage-box{padding:12px}}\n";
 
-const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><button id="open-design-preview" class="primary" type="button">デザインを編集</button><p id="preview-result" role="status"></p><p><small>ホームの配置と「配信出力（OBS用）」の出力の大きさは、変更するとすぐに保存されます。雑談画面の配置はこのエディタで編集します。</small></p></section>
+const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><button id="open-design-preview" class="primary" type="button">デザインを編集</button><p id="preview-result" role="status"></p><p id="applied-design-summary"></p><p><small>雑談画面の配置と出力の大きさも、ここで下書きとして編集します。画面収録中はエディタも映るため、OBSの別シーンなどで編集してください。</small></p></section>
 <dialog id="design-dialog" aria-labelledby="design-title" data-tab="targets"><div class="bar"><div class="title"><h2 id="design-title">デザインエディタ</h2><span id="draft-state" role="status"></span><div class="actions edit-only"><button id="undo-design" type="button" aria-keyshortcuts="Control+Z">取り消し</button><button id="redo-design" type="button" aria-keyshortcuts="Control+Shift+Z Control+Y">やり直し</button></div></div><div class="actions"><button id="restart-design" type="button" hidden>最新のデザインからやり直す</button><button id="discard-design" class="edit-only danger" type="button">変更をすべて破棄</button><button id="apply-design" class="primary" type="button">適用</button><button id="cancel-design" type="button">閉じる</button></div></div>
 <p id="design-status" role="status" aria-live="polite"></p>
 <div class="editor"><div class="tabs edit-only" role="group" aria-label="表示する欄"><button id="show-targets" type="button" aria-pressed="true">対象</button><button id="show-settings" type="button" aria-pressed="false">設定</button></div>
@@ -95,7 +95,6 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
   let overlays = storedOverlays(), session = null, ratio = '16:9', selected = 'screen', epoch = 0, pending = 0, saving = false, gesture = 0;
   let commentResizeObserver, previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', compiledSource = '', cssError = '', renderedStudio = null, renderedActorImage = null, renderedRatio = null, dragCleanup, confirmation = null;
   const requests = new Map();
-  renderOverlays(live, resolveOverlayAssets(overlays));
   const host = document.createElement('div'); host.id = 'design-preview-editor';
   document.getElementById('studio-page').prepend(host);
   const shadow = host.attachShadow({ mode: 'open' });
@@ -151,9 +150,6 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     $('add-text').disabled = !editable() || full;
     $('overlay-image').disabled = !editable() || full;
     for (const id of Object.keys(LOCAL_PICKERS)) $('local-' + id + '-load').disabled = !editable() || !$('local-' + id + '-select').value || (id === 'overlay' && full);
-    for (const id of Object.keys(LOCAL_PICKERS)) {
-      $('local-' + id + '-load').disabled = !editable() || !$('local-' + id + '-select').value || (id === 'overlay' && full);
-    }
     $('draft-state').textContent = !session ? '' : presetDraft ? 'プリセットを確認（編集不可）' : saving ? '適用中…' : session.stale ? '別の画面で変更されました' : session.dirty ? '下書き・未適用' : '変更なし';
   }
   function targets() {
@@ -488,10 +484,9 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     presetDraft = preset; presetApply = onApply; returnFocus = document.activeElement;
     while (returnFocus?.shadowRoot?.activeElement) returnFocus = returnFocus.shadowRoot.activeElement;
     dialog.dataset.mode = preset ? 'preset' : 'editor';
+    $('cancel-design').textContent = preset ? 'キャンセル' : '閉じる';
     $('design-title').textContent = preset ? `プリセットを確認：「${preset.design.name}」` : 'デザインエディタ';
     $('preview-ratio-help').textContent = preset ? '比率を切り替えて配置・追加の文字と画像・立ち絵画像の配置を確認してください。この画面では編集しません。「適用」までは今のデザインを変えません。' : '比率ごとに、配置・追加の文字と画像・立ち絵画像の配置を別々に保存します。確認サイズは見え方の確認だけに使い、配置と出力の大きさを変更しません。';
-    // Start from the saved revision after queued design writes finish.
-    if (!preset) { try { await designStore.waitForSaves(); } catch { /* The store shows the saved design. */ } }
     if (epoch !== token) return;
     const start = preset?.design || designStore.design;
     // A preset is applied over the current design, so both modes guard its revision.
@@ -823,8 +818,6 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     if (!session?.stale || saving) return;
     if (session.dirty && (!await confirmAction('最新のデザインからやり直しますか？', 'この下書きの変更はすべての比率で破棄されます。', '下書きを破棄してやり直す', 'キャンセル') || !session)) return;
     invalidate();
-    try { await designStore.waitForSaves(); } catch { /* The store shows the saved design. */ }
-    if (!session) return;
     session.restart(designStore.design, designStore.revision); compiledSource = null; refresh();
     status('最新のデザインから編集をやり直しています。');
   };
@@ -858,7 +851,13 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
       status(`適用できませんでした：${error.message}`); buttons();
     }
   };
-  function showLive() { overlays = storedOverlays(); renderOverlays(live, resolveOverlayAssets(overlays)); }
+  function showLive() {
+    overlays = storedOverlays(); renderOverlays(live, resolveOverlayAssets(overlays));
+    const applied = designStore.design;
+    const theme = [...$('draft-theme').options].find(option => option.value === applied.studio.theme).textContent;
+    $('applied-design-summary').textContent = `適用中：${theme} · 出力 ${applied.outputSize.replace('x', ' × ')}`;
+  }
+  showLive();
   return {
     openEditor() { return openPreview(); },
     openPreset(preset, onApply) { return openPreview(structuredClone(preset), onApply); },

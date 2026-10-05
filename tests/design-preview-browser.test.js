@@ -391,7 +391,7 @@ browserTest('a draft whose save failed and was cancelled is never saved by a lat
   assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
   await closeEditor(editor);
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
-  // A later editor session stores only its own changes through the same queue.
+  // A later editor session stores only its own changes.
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1920x1080'));
   const saved = await waitForDesign(url, design => design.outputSize === '1920x1080');
   assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');

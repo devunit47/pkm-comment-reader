@@ -43,19 +43,16 @@ test('reading a preset validates its isolated catalog without changing current o
   assert.equal(store.design.studio.title, before.studio.title);
 });
 
-test('create and overwrite wait for pending current saves and use the acknowledged revision', async () => {
-  const backend = server(), store = await createDesignStore({ fetchImpl: backend.fetchImpl, watch: false });
-  const client = createPresetClient(store, { fetchImpl: backend.fetchImpl, validate: async () => {} }), hold = gate();
-  backend.hooks.put.push(hold.promise);
-  const saving = store.save({ ...store.design, name: 'latest design' });
-  const creating = client.create(' 👩‍👩‍👧‍👦 '.repeat(1));
-  await tick(); assert.equal(backend.requests.filter(request => request.method === 'POST').length, 0);
-  hold.release(); await saving; await creating;
+test('create and overwrite use the current acknowledged revision without an instant-save queue', async () => {
+  const backend = server(), state = { revision: 'r1', writable: true };
+  const client = createPresetClient(state, { fetchImpl: backend.fetchImpl, validate: async () => {} });
+  await client.create(' 👩‍👩‍👧‍👦 ');
   const saved = backend.requests.find(request => request.method === 'POST');
   assert.deepEqual(saved.body, { name: '👩‍👩‍👧‍👦', currentRevision: 'r1' });
+  state.revision = 'r2';
   await client.overwrite(backend.preset);
   const overwritten = backend.requests.at(-1);
-  assert.deepEqual(overwritten.body, { overwrite: true, currentRevision: 'r1' }); assert.equal(overwritten.headers['If-Match'], 'p1');
+  assert.deepEqual(overwritten.body, { overwrite: true, currentRevision: 'r2' }); assert.equal(overwritten.headers['If-Match'], 'p1');
 });
 
 test('apply changes the visible design and image catalog only after the server succeeds', async () => {
@@ -64,7 +61,7 @@ test('apply changes the visible design and image catalog only after the server s
   backend.hooks.put.push(hold.promise);
   const applying = store.applyPreset(backend.preset, store.revision);
   await tick(); assert.deepEqual(store.design, defaultDesign()); assert.deepEqual(store.images, {});
-  await assert.rejects(store.save(store.design), /適用中/);
+  await assert.rejects(store.applyDraft(store.design, store.revision), /適用中/);
   hold.release(); await applying;
   assert.deepEqual(store.design, backend.preset.design); assert.deepEqual(store.images, images); assert.deepEqual(notifications, [{ applied: true }]);
   const request = backend.requests.find(request => request.method === 'PUT');
@@ -75,7 +72,7 @@ test('failed apply preserves current and a changed current revision refuses stal
   const backend = server(), store = await createDesignStore({ fetchImpl: backend.fetchImpl, watch: false });
   backend.hooks.put.push(Promise.resolve('fail'));
   await assert.rejects(store.applyPreset(backend.preset, 'r0'), /失敗/); assert.deepEqual(store.design, defaultDesign());
-  await store.save({ ...store.design, name: 'changed locally' });
+  await store.applyDraft({ ...store.design, name: 'changed locally' }, store.revision);
   const requests = backend.requests.length;
   await assert.rejects(store.applyPreset(backend.preset, 'r0'), /別の画面/);
   await assert.rejects(store.reset('r0'), /別の画面/); assert.equal(backend.requests.length, requests);

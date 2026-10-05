@@ -28,39 +28,12 @@ function fakeServer({ revision = 'r0', conflictOnce = false, failLoad = false } 
   return { fetchImpl, requests, get current() { return current; } };
 }
 
-test('saves are serialized, chained by revision, and only the newest pending design is sent', async () => {
-  const server = fakeServer();
-  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
-  assert.equal(store.available, true);
-  const first = store.save({ ...defaultDesign(), name: 'one' });
-  store.save({ ...defaultDesign(), name: 'two' });
-  const last = store.save({ ...defaultDesign(), name: 'three' });
-  assert.equal(store.design.name, 'three', 'the page shows the newest design at once');
-  await Promise.all([first, last]);
-  const puts = server.requests.filter(request => request.method === 'PUT');
-  assert.deepEqual(puts.map(request => JSON.parse(request.body).name), ['one', 'three']);
-  assert.deepEqual(puts.map(request => request.headers['If-Match']), ['r0', 'r1']);
-  assert.equal(store.revision, 'r2');
-  assert.equal(server.current.design.name, 'three');
-});
-
-test('a conflict reloads the latest design, notifies listeners and rejects the save', async () => {
-  const server = fakeServer({ conflictOnce: true });
-  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
-  const events = [];
-  store.subscribe(detail => events.push(detail));
-  await assert.rejects(store.save({ ...defaultDesign(), name: 'mine' }), /別の画面/);
-  assert.equal(store.revision, 'other');
-  assert.equal(store.design.name, '');
-  assert.deepEqual(events, [{ external: true }]);
-});
-
 test('an unreachable server leaves the default design and refuses to save', async () => {
   const store = await createDesignStore({ fetchImpl: fakeServer({ failLoad: true }).fetchImpl, watch: false });
   assert.equal(store.available, false);
   assert.deepEqual(store.design, defaultDesign());
   assert.match(store.warning, /使えません/);
-  await assert.rejects(store.save(defaultDesign()), /ローカルサーバー/);
+  await assert.rejects(store.applyDraft(defaultDesign(), store.revision), /ローカルサーバー/);
   await assert.rejects(store.uploadImage({ type: 'image/png' }), /ローカルサーバー/);
 });
 
@@ -68,7 +41,7 @@ test('uploaded images join the catalog so their references survive normalization
   const server = fakeServer();
   const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
   const { ref } = await store.uploadImage({ type: 'image/png' });
-  await store.save({ ...defaultDesign(), studio: { ...defaultDesign().studio, image: ref } });
+  await store.applyDraft({ ...defaultDesign(), studio: { ...defaultDesign().studio, image: ref } }, store.revision);
   assert.equal(store.design.studio.image, ref);
   assert.equal(server.current.design.studio.image, ref);
 });
@@ -88,7 +61,7 @@ test('version 2 client loading performs no write and a later save sends version 
   for (const [index, ratio] of RATIOS.entries()) draft = withTalk(draft, ratio, { actorImage: {
     ...defaultActorImage(), mode: index === 1 ? 'theme' : 'custom', scale: 110 + index * 10, offsetX: index + 0.125, offsetY: -8.5,
   } });
-  await store.save(draft);
+  await store.applyDraft(draft, store.revision);
   const put = server.requests.find(request => request.method === 'PUT');
   assert.equal(JSON.parse(put.body).version, 3);
   assert.deepEqual(server.current.design, draft);
@@ -102,7 +75,7 @@ test('unreadable originals keep the server available but refuse every current wr
   const presets = createPresetClient(store, { fetchImpl: server.fetchImpl });
   assert.equal(store.available, true);
   assert.equal(store.writable, false);
-  for (const operation of [() => store.save(defaultDesign()), () => store.reset(),
+  for (const operation of [() => store.applyDraft(defaultDesign(), store.revision), () => store.reset(),
     () => store.applyPreset({ id: 'saved', revision: 'preset-r0' }, store.revision),
     () => store.uploadImage({ type: 'image/png' }), () => presets.create('保存しない'),
     () => presets.overwrite({ id: 'saved', revision: 'preset-r0' })]) {
@@ -116,7 +89,7 @@ test('a protection response refreshes the reason when the original breaks after 
   const server = fakeServer();
   const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
   Object.assign(server.current, { revision: 'broken', readOnly: true, warning: '原本を退避してください。' });
-  await assert.rejects(store.save({ ...defaultDesign(), name: '保存しない' }), /退避/);
+  await assert.rejects(store.applyDraft({ ...defaultDesign(), name: '保存しない' }, store.revision), /退避/);
   assert.equal(store.writable, false);
   assert.equal(store.revision, 'broken');
   assert.match(store.warning, /退避/);
@@ -139,7 +112,7 @@ test('reloading a repaired original clears protection and restores saving', asyn
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(store.writable, true);
   assert.equal(store.warning, '');
-  await store.save({ ...defaultDesign(), name: '修復後' });
+  await store.applyDraft({ ...defaultDesign(), name: '修復後' }, store.revision);
   assert.equal(store.design.name, '修復後');
 });
 
@@ -180,9 +153,8 @@ test('image files are checked for type, 20MB, decoding and pixels before uploadi
   await assert.rejects(checkImageFile(file(), environment({ width: 4001, height: 4000 })), /1600万/);
 });
 
-// Regression: a reload answered after a newer save must not restore the older
-// revision, or the next save is rejected as if another page had changed it.
-test('a slow reload never overwrites a newer save, so later saves are not refused', async () => {
+// A late reload must not restore an older revision and reject the next draft.
+test('a slow reload never overwrites a newer apply, so later drafts are not refused', async () => {
   const server = fakeServer();
   let gate, source;
   const slowFetch = async (url, options = {}) => {
@@ -199,17 +171,17 @@ test('a slow reload never overwrites a newer save, so later saves are not refuse
     emit(type, data) { for (const listener of this.listeners[type] || []) listener({ data: JSON.stringify(data) }); }
   }
   const store = await createDesignStore({ fetchImpl: slowFetch, EventSourceClass: FakeEventSource });
-  await store.save({ ...defaultDesign(), name: 'first' });
+  await store.applyDraft({ ...defaultDesign(), name: 'first' }, store.revision);
   let release; gate = { promise: new Promise(resolve => { release = resolve; }) };
   source.emit('change', { revision: 'from-another-page' });
   await new Promise(resolve => setTimeout(resolve, 0));
   gate = null;
-  await store.save({ ...defaultDesign(), name: 'second' });
+  await store.applyDraft({ ...defaultDesign(), name: 'second' }, store.revision);
   release();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(store.design.name, 'second');
   assert.equal(store.revision, server.current.revision);
-  await store.save({ ...defaultDesign(), name: 'third' });
+  await store.applyDraft({ ...defaultDesign(), name: 'third' }, store.revision);
   assert.equal(server.current.design.name, 'third');
 });
 
@@ -254,36 +226,18 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const gate = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
 const withStudio = (design, studio) => ({ ...design, studio: { ...design.studio, ...studio } });
 
-test('a failed save is discarded instead of riding along with the next save', async () => {
+test('a failed draft write never changes the design used for the next apply', async () => {
   const server = contentServer();
   const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
   const events = [];
   store.subscribe(detail => events.push(detail));
   server.hooks.put.push(Promise.resolve('fail'));
-  await assert.rejects(store.save({ ...store.design, name: 'cancelled draft' }), /書き込めません/);
+  await assert.rejects(store.applyDraft({ ...store.design, name: 'cancelled draft' }, store.revision), /書き込めません/);
   assert.equal(store.design.name, '', 'the page goes back to the saved design');
-  assert.deepEqual(events, [{ reverted: true }]);
-  await store.save(withStudio(store.design, { theme: 'rose' }));
+  assert.deepEqual(events, [], 'a failed draft write never changes the applied design');
+  await store.applyDraft(withStudio(store.design, { theme: 'rose' }), store.revision);
   assert.equal(server.current.design.name, '');
   assert.equal(server.current.design.studio.theme, 'rose');
-});
-
-test('an older save response keeps the newer edits waiting to be saved', async () => {
-  const server = contentServer();
-  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
-  const first = gate(), second = gate();
-  server.hooks.put.push(first.promise, second.promise);
-  store.save({ ...store.design, theme: '.pokome-workspace{}' });
-  await tick();
-  store.save({ ...store.design, outputSize: '1920x1080' });
-  first.release(); await tick(); await tick();
-  assert.equal(store.design.outputSize, '1920x1080', 'the size change stays while its save is pending');
-  const last = store.save(withStudio(store.design, { theme: 'violet' }));
-  second.release();
-  await last;
-  assert.equal(server.current.design.outputSize, '1920x1080');
-  assert.equal(server.current.design.studio.theme, 'violet');
-  assert.equal(server.current.design.theme, '.pokome-workspace{}');
 });
 
 test('reloads answered out of order never go back to an older external design', async () => {
@@ -304,9 +258,9 @@ test('an external change back to content this page saved earlier is still applie
   const server = contentServer();
   const store = await createDesignStore({ fetchImpl: server.fetchImpl, EventSourceClass: FakeEvents });
   const rose = withStudio(defaultDesign(), { theme: 'rose' });
-  await store.save(rose);
+  await store.applyDraft(rose, store.revision);
   FakeEvents.last.emit('change', { revision: server.current.revision });
-  await store.save(withStudio(defaultDesign(), { theme: 'violet' }));
+  await store.applyDraft(withStudio(defaultDesign(), { theme: 'violet' }), store.revision);
   FakeEvents.last.emit('change', { revision: server.current.revision });
   await tick();
   FakeEvents.last.emit('change', { revision: server.external(rose) });
@@ -336,7 +290,7 @@ test('applyDraft refuses a draft opened before a newer save, without writing', a
   const server = fakeServer();
   const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
   const opened = store.revision;
-  await store.save({ ...defaultDesign(), name: 'elsewhere' });
+  await store.applyDraft({ ...defaultDesign(), name: 'elsewhere' }, store.revision);
   await assert.rejects(store.applyDraft({ ...defaultDesign(), name: 'draft' }, opened), error => error.conflict === true && /最新のデザインから/.test(error.message));
   assert.equal(server.requests.filter(request => request.method === 'PUT').length, 1);
   assert.equal(server.current.design.name, 'elsewhere');
@@ -362,4 +316,19 @@ test('applyDraft stops when an image the draft uses is not in the catalog', asyn
   const { ref } = await store.uploadImage({ type: 'image/png' });
   await store.applyDraft({ ...defaultDesign(), studio: { ...defaultDesign().studio, source: 'image', image: ref } }, store.revision);
   assert.equal(server.current.design.studio.image, ref);
+});
+
+test('a pending draft rejects concurrent draft, preset and reset writes without changing the applied design', async () => {
+  const server = contentServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const hold = gate(); server.hooks.put.push(hold.promise);
+  const applying = store.applyDraft({ ...store.design, name: 'first draft' }, store.revision);
+  const before = structuredClone(store.design);
+  await assert.rejects(store.applyDraft({ ...store.design, name: 'second draft' }, store.revision), /適用中/);
+  await assert.rejects(store.applyPreset({ id: 'saved', revision: 'p0' }, store.revision), /別の画面/);
+  await assert.rejects(store.reset(), /適用中/);
+  assert.equal(server.requests.filter(request => request.method === 'PUT').length, 1);
+  assert.deepEqual(store.design, before);
+  hold.release(); await applying;
+  assert.equal(store.design.name, 'first draft');
 });

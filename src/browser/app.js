@@ -767,7 +767,7 @@ $('stage-design-edit').onclick = () => designPreview.openEditor();
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });
 initializeDesignPresets({ designStore, designPreview });
-// Another page changed the design, or a failed save was undone: show the saved design.
+// Reflect only the confirmed design after a replacement or an external change.
 designStore.subscribe(detail => {
   studio = designStore.design.studio;
   themeEditor.reflectTheme(designStore.design.theme);

@@ -54,3 +54,44 @@ test('output size is applied text and its editor changes the size only on Apply'
   assert.match(await page.locator('#output-size-value').textContent(), /1080.*1920/);
   assert.equal((await readDesign(base)).outputSize, '1080x1920');
 });
+
+test('design page orders final entries, shows the applied design and keeps preset confirmation read-only', { skip: !browserAvailable }, async t => {
+  const { page, editor } = await fixture(t);
+  await page.locator('[data-page="studio"]').click();
+  assert.deepEqual(await page.locator('#studio-page').evaluate(section => [...section.children].map(child => child.id)), ['design-presets', 'design-preview-editor', 'stream-output-panel', 'appearance-recovery-guide']);
+  assert.match(await editor.locator('#applied-design-summary').textContent(), /ミント.*1280.*720/);
+  assert.doesNotMatch(await editor.locator('.entry').textContent(), /ホームの配置|すぐに保存/);
+  const presets = page.locator('#design-presets');
+  await presets.locator('#preset-save').click(); await presets.locator('#preset-name').fill('確認用'); await presets.locator('#preset-name-submit').click();
+  await presets.locator('#preset-status').filter({ hasText: '保存しました' }).waitFor();
+  await presets.locator('#preset-load').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  for (const selector of ['#canvas-snap', '#copy-ratio', '#draft-reset', '#local-css', '#local-actor', '#local-speech', '#local-overlay', '.side']) assert.equal(await editor.locator(selector).first().isVisible(), false, selector);
+  assert.equal(await editor.locator('.view select:visible').count(), 2);
+  assert.equal(await editor.locator('.view input:visible').count(), 1);
+  assert.equal(await editor.locator('#cancel-design').textContent(), 'キャンセル');
+  await editor.locator('#cancel-design').click();
+  await page.locator('#recovery-guide-open').click();
+  assert.match(await page.locator('#appearance-recovery dialog').textContent(), /出力の大きさ/);
+  assert.match(await page.locator('#appearance-recovery dialog').textContent(), /下書き.*適用できなく/);
+  await page.locator('#appearance-recovery #cancel-reset').click();
+});
+
+test('150px standard home keeps content within the effective dock width', { skip: !browserAvailable }, async t => {
+  const { page } = await fixture(t); await page.setViewportSize({ width: 150, height: 700 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  for (const selector of ['.workspace','.comments','.stats','#filter','#enter-talk']) {
+    const box = await page.locator(selector).boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 150, selector);
+  }
+});
+
+test('150px talk controls remain reachable outside the short ratio frame', { skip: !browserAvailable }, async t => {
+  const { page } = await fixture(t); await page.setViewportSize({ width: 150, height: 700 });
+  await page.locator('#enter-talk').click(); await page.locator('#stage-design-edit').focus();
+  for (const id of ['leave-talk','stage-auto-speech','stage-design-edit']) {
+    const button = page.locator('#'+id), box = await button.boundingBox();
+    assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= 150 && box.y + box.height <= 700, id);
+    await button.click({ trial: true });
+  }
+  await page.locator('#stage-design-edit').click(); await page.locator('#design-preview-editor #cancel-design').click();
+  await page.locator('#leave-talk').click(); assert.equal(await page.locator('#home-page').isVisible(), true);
+});

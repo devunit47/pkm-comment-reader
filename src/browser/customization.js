@@ -29,11 +29,11 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
   // Outside the theme's permitted scope, with a Shadow DOM and modal top layer:
   // even a theme hiding main/sidebar cannot hide the recovery controls.
   const recovery = document.createElement('div'); recovery.id = 'appearance-recovery';
-  recovery.style.cssText = 'all:initial;position:fixed;right:12px;bottom:12px;z-index:2147483647;';
+  recovery.style.cssText = 'all:initial;position:fixed;right:12px;bottom:12px;z-index:2147483647;max-width:calc(100vw - 24px);';
   const shadow = recovery.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>:host{font:14px system-ui}button{font:inherit;cursor:pointer;border:1px solid #ace5cd;border-radius:8px;background:#172b25;color:#f2fff8;padding:10px 14px}button:focus-visible{outline:3px solid #ace5cd;outline-offset:3px}dialog{font:15px system-ui;background:#1a2325;color:#edf4e9;border:1px solid #ace5cd;border-radius:12px;width:min(460px,80vw);line-height:1.7}dialog::backdrop{background:#0009}.actions{display:flex;flex-wrap:wrap;gap:12px}#result{max-width:320px;background:#172b25;color:#f2fff8;font:13px system-ui;line-height:1.6}#result:empty{display:none}</style>
+  shadow.innerHTML = `<style>:host{font:14px system-ui}*{box-sizing:border-box}button{max-width:100%;overflow-wrap:anywhere;font:inherit;cursor:pointer;border:1px solid #ace5cd;border-radius:8px;background:#172b25;color:#f2fff8;padding:10px 14px}button:focus-visible{outline:3px solid #ace5cd;outline-offset:3px}dialog{font:15px system-ui;background:#1a2325;color:#edf4e9;border:1px solid #ace5cd;border-radius:12px;width:calc(100vw - 24px);max-width:460px;max-height:calc(100dvh - 24px);overflow:auto;padding:16px;line-height:1.7}dialog::backdrop{background:#0009}.actions{display:flex;flex-wrap:wrap;gap:12px}#result{max-width:min(320px,100%);overflow-wrap:anywhere;background:#172b25;color:#f2fff8;font:13px system-ui;line-height:1.6}#result:empty{display:none}</style>
     <button id="open-reset" type="button">見た目を標準に戻す</button><p id="result" role="status"></p>
-    <dialog aria-labelledby="reset-title"><h2 id="reset-title">見た目を標準に戻しますか？</h2><p>配色・文章・画像・追加CSS・雑談画面の配置を組み込みの標準に戻します。接続先・音声・ユーザー管理設定と、customizationフォルダーの素材（styles・images）は残ります。</p><div class="actions"><button id="confirm-reset" type="button">標準に戻す</button><button id="cancel-reset" type="button">キャンセル</button></div></dialog>`;
+    <dialog aria-labelledby="reset-title"><h2 id="reset-title">見た目を標準に戻しますか？</h2><p>出力の大きさ・配色・文章・画像・追加CSS・すべての比率の雑談画面の配置を標準に戻します。開いている下書きは適用できなくなります。接続先・音声・ユーザー管理設定と、customizationフォルダーの素材（styles・images）は残ります。</p><div class="actions"><button id="confirm-reset" type="button">標準に戻す</button><button id="cancel-reset" type="button">キャンセル</button></div></dialog>`;
   document.body.append(recovery);
   const dialog = shadow.querySelector('dialog');
   let protectedOriginal = false;
@@ -66,5 +66,12 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
   const updateRecovery = () => { recovery.style.display = document.body.classList.contains('talk-mode') ? 'none' : 'block'; };
   new MutationObserver(updateRecovery).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   updateRecovery();
+  const guide = document.createElement('section'); guide.id = 'appearance-recovery-guide'; guide.className = 'panel studio-form';
+  const guideFields = document.createElement('div'); guideFields.className = 'studio-fields';
+  const guideTitle = document.createElement('h2'); guideTitle.textContent = '復旧の案内';
+  const guideText = document.createElement('p'); guideText.textContent = '見た目が崩れたときは「見た目を標準に戻す」で、出力の大きさを含むデザイン全体を標準に戻せます。接続先・音声・ユーザー設定と、customizationフォルダーの素材は残ります。開いている下書きは適用できなくなります。';
+  const guideButton = document.createElement('button'); guideButton.id = 'recovery-guide-open'; guideButton.className = 'button'; guideButton.type = 'button'; guideButton.textContent = '復旧の確認を開く';
+  guideButton.onclick = () => shadow.getElementById('open-reset').click();
+  guideFields.append(guideTitle, guideText, guideButton); guide.append(guideFields); document.getElementById('studio-page').append(guide);
 
 }

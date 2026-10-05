@@ -115,3 +115,63 @@ test('folder errors retain the draft, invalid CSS blocks Apply, and unavailable 
   await editor.locator('#local-actor-select option[value="test.png"]').waitFor({ state: 'attached' });
   assert.equal(await editor.locator('#local-actor-select').isDisabled(), false);
 });
+
+
+test('late folder images cannot change a discarded, closed, superseded or cleared draft', { skip: !browserAvailable }, async t => {
+  const { base, page, before, editor } = await fixture(t);
+  let uploads = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/design/images') && request.method() === 'PUT') uploads++; });
+  await page.evaluate(() => {
+    const native = HTMLImageElement.prototype.decode;
+    window.folderDecoded = 0;
+    HTMLImageElement.prototype.decode = async function () {
+      await native.call(this);
+      if (this.src.startsWith('blob:')) window.folderDecoded++;
+    };
+  });
+  const cases = ['actor', 'speech', 'overlay'].flatMap(id => ['choice', 'discard', 'close'].map(action => [id, action]));
+  cases.push(['actor', 'remove'], ['speech', 'standard']);
+  for (const [id, action] of cases) {
+    if (!await editor.locator('#design-dialog').isVisible()) {
+      await editor.locator('#open-design-preview').click();
+      await editor.locator('#apply-design:not(:disabled)').waitFor();
+    }
+    await editorTarget(editor, id === 'overlay' ? 'screen' : id);
+    if (!await editor.locator('#local-' + id + '-select').isVisible()) await editor.locator('#local-' + id + ' summary').click();
+    await editor.locator('#local-' + id + '-select option[value="test.png"]').waitFor({ state: 'attached' });
+    if (action === 'remove' || action === 'standard') {
+      await editor.locator('#local-' + id + '-select').selectOption('test.png');
+      await editor.locator('#local-' + id + '-load').click();
+      await editor.locator('#design-status').filter({ hasText: '画像を下書きに入れました' }).waitFor();
+      await editor.locator('#apply-design:not(:disabled)').waitFor();
+    }
+    const uploadsBefore = uploads;
+    let release, started;
+    const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
+    const decoded = await page.evaluate(() => window.folderDecoded);
+    await page.route('**/api/customizations/images/test.png', async route => {
+      started(); await gate; await route.fulfill({ contentType: 'image/png', body: PNG });
+    }, { times: 1 });
+    await editor.locator('#local-' + id + '-select').selectOption('test.png');
+    await editor.locator('#local-' + id + '-load').click(); await began;
+    assert.equal(await editor.locator('#apply-design').isDisabled(), true, id + ':' + action);
+    if (action === 'choice') await editor.locator('#local-' + id + '-select').selectOption('');
+    else if (action === 'close') await closeEditor(editor);
+    else if (action === 'discard') {
+      await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click();
+      await editor.locator('#editor-confirm-accept').click();
+    } else await editor.locator(action === 'remove' ? '#draft-image-remove' : '#draft-speechImage-reset').click();
+    const response = page.waitForResponse('**/api/customizations/images/test.png');
+    release(); await (await response).finished();
+    await page.waitForFunction(count => window.folderDecoded > count, decoded);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    assert.equal(uploads, uploadsBefore, id + ':' + action + ' must invalidate the old image before upload');
+    if (action === 'close') {
+      await editor.locator('#open-design-preview').click();
+      await editor.locator('#apply-design:not(:disabled)').waitFor();
+    } else await editor.locator('#apply-design:not(:disabled)').waitFor();
+    assert.equal(await editor.locator('#target-select option').count(), 6, 'no late overlay is inserted');
+    assert.deepEqual(await readDesign(base), before);
+    await closeEditor(editor);
+  }
+});
