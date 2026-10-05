@@ -81,3 +81,19 @@ browserTest('panel pointer gestures start at their rendered rectangle, resize fr
   }
   assert.deepEqual(await readDesign(url), before);
 });
+
+browserTest('scrolled canvas handles cannot cover the sticky editor toolbar in a narrow dock', async t => {
+  const { page, editor } = await fixture(t);
+  await page.setViewportSize({ width: 150, height: 1000 });
+  await editorTarget(editor, 'actor');
+  const result = await editor.locator('#design-dialog').evaluate(dialog => {
+    const root = dialog.getRootNode(), bar = root.querySelector('.bar'), hit = root.querySelector('.canvas-target[data-target-id=actor]');
+    const handle = hit.querySelector('[data-edge=nw]');
+    const before = handle.getBoundingClientRect(), title = bar.getBoundingClientRect();
+    dialog.scrollTop += before.top - title.top - 20;
+    const rect = handle.getBoundingClientRect();
+    return { within: rect.top >= 0 && rect.top < bar.getBoundingClientRect().bottom, coveredByCanvas: root.elementFromPoint(rect.left + 8, rect.top + 8)?.closest('.canvas-target') !== null };
+  });
+  assert.equal(result.within, true, 'the scenario scrolls a handle into the toolbar area');
+  assert.equal(result.coveredByCanvas, false, 'the toolbar paints and receives input above the canvas');
+});
