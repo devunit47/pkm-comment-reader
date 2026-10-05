@@ -21,6 +21,9 @@ const SAMPLE_COMMENTS = Object.freeze([
 const size = value => value.split('x').map(Number);
 // Panels and additions share the same canvas controls.
 const PANEL_TARGETS = Object.freeze([['screen', '画面全体'], ['header', 'ヘッダー（タイトル）'], ['chat', 'コメント欄'], ['speech', '読み上げ'], ['actor', '立ち絵'], ['footer', 'フッター']]);
+// Colons cannot occur in saved overlay IDs, so reserved panel names get an unambiguous edit key.
+const overlayKey = id => PANEL_TARGETS.some(([panel]) => panel === id) ? `overlay:${id}` : id;
+const overlayId = key => key.startsWith('overlay:') ? key.slice(8) : key;
 const TYPED_KEYS = ['title', 'subtitle', 'footer', 'speechTitle', 'accent', 'speechBackground', 'speechTextColor', 'fontSize', 'commentItemOpacity', 'commentPanelOpacity', 'commentOutlineColor'];
 const NUMBER_KEYS = ['fontSize', 'speechFontSize', 'maxVisible', 'holdSeconds', 'commentItemOpacity', 'commentPanelOpacity'], NULLABLE_KEYS = ['commentMaxLines', 'commentGap', 'commentLineHeight'];
 // '' keeps the theme's color; the mode select chooses between it and the color input.
@@ -98,7 +101,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   const status = message => { $('design-status').textContent = message; };
   const design = () => session.design;
   const ratioOverlays = (r = ratio) => talkOverlays(design(), r);
-  const currentItem = () => session ? ratioOverlays().items.find(item => item.id === selected) : undefined;
+  const currentItem = () => session ? ratioOverlays().items.find(item => overlayKey(item.id) === selected) : undefined;
   const isCurrent = token => !!session && token === epoch;
   const editable = () => !!session && !presetDraft && !saving;
   // An empty or non-finite number keeps the value it replaces.
@@ -147,12 +150,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   }
   function targets() {
     const items = ratioOverlays().items;
-    if (!PANEL_TARGETS.some(([id]) => id === selected) && !items.some(item => item.id === selected)) selected = 'screen';
+    if (!PANEL_TARGETS.some(([id]) => id === selected) && !items.some(item => overlayKey(item.id) === selected)) selected = 'screen';
     const ordered = canvasOrder(talkLayout(design(), ratio), ratioOverlays()).map(target => {
       const item = target.kind === 'overlay' ? items.find(entry => entry.id === target.id) : null;
       const name = item ? (item.type === 'text' ? item.text.slice(0,24) || '空の文字' : '画像') : PANEL_TARGETS.find(([id]) => id === target.id)[1];
       const hidden = item?.hidden ?? talkLayout(design(), ratio)?.panels[target.id]?.hidden;
-      return [target.id, name + (hidden ? '（非表示）' : '')];
+      return [target.kind === 'overlay' ? overlayKey(target.id) : target.id, name + (hidden ? '（非表示）' : '')];
     });
     $('target-select').replaceChildren(...[['screen', '画面全体'], ...ordered].map(([value,text]) => { const option = document.createElement('option'); option.value = value; option.textContent = text; return option; }));
     $('canvas-order').hidden = selected === 'screen';
@@ -284,7 +287,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   function changedItem(id, patch, settings = {}) {
     if (!session) return;
     const state = ratioOverlays();
-    const next = normalizeOverlays({ ...state, items: state.items.map(item => item.id === id ? { ...item, ...patch } : item) }, assetOptions());
+    const next = normalizeOverlays({ ...state, items: state.items.map(item => item.id === overlayId(id) ? { ...item, ...patch } : item) }, assetOptions());
     edit(withTalk(design(), ratio, { overlays: next }), { label: '追加した項目', ratio, ...settings });
   }
   const resizePatch = (item, dx, dy) => ({
@@ -313,7 +316,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     layout.panels[id] = { ...layout.panels[id], ...patch };
     edit(withTalk(design(), ratio, { layout: normalizeLayout(layout, PANEL_IDS.talk) }), { label: 'パネルの配置', ratio, ...settings });
   }
-  function targetValue(id) { return isPanel(id) ? canvasLayout()?.panels[id] : ratioOverlays().items.find(item => item.id === id); }
+  function targetValue(id) { return isPanel(id) ? canvasLayout()?.panels[id] : ratioOverlays().items.find(item => overlayKey(item.id) === id); }
   function shownValue(id, resize, axes = [1, 1]) {
     const p = clone(targetValue(id));
     if (!isPanel(id) || p.hidden) return p;
@@ -338,7 +341,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const state = ratioOverlays(), layout = canvasLayout();
     const order = canvasOrder(layout, state);
     const old = new Map([...layer.children].map(element => [element.dataset.targetId, element]));
-    for (const [index, target] of (presetDraft ? [] : order).entries()) {
+    for (const [index, entry] of (presetDraft ? [] : order).entries()) {
+      const target = { ...entry, id: entry.kind === 'overlay' ? overlayKey(entry.id) : entry.id };
       const item = targetValue(target.id); if (!item) continue;
       let hit = old.get(target.id);
       if (!hit) {
@@ -357,7 +361,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       hit.hidden = item.hidden && selected !== target.id;
       hit.dataset.selected = String(selected === target.id); hit.tabIndex = selected === target.id ? 0 : -1;
       hit.setAttribute('aria-label', `${PANEL_TARGETS.find(([id]) => id === target.id)?.[1] || (item.type === 'image' ? '追加した画像' : '追加した文字')}：矢印キーで移動、Shiftと矢印キーでサイズ変更`);
-      const element = isPanel(target.id) ? panelElement(target.id) : previewStage.querySelector(`.pokome-overlay[data-overlay-id="${target.id}"]`);
+      const element = isPanel(target.id) ? panelElement(target.id) : previewStage.querySelector(`.pokome-overlay[data-overlay-id="${overlayId(target.id)}"]`);
       const rect = item.hidden ? { left: canvas.left + canvas.width * item.x / 100, top: canvas.top + canvas.height * item.y / 100, width: canvas.width * item.w / 100, height: canvas.height * item.h / 100 } : element.getBoundingClientRect();
       // DOM order controls hit testing; an auto z lets the selected handles sit above every hit area.
       Object.assign(hit.style, { left: `${rect.left * factor}px`, top: `${rect.top * factor}px`, width: `${rect.width * factor}px`, height: `${rect.height * factor}px` });
@@ -369,8 +373,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   function resizeTarget(item, dx, dy, edge, keepRatio = false) {
     const image = item.type === 'image', minimum = isPanel(selected) ? 5 : 2, maximum = image ? 200 : 100;
     let w = item.w + (edge.includes('w') ? -dx : edge.includes('e') ? dx : 0), h = item.h + (edge.includes('n') ? -dy : edge.includes('s') ? dy : 0);
-    const maxW = image || isPanel(selected) ? maximum : edge.includes('w') ? item.x + item.w : 100 - item.x;
-    const maxH = image || isPanel(selected) ? maximum : edge.includes('n') ? item.y + item.h : 100 - item.y;
+    const maxW = image ? maximum : edge.includes('w') ? item.x + item.w : isPanel(selected) ? maximum : 100 - item.x;
+    const maxH = image ? maximum : edge.includes('n') ? item.y + item.h : isPanel(selected) ? maximum : 100 - item.y;
     if (keepRatio && image && edge.length === 2) {
       // Ratios of logical pixel dimensions cancel to the same common scale.
       let factor = Math.abs(w / item.w - 1) > Math.abs(h / item.h - 1) ? w / item.w : h / item.h;
@@ -529,12 +533,12 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   $('add-text').onclick = () => {
     if (!editable() || ratioOverlays().items.length >= MAX_OVERLAYS) return;
     const state = ratioOverlays(), item = createOverlay('text', {}, state.items);
-    selected = item.id;
+    selected = overlayKey(item.id);
     edit(withTalk(design(), ratio, { overlays: normalizeOverlays({ ...state, items: [...state.items, item] }, assetOptions()) }), { label: '文字の追加', ratio });
   };
   $('delete-overlay').onclick = () => {
     if (!editable() || !currentItem()) return;
-    const next = removeOverlay(ratioOverlays(), selected, assetOptions());
+    const next = removeOverlay(ratioOverlays(), overlayId(selected), assetOptions());
     selected = 'screen';
     edit(withTalk(design(), ratio, { overlays: next }), { label: '項目の削除', ratio });
   };
@@ -556,6 +560,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   for (const key of ['x', 'y', 'w', 'h', 'z', 'hidden']) $(`panel-${key}`).addEventListener('change', () => {
     if (!editable() || !isPanel(selected)) return;
     const element = $(`panel-${key}`), current = targetValue(selected);
+    if (key !== 'hidden' && element.value === '') { panelFields(); return; }
     session.seal(); changedTarget(selected, { [key]: key === 'hidden' ? element.checked : numberOr(element, current[key]) });
   });
   dialog.addEventListener('keydown', event => { if (event.key === 'Escape' && dragCleanup) { event.preventDefault(); event.stopPropagation(); dragCleanup(); } });
@@ -563,7 +568,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     if (!editable() || selected === 'screen') return;
     const layout = canvasLayout(); if (!layout) return;
     session.seal();
-    const next = moveCanvasTarget(layout, ratioOverlays(), { kind: isPanel(selected) ? 'panel' : 'overlay', id: selected }, direction);
+    const next = moveCanvasTarget(layout, ratioOverlays(), { kind: isPanel(selected) ? 'panel' : 'overlay', id: isPanel(selected) ? selected : overlayId(selected) }, direction);
     edit(withTalk(design(), ratio, next), { label: direction === 'forward' ? '前へ' : '後ろへ', ratio });
   };
   $('copy-ratio').onclick = async () => {
@@ -597,7 +602,7 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
       const asset = addOverlayAsset(state, ref, undefined, assetOptions()), item = createOverlay('image', { assetId: asset.assetId }, state.items);
       const next = normalizeOverlays({ ...asset.state, items: [...asset.state.items, item] }, assetOptions());
       session.seal();
-      if (target === ratio) selected = item.id;
+      if (target === ratio) selected = overlayKey(item.id);
       edit(withTalk(design(), target, { overlays: next }), { label: '画像の追加', ratio: target });
       status(target === ratio ? '画像を追加しました。適用するまでは見た目に反映されません。' : `画像を${target}の配置に追加しました。適用するまでは見た目に反映されません。`);
     } catch (error) { if (isCurrent(token) && requests.get('add-image') === request) status(error.message); }

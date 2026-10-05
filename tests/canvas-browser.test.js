@@ -97,3 +97,30 @@ browserTest('scrolled canvas handles cannot cover the sticky editor toolbar in a
   assert.equal(result.within, true, 'the scenario scrolls a handle into the toolbar area');
   assert.equal(result.coveredByCanvas, false, 'the toolbar paints and receives input above the canvas');
 });
+
+browserTest('blank panel numbers keep a standard layout unmaterialized', async t => {
+  const { editor, url } = await fixture(t), before = await readDesign(url);
+  await editorTarget(editor, 'actor');
+  for (const key of ['x', 'y', 'w', 'h', 'z']) {
+    const value = await editor.locator(`#panel-${key}`).inputValue();
+    await number(editor, `panel-${key}`, '');
+    assert.equal(await editor.locator(`#panel-${key}`).inputValue(), value);
+    assert.equal(await editor.locator('#draft-state').textContent(), '変更なし');
+  }
+  assert.deepEqual(await readDesign(url), before);
+});
+
+browserTest('west and north panel resize stop at the boundary without moving the opposite edge', async t => {
+  const { page, editor } = await fixture(t);
+  await editorTarget(editor, 'actor'); await editor.locator('#canvas-snap').uncheck();
+  for (const edge of ['w', 'n']) {
+    for (const [key, value] of Object.entries({ w: 30, h: 30, x: 20, y: 20 })) await number(editor, `panel-${key}`, value);
+    const hit = editor.locator('.canvas-target[data-target-id=actor]'), handle = await hit.locator(`[data-edge=${edge}]`).boundingBox();
+    const canvas = await editor.locator('#design-preview-frame').boundingBox();
+    await page.mouse.move(handle.x + 8, handle.y + 8); await page.mouse.down();
+    await page.mouse.move(handle.x + 8 - (edge === 'w' ? canvas.width * .4 : 0), handle.y + 8 - (edge === 'n' ? canvas.height * .4 : 0)); await page.mouse.up();
+    const position = Number(await editor.locator(edge === 'w' ? '#panel-x' : '#panel-y').inputValue());
+    const dimension = Number(await editor.locator(edge === 'w' ? '#panel-w' : '#panel-h').inputValue());
+    assert.equal(position, 0); assert.equal(position + dimension, 50, `${edge} preserves the opposite edge`);
+  }
+});

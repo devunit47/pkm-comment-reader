@@ -147,3 +147,34 @@ browserTest('Shift corner resize preserves image pixel aspect at landscape and p
     assert.equal(await value(editor, 'overlay-w'), 20); assert.equal(await value(editor, 'overlay-h'), 30);
   }
 });
+
+browserTest('saved addition IDs matching panel or screen names remain separate editing targets', async t => {
+  const { editor, url } = await fixture(t, design => withTalk(design, '16:9', {
+    overlays: { version: 1, items: ['chat', 'screen', 'footer'].map(id => createOverlay('text', { id, text: `追加-${id}`, x: 50, y: 50, w: 10, h: 10 })), assets: {} },
+  }));
+  const before = await readDesign(url);
+  await editor.locator('#target-select').selectOption({ label: 'コメント欄' });
+  assert.equal(await editor.locator('#overlay-text').isVisible(), false, 'the panel does not expose an addition sharing its name');
+  const panelX = await value(editor, 'panel-x');
+  for (const id of ['chat', 'screen', 'footer']) {
+    await editor.locator('#target-select').selectOption({ label: `追加-${id}` });
+    assert.equal(await editor.locator('#panel-placement').isVisible(), false);
+    const hit = target(editor, `overlay:${id}`);
+    assert.equal(await hit.count(), 1);
+    await hit.press('ArrowRight'); assert.equal(await value(editor, 'overlay-x'), 52);
+    await editor.locator('#overlay-hidden').check(); await editor.locator('#overlay-hidden').uncheck();
+    await editor.locator('#canvas-backward').click(); await editor.locator('#undo-design').click();
+    await hit.press('Delete');
+    assert.equal(await hit.count(), 0);
+    await editor.locator('#undo-design').click();
+    assert.equal(await hit.count(), 1);
+  }
+  await editor.locator('#target-select').selectOption({ label: 'コメント欄' });
+  assert.equal(await value(editor, 'panel-x'), panelX);
+  assert.equal(await editor.locator('.canvas-target').count(), 8);
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  const saved = await readDesign(url);
+  assert.deepEqual(saved.ratios['16:9'].overlays.items.map(item => item.id), ['chat', 'screen', 'footer']);
+  assert.deepEqual(saved.ratios['16:9'].overlays.items.map(item => item.x), [52, 52, 52]);
+  assert.deepEqual(saved.ratios['16:9'].layout, before.ratios['16:9'].layout, 'addition edits never alter panel layout');
+});
