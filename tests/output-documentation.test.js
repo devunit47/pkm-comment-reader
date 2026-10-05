@@ -12,7 +12,7 @@ function section(markdown, title) {
 }
 test('display limits belong with design guidance and explain unlimited defaults and receipt time', () => {
   const display=section(customization,'配信出力の表示件数と表示時間');
-  assert.ok(display.index>section(customization,'追加の文字・画像とデザインプレビュー').index);
+  assert.ok(display.index>section(customization,'デザインエディタと追加の文字・画像').index);
   assert.ok(display.index<section(customization,'ローカルフォルダーの素材を使う').index);
   for (const concept of ['制限なし','1～30','受信時刻','履歴','読み上げ']) assert.ok(display.text.includes(concept),concept);
   assert.match(display.text,/標準[^。]*制限なし|制限なし[^。]*標準/);

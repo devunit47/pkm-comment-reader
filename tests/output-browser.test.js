@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -41,7 +41,7 @@ const controls = output => output.evaluate(() => document.querySelectorAll('butt
 browserTest('preview clipping follows direction, scrolling, frame size and CSS changes without hiding tall cards', async t => {
   const { page, errors } = await fixture(t, { maxVisible: null });
   await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   await page.locator('#preview-width').selectOption('640x360');
   const list = page.frameLocator('#design-preview-frame').locator('#stage-chat-list');
   await list.locator('.stage-comment').nth(9).waitFor({ state: 'attached' });
@@ -69,12 +69,12 @@ browserTest('preview clipping follows direction, scrolling, frame size and CSS c
   await page.locator('#preview-width').selectOption('1280x720');
   await assertClipping('frame resize reclassifies cards');
   await page.locator('#preview-width').selectOption('640x360');
-  await page.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await editorThemeCSS(page);
   await page.locator('#draft-css').fill('.pokome-workspace #stage-chat-list { height: 180px; flex: none; } .pokome-workspace .stage-comment { min-height: 90px; }');
   await assertClipping('CSS shortening the list reclassifies cards');
-  await page.locator('#draft-newestPosition').selectOption('bottom');
+  await editorTarget(page, 'chat'); await page.locator('#draft-newestPosition').selectOption('bottom');
   await assertClipping('bottom after CSS changes preserves clipping');
-  await page.locator('#draft-css').fill('.pokome-workspace #stage-chat-list { height: 180px; flex: none; } .pokome-workspace .stage-comment { min-height: 400px; }');
+  await editorThemeCSS(page); await page.locator('#draft-css').fill('.pokome-workspace #stage-chat-list { height: 180px; flex: none; } .pokome-workspace .stage-comment { min-height: 400px; }');
   const tall = await assertClipping('cards taller than the list remain scrollable');
   assert.equal(tall.clipped, 0);
   assert.deepEqual(errors, []);
@@ -83,7 +83,7 @@ browserTest('preview clipping follows direction, scrolling, frame size and CSS c
 browserTest('display count controls offer every integer from unlimited through thirty and cannot be blank', async t => {
   const { page, errors } = await fixture(t, { maxVisible: null });
   await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   for (const selector of ['#studio-max-visible', '#draft-maxVisible']) {
     const field = page.locator(selector);
     assert.equal(await field.evaluate(element => element.tagName), 'SELECT');
@@ -97,7 +97,7 @@ browserTest('display count controls offer every integer from unlimited through t
 browserTest('preview has ten persistent samples and count and direction changes are visible before apply', async t => {
   const { page, errors } = await fixture(t, { maxVisible: null });
   await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   const frame = page.frameLocator('#design-preview-frame');
   await frame.locator('.stage-comment').first().waitFor({ state: 'attached' });
   assert.equal(await frame.locator('.stage-comment').count(), 10);
@@ -115,7 +115,7 @@ browserTest('preview has ten persistent samples and count and direction changes 
   assert.equal(await frame.locator('.stage-comment').count(), 10);
   await page.locator('#draft-newestPosition').selectOption('bottom');
   assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all);
-  await page.locator('#cancel-design').click();
+  await closeEditor(page);
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
   assert.deepEqual(errors, []);
 });
@@ -196,12 +196,12 @@ browserTest('output defaults to unlimited comments and switching eight and unlim
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '0');
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   assert.equal(await page.locator('#draft-maxVisible').inputValue(), '0');
   await page.locator('#draft-maxVisible').selectOption('8');
   await page.locator('#apply-design').click();
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   await page.locator('#draft-maxVisible').selectOption('0');
   await page.locator('#apply-design').click();
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 12);
@@ -278,7 +278,7 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   const output = await context.newPage();
   await output.goto(`${url}/output.html`);
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 8);
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   await page.locator('#draft-maxVisible').selectOption('1');
   await page.locator('#draft-holdSeconds').selectOption('5');
   await page.locator('#draft-newestPosition').selectOption('top');
@@ -288,9 +288,9 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   await page.waitForTimeout(5100);
   assert.equal(await frame.locator('.stage-comment').count(), 1);
   assert.equal((await comments(output)).length, 8);
-  await page.locator('#cancel-design').click();
+  await closeEditor(page);
   assert.equal(await page.locator('#studio-max-visible').inputValue(), '8');
-  await page.locator('#open-design-preview').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   await page.locator('#draft-maxVisible').selectOption('1');
   await page.locator('#draft-holdSeconds').selectOption('15');
   await page.locator('#draft-newestPosition').selectOption('top');

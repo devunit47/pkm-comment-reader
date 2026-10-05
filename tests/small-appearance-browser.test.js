@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveDesign, saveStudio, waitForDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, saveStudio, waitForDesign, appReady, editorTarget, closeEditor } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t) {
@@ -65,11 +65,12 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   const frame = page.frameLocator('#design-preview-frame');
   await frame.locator('.stage-comment').first().waitFor({ state: 'attached' });
   assert.deepEqual(await look(page.frames().find(value => value !== page.mainFrame())), live);
-  if (!await page.locator('#draft-fontSize').isVisible()) await page.getByText('画面のデザインも試す', { exact: true }).click();
+  await editorTarget(page, 'chat');
   await page.locator('#draft-commentMaxLines').selectOption('3');
+  await editorTarget(page, 'actor');
   await page.locator('#draft-actorAppearance').selectOption('theme');
   assert.equal(await frame.locator('p.pokome-comment__body').first().evaluate(element => getComputedStyle(element).webkitLineClamp), '3');
-  await page.locator('#cancel-design').click();
+  await closeEditor(page);
   assert.deepEqual(await look(page), live);
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
@@ -85,7 +86,7 @@ browserTest('small appearance controls persist, mirror to output and preview, an
     assert.equal(await page.locator('#studio-font-size').inputValue(), expected);
   }
   await page.locator('#open-design-preview').click();
-  if (!await page.locator('#draft-fontSize').isVisible()) await page.getByText('画面のデザインも試す', { exact: true }).click();
+  await editorTarget(page, 'chat');
   await page.locator('#draft-commentItemBackground').selectOption('dark');
   await page.locator('#draft-commentItemOpacity').fill('40');
   await page.locator('#draft-commentMaxLines').selectOption('3');

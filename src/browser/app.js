@@ -952,8 +952,7 @@ const workspaceEditor = initializeWorkspace(storage, designStore, { onTalkRatioC
 } });
 const designPreview = initializeDesignPreview({ designStore, themeEditor,
   beginDraft() { imageGeneration++; speechImageGeneration++; workspaceEditor.cancelPending(); },
-  getStudio: () => studio, getLiveRatio: () => workspaceEditor.talkRatio(),
-  commitStudio(next) { imageGeneration++; speechImageGeneration++; studio = next; renderStudio(); },
+  getLiveRatio: () => workspaceEditor.talkRatio(),
 });
 initializeCustomization({ platforms: enabledPlatforms, themeEditor, designStore, beginImageChange, applyImageFile,
   async resetAppearance() {
