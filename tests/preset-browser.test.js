@@ -47,7 +47,8 @@ browserTest('presets save complete scenes, readonly ratios never leak, cancel pr
   await output.locator('#stage-title').filter({ hasText: defaultDesign().studio.title }).waitFor();
   const before = await current(url), beforeStorage = await page.evaluate(() => JSON.stringify(localStorage));
   await openRead(ui, editor);
-  assert.equal(await editor.locator('.controls').isVisible(), false);
+  assert.equal(await editor.locator('.side').first().isVisible(), false);
+  assert.equal(await editor.locator('#discard-design').isVisible(), false);
   const frame = page.frameLocator(`${preview} #design-preview-frame`);
   for (const [value, ratio] of [['1280x720', '16:9'], ['1080x1920', '9:16'], ['1440x1080', '4:3']]) {
     await editor.locator('#preview-width').selectOption(value);
@@ -106,7 +107,7 @@ browserTest('manual folder refresh disables invalid entries with reasons and sta
   await ui.locator('#preset-select').selectOption(id); await openRead(ui, editor);
   await saveDesign(url, design => ({ ...design, studio: { ...design.studio, title: '別の画面の内容' } }));
   await editor.locator('#design-status').filter({ hasText: '別の画面' }).waitFor();
-  await editor.locator('#apply-design').click(); await editor.locator('#design-status').filter({ hasText: '適用できませんでした' }).waitFor();
+  assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   assert.equal(await ui.locator('#preset-confirm-dialog').isVisible(), false); assert.equal((await readDesign(url)).studio.title, '別の画面の内容');
   await editor.locator('#cancel-design').click(); assert.deepEqual(errors, []);
 });

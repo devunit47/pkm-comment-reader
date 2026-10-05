@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path';
 import { createServer } from '../server.js';
 import { UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget } from './browser-support.js';
 
 async function open(t, raw = JSON.stringify(fixtureDesign())) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-unreadable-browser-'));
@@ -61,10 +61,13 @@ for (const [kind, raw] of Object.entries({ 'broken JSON': '{broken', 'unknown ve
     await presets.locator('#preset-select').selectOption('kept');
     for (const action of ['save', 'reset', 'load', 'overwrite']) assert.equal(await presets.locator(`#preset-${action}`).isDisabled(), true);
     assert.equal(await presets.locator('#preset-rename').isEnabled(), true);
-    const font = page.locator('#studio-font-size');
-    await font.fill('24'); await font.dispatchEvent('change');
-    assert.equal(await font.inputValue(), '20', 'a refused edit returns to the displayed defaults');
-    assert.match(await page.locator('#notice').textContent(), /退避/);
+    // The editor may draft, but Apply is refused while the original is protected.
+    const editor = page.locator('#design-preview-editor');
+    await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+    await editorTarget(editor, 'header'); await editor.locator('#draft-title').fill('保存しない題名');
+    await editor.locator('#apply-design').click();
+    await editor.locator('#design-status').filter({ hasText: '退避' }).waitFor();
+    assert.equal(await editor.locator('#design-dialog').isVisible(), true);
     assert.equal(app.puts.length, 0);
     await app.assertOriginal(raw);
     assert.deepEqual(app.errors, []);

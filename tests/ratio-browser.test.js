@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorThemeCSS } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
@@ -165,7 +165,7 @@ browserTest('the preview moves the panels below the speech panel when draft CSS 
   await page.waitForFunction(root => !document.querySelector(root).shadowRoot.getElementById('apply-design').disabled, PREVIEW);
   await preview.locator('#preview-width').selectOption('1080x1920');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 1920, PREVIEW);
-  await preview.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await editorThemeCSS(preview);
   await preview.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height: 600px; }');
   const frame = page.frameLocator(`${PREVIEW} #design-preview-frame`);
   // The draft CSS input redraws the preview synchronously.

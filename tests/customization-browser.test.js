@@ -8,7 +8,7 @@ import { createServer } from '../server.js';
 import { createHash } from 'node:crypto';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { defaultDesign } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const cssTwo = '.pokome-workspace .pokome-panel { border-radius: 11px; }';
@@ -185,7 +185,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   };
   const base = await serve(t, createServer({ customizationDirectory: directory }));
   const { page, errors, requests } = await openBrowser(t, base, preserved);
-  await studio(page); await page.locator('#studio-theme').selectOption('rose');
+  await studio(page); await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
   await applyCSS(page, 'first.css'); await applyImage(page, 'actor.png');
   const beforeCancel = await savedStudio(page), beforeCSS = await currentCSS(page);
   await resetAppearance(page, false);
@@ -195,7 +195,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   await resetAppearance(page);
   assert.equal(await page.locator('#layout-session').isVisible(), false);
   await studio(page);
-  await page.locator('#studio-theme').selectOption('violet');
+  await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('violet'));
   await applyCSS(page, 'hide.css');
   assert.equal(await page.locator('main').isVisible(), false);
   assert.equal(await page.locator('.sidebar').isVisible(), false);
@@ -209,7 +209,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal(await page.locator('main').isVisible(), true);
   assert.equal(await page.locator('.sidebar').isVisible(), true);
   assert.equal(await currentCSS(page), '');
-  assert.equal(await page.locator('#studio-theme').inputValue(), DEFAULT_STUDIO.theme);
+  assert.equal((await savedStudio(page)).theme, DEFAULT_STUDIO.theme);
   assert.equal(await page.locator('#stage-title').textContent(), DEFAULT_STUDIO.title);
   assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
   assert.match(await page.locator('#talk-stage').getAttribute('style'), /\.\/speech-background\.svg/);
@@ -221,7 +221,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
   assert.equal(await page.locator('#appearance-recovery #open-reset').evaluate(button => button.matches(':focus')), true);
   await page.reload(); await appReady(page); await studio(page);
-  assert.equal(await page.locator('#studio-theme').inputValue(), DEFAULT_STUDIO.theme);
+  assert.equal((await savedStudio(page)).theme, DEFAULT_STUDIO.theme);
   assert.equal(await currentCSS(page), '');
   await screenshot(page, 'local-restored-default');
   for (const [file, bytes] of Object.entries(originalFiles)) assert.deepEqual(await readFile(join(directory, file)), bytes, file);
@@ -254,8 +254,8 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
   assert.equal(await page.locator('#customization-status [data-status-channel=css]').textContent(), 'second.css を適用・保存しました。');
   held = await holdResponse(page, '**/api/customizations/styles/first.css', { status: 200, contentType: 'text/css', body: cssOne });
   await page.locator('#customization-style').selectOption('first.css'); await page.locator('#apply-customization-style').click(); await held.started;
-  await page.locator('#theme-import').setInputFiles({ name: 'manual.css', mimeType: 'text/css', buffer: Buffer.from(cssTwo) });
-  await page.waitForFunction(() => document.querySelector('#theme-import').value === '');
+  // Opening the design editor is a newer choice than the pending local file.
+  await page.locator('#open-design-preview').click(); await closeEditor(page);
   await held.finish();
   assert.match(await page.locator('#customization-status').textContent(), /スタイルの読み込みを中止/);
   for (const target of ['image', 'speechImage']) {
@@ -274,9 +274,7 @@ test('pending local CSS and image responses cannot overwrite reset or a newer ch
     assert.match(await page.locator('#customization-status [data-status-channel=' + target + ']').textContent(), /^second.png を/);
     held = await holdResponse(page, '**/api/customizations/images/first.png', { status: 200, contentType: 'image/png', body: redPNG });
     await page.locator('#customization-image').selectOption('first.png'); await page.locator('#apply-customization-image').click(); await held.started;
-    const manualInput = target === 'image' ? '#studio-image' : '#studio-speech-image';
-    await page.locator(manualInput).setInputFiles({ name: 'manual.png', mimeType: 'image/png', buffer: bluePNG });
-    await page.waitForFunction(id => document.querySelector(id).value === '', manualInput);
+    await page.locator('#open-design-preview').click(); await closeEditor(page);
     await held.finish();
     assert.match(await page.locator('#customization-status').textContent(), /画像の読み込みを中止/);
     assert.equal((await savedStudio(page))[target], blueURL);

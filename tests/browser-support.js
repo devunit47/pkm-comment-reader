@@ -68,3 +68,30 @@ export async function blockExternalFonts(page) {
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
 }
+
+// The design editor shows one target's settings at a time. Narrow docks list
+// targets and settings on separate tabs; choosing a target opens its settings.
+export async function editorTarget(editor, target) {
+  if (await editor.locator('#show-targets').isVisible()) await editor.locator('#show-targets').click();
+  await editor.locator('#target-select').selectOption(target);
+}
+export async function editorThemeCSS(editor) {
+  await editorTarget(editor, 'screen');
+  if (!await editor.locator('#draft-css').isVisible()) await editor.getByText('詳細：テーマCSS', { exact: true }).click();
+}
+// Closes the editor; a changed draft is discarded after its confirmation.
+export async function closeEditor(editor) {
+  await editor.locator('#cancel-design').click();
+  if (await editor.locator('#editor-confirm').isVisible()) await editor.locator('#editor-confirm-accept').click();
+  await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+}
+// Changes the design through the editor and applies it in one write.
+export async function applyInEditor(page, steps) {
+  const editor = page.locator('#design-preview-editor');
+  await page.locator('[data-page="studio"]').click();
+  await editor.locator('#open-design-preview').click();
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await steps(editor);
+  await editor.locator('#apply-design').click();
+  await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+}

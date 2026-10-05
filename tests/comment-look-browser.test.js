@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady, applyInEditor, editorTarget, closeEditor } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -30,6 +30,8 @@ async function fixture(t) {
   await page.locator('.nav[data-page="studio"]').click();
   return { context, page, url, errors };
 }
+// Comment list settings are edited in the editor's comment target and applied at once.
+const chat = (page, steps) => applyInEditor(page, async editor => { await editorTarget(editor, 'chat'); await steps(editor); });
 // Computed values of the first stage comment and its panel.
 const look = target => target.evaluate(() => {
   const comment = document.querySelector('#stage-chat-list .stage-comment');
@@ -53,7 +55,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
   const original = await look(page);
   assert.equal(original.shadow, 'none');
 
-  await page.locator('#studio-comment-preset').selectOption('outline');
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('outline'));
   const outline = await look(page);
   assert.equal(outline.panel, 'rgba(0, 0, 0, 0)');
   assert.equal(outline.panelBorder, 'rgba(0, 0, 0, 0)');
@@ -71,45 +73,48 @@ browserTest('comment presets restyle the live stage and output, then return exac
   const mirrored = await look(output);
   assert.deepEqual([mirrored.panel, mirrored.text, mirrored.shadow, mirrored.label], [outline.panel, outline.text, outline.shadow, 'none']);
 
-  await page.locator('#studio-comment-preset').selectOption('dense');
+  await page.bringToFront();
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('dense'));
   assert.equal(await page.locator('#stage-comment-style').inputValue(), 'anonymous');
   const dense = await look(page);
   assert.deepEqual([dense.lineHeight, dense.paddingTop], [`${20 * 1.35}px`, '2px']);
   await output.waitForFunction(() => document.querySelector('#stage-chat-list').dataset.commentStyle === 'anonymous');
 
   // A single adjustment leaves the preset; the selection then shows a custom mix.
-  await page.locator('#studio-comment-preset').selectOption('light');
-  assert.equal(await page.locator('#studio-comment-panel-opacity').isEnabled(), true);
-  // A light panel keeps text readable even with colors left at the dark theme's.
-  await page.locator('#studio-comment-text-mode').selectOption('theme');
-  await page.locator('#studio-comment-author-mode').selectOption('theme');
+  await chat(page, async editor => {
+    await editor.locator('#draft-commentPreset').selectOption('light');
+    assert.equal(await editor.locator('#draft-commentPanelOpacity').isEnabled(), true);
+    // A light panel keeps text readable even with colors left at the dark theme's.
+    await editor.locator('#draft-commentTextColorMode').selectOption('theme');
+    await editor.locator('#draft-commentAuthorColorMode').selectOption('theme');
+  });
   assert.deepEqual(await page.evaluate(() => [getComputedStyle(document.querySelector('#stage-chat-list .stage-comment p')).color, getComputedStyle(document.querySelector('.stage-chat .stage-panel-label h2')).color]), ['rgb(31, 42, 36)', 'rgb(31, 42, 36)']);
-  await page.locator('#studio-comment-panel-opacity').fill('60');
-  await page.locator('#studio-comment-panel-opacity').dispatchEvent('change');
-  assert.equal(await page.locator('#studio-comment-preset').inputValue(), '');
+  await chat(page, async editor => {
+    const opacity = editor.locator('#draft-commentPanelOpacity');
+    await opacity.fill('60'); await opacity.dispatchEvent('change');
+    assert.equal(await editor.locator('#draft-commentPreset').inputValue(), '');
+    // Emptied entries keep the value; out-of-range ones clamp.
+    for (const [entry, expected] of [['', '60'], ['150', '100'], ['-5', '0'], ['60', '60']]) {
+      await opacity.fill(entry); await opacity.dispatchEvent('change');
+      assert.equal(await opacity.inputValue(), expected);
+    }
+  });
   assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
-  // Emptied entries keep the value; out-of-range ones clamp.
-  for (const [entry, expected] of [['', '60'], ['150', '100'], ['-5', '0'], ['60', '60']]) {
-    await page.locator('#studio-comment-panel-opacity').fill(entry);
-    await page.locator('#studio-comment-panel-opacity').dispatchEvent('change');
-    assert.equal(await page.locator('#studio-comment-panel-opacity').inputValue(), expected);
-  }
 
   // The design preview collapses a hidden label exactly like the output.
-  await page.locator('#studio-comment-label').uncheck();
   await page.locator('#open-design-preview').click();
+  await editorTarget(page, 'chat'); await page.locator('#draft-commentLabel').uncheck();
   const frame = page.frameLocator('#design-preview-frame');
   await frame.locator('#talk-stage').waitFor({ state: 'attached' });
   assert.equal(await frame.locator('.stage-chat .stage-panel-label').evaluate(element => getComputedStyle(element).display), 'none');
-  await page.locator('#cancel-design').click();
-  await page.locator('#studio-comment-label').check();
+  await closeEditor(page);
 
   // Reload keeps the settings; returning to the theme restores every value.
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
   // Returning to the theme preset restores every value, names included.
-  await page.locator('#studio-comment-preset').selectOption('theme');
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
   assert.equal(await page.locator('#stage-comment-style').inputValue(), 'stacked');
   assert.equal(await page.locator('#stage-speech-user').evaluate(element => element.hidden), false);
   assert.deepEqual(await look(page), original);
@@ -122,11 +127,13 @@ browserTest('theme CSS applies at theme values and an explicit setting takes pre
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
-  await page.locator('#studio-comment-author-mode').selectOption('custom');
-  await page.locator('#studio-comment-author').fill('#ff8800');
-  await page.locator('#studio-comment-author').dispatchEvent('change');
+  await chat(page, async editor => {
+    await editor.locator('#draft-commentAuthorColorMode').selectOption('custom');
+    await editor.locator('#draft-commentAuthorColor').fill('#ff8800');
+    await editor.locator('#draft-commentAuthorColor').dispatchEvent('change');
+  });
   assert.equal((await look(page)).author, 'rgb(255, 136, 0)');
-  await page.locator('#studio-comment-author-mode').selectOption('theme');
+  await chat(page, editor => editor.locator('#draft-commentAuthorColorMode').selectOption('theme'));
   assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
   assert.deepEqual(errors, []);
 });
@@ -142,10 +149,10 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
   });
   assert.deepEqual(await shadows(page), ['none', 'none']);
   for (const [preset, width] of [['outline', '1px'], ['dark', '1px']]) {
-    await page.locator('#studio-comment-preset').selectOption(preset);
+    await chat(page, editor => editor.locator('#draft-commentPreset').selectOption(preset));
     for (const shadow of await shadows(page)) assert.ok(shadow.startsWith(`rgb(0, 0, 0) ${width} 0px 0px`), `${preset}: ${shadow}`);
   }
-  await page.locator('#studio-comment-outline').selectOption('thick');
+  await chat(page, editor => editor.locator('#draft-commentOutline').selectOption('thick'));
   for (const shadow of await shadows(page)) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
   // The output applies the same outline to both elements.
   await waitForDesign(url, design => design.studio.commentOutline === 'thick');
@@ -154,7 +161,8 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
   for (const shadow of await shadows(output)) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
   // Back at the theme value, the theme's own text-shadow applies again.
-  await page.locator('#studio-comment-preset').selectOption('theme');
+  await page.bringToFront();
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
   assert.deepEqual(await shadows(page), ['none', 'none']);
   assert.deepEqual(errors, []);
 });
@@ -180,23 +188,27 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
   const themed = { bodyShadow: 'none', bodyColor: 'rgb(1, 2, 3)', lineHeight: '60px', authorShadow: 'none', authorColor: 'rgb(4, 5, 6)', panel: 'rgb(7, 8, 9)' };
   assert.deepEqual(await read(page), themed);
 
-  await page.locator('#studio-comment-preset').selectOption('outline');
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('outline'));
   const outlined = await read(page);
   for (const shadow of [outlined.bodyShadow, outlined.authorShadow]) assert.ok(shadow.startsWith('rgb(0, 0, 0) 1px 0px 0px'), shadow);
   assert.deepEqual([outlined.bodyColor, outlined.authorColor, outlined.panel], ['rgb(255, 255, 255)', 'rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)']);
-  await page.locator('#studio-comment-line-height').selectOption('1.5');
+  await chat(page, editor => editor.locator('#draft-commentLineHeight').selectOption('1.5'));
   assert.equal((await read(page)).lineHeight, '30px');
-  await page.locator('#studio-comment-panel').selectOption('light');
-  await page.locator('#studio-comment-text-mode').selectOption('theme');
+  await chat(page, async editor => {
+    await editor.locator('#draft-commentPanel').selectOption('light');
+    await editor.locator('#draft-commentTextColorMode').selectOption('theme');
+  });
   // A light panel's readable default also beats the theme's important color.
   assert.deepEqual([(await read(page)).panel, (await read(page)).bodyColor], ['rgba(255, 255, 255, 0.9)', 'rgb(31, 42, 36)']);
-  await page.locator('#studio-comment-author-mode').selectOption('theme');
+  await chat(page, editor => editor.locator('#draft-commentAuthorColorMode').selectOption('theme'));
   assert.equal((await read(page)).authorColor, 'rgb(59, 110, 88)');
   assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(31, 42, 36)');
   // A color chosen on a light panel still wins over its readable default.
-  await page.locator('#studio-comment-text-mode').selectOption('custom');
-  await page.locator('#studio-comment-text').fill('#aa0000');
-  await page.locator('#studio-comment-text').dispatchEvent('change');
+  await chat(page, async editor => {
+    await editor.locator('#draft-commentTextColorMode').selectOption('custom');
+    await editor.locator('#draft-commentTextColor').fill('#aa0000');
+    await editor.locator('#draft-commentTextColor').dispatchEvent('change');
+  });
   assert.equal((await read(page)).bodyColor, 'rgb(170, 0, 0)');
   assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(170, 0, 0)');
 
@@ -206,7 +218,8 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
   assert.deepEqual(await read(output), await read(page));
 
-  await page.locator('#studio-comment-preset').selectOption('theme');
+  await page.bringToFront();
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
   assert.deepEqual(await read(page), themed);
   assert.deepEqual(errors, []);
 });
@@ -215,8 +228,7 @@ browserTest('a hidden label collapses identically in the preview and the output 
   const { context, page, errors, url } = await fixture(t);
   await saveDesign(url, { theme: '.pokome-workspace .stage-panel-label { display: flex !important; } .pokome-workspace #stage-chat-list { padding-top: 0 !important; }' });
   await page.reload(); await appReady(page);
-  await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#studio-comment-preset').selectOption('outline');
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('outline'));
   const geometry = target => target.evaluate(() => {
     const chat = document.querySelector('.stage-chat'), list = document.querySelector('#stage-chat-list');
     return { label: getComputedStyle(chat.querySelector('.stage-panel-label')).display, paddingTop: getComputedStyle(list).paddingTop, listOffset: list.getBoundingClientRect().top - chat.getBoundingClientRect().top };
@@ -240,13 +252,12 @@ browserTest('a chroma key output warns about a half-transparent comment panel', 
   const { page, errors, url } = await fixture(t);
   const status = page.locator('#output-status');
   await page.locator('#output-background').selectOption('key');
-  await page.locator('#studio-comment-preset').selectOption('dark');
+  const opacity = value => chat(page, async editor => { await editor.locator('#draft-commentPanelOpacity').fill(value); await editor.locator('#draft-commentPanelOpacity').dispatchEvent('change'); });
+  await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('dark'));
   await status.filter({ hasText: 'にじみます' }).waitFor();
-  await page.locator('#studio-comment-panel-opacity').fill('100');
-  await page.locator('#studio-comment-panel-opacity').dispatchEvent('change');
+  await opacity('100');
   await status.filter({ hasNotText: 'にじみます' }).waitFor();
-  await page.locator('#studio-comment-panel-opacity').fill('50');
-  await page.locator('#studio-comment-panel-opacity').dispatchEvent('change');
+  await opacity('50');
   await status.filter({ hasText: 'にじみます' }).waitFor();
   await page.locator('#output-background').selectOption('theme');
   await status.filter({ hasNotText: 'にじみます' }).waitFor();

@@ -313,3 +313,53 @@ test('an external change back to content this page saved earlier is still applie
   await tick(); await tick();
   assert.equal(store.design.studio.theme, 'rose');
 });
+
+test('applyDraft stores the whole draft in one write conditioned on its opening revision', async () => {
+  const server = fakeServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const events = [];
+  store.subscribe(detail => events.push(detail));
+  const opened = store.revision;
+  let draft = withTalk({ ...defaultDesign(), theme: '.pokome-workspace{}', outputSize: '1080x1920' }, '9:16', { actorImage: { ...defaultActorImage(), mode: 'custom', scale: 120 } });
+  draft = { ...draft, studio: { ...draft.studio, title: '下書き' } };
+  await store.applyDraft(draft, opened);
+  const puts = server.requests.filter(request => request.method === 'PUT');
+  assert.equal(puts.length, 1);
+  assert.equal(puts[0].headers['If-Match'], opened);
+  assert.equal(server.current.design.studio.title, '下書き');
+  assert.equal(server.current.design.ratios['9:16'].actorImage.scale, 120);
+  assert.equal(store.design.outputSize, '1080x1920');
+  assert.deepEqual(events, [{ applied: true }], 'the own apply is not reported as an external change');
+});
+
+test('applyDraft refuses a draft opened before a newer save, without writing', async () => {
+  const server = fakeServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const opened = store.revision;
+  await store.save({ ...defaultDesign(), name: 'elsewhere' });
+  await assert.rejects(store.applyDraft({ ...defaultDesign(), name: 'draft' }, opened), error => error.conflict === true && /最新のデザインから/.test(error.message));
+  assert.equal(server.requests.filter(request => request.method === 'PUT').length, 1);
+  assert.equal(server.current.design.name, 'elsewhere');
+});
+
+test('a conflict answered by the server marks the draft stale and keeps the other design', async () => {
+  const server = fakeServer({ conflictOnce: true });
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const events = [];
+  store.subscribe(detail => events.push(detail));
+  await assert.rejects(store.applyDraft({ ...defaultDesign(), name: 'draft' }, store.revision), error => error.conflict === true && /最新のデザインから/.test(error.message));
+  assert.equal(store.revision, 'other');
+  assert.equal(server.current.design.name, '');
+  assert.deepEqual(events, [{ external: true }]);
+});
+
+test('applyDraft stops when an image the draft uses is not in the catalog', async () => {
+  const server = fakeServer();
+  const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });
+  const missing = `images/${'b'.repeat(64)}.png`;
+  await assert.rejects(store.applyDraft({ ...defaultDesign(), studio: { ...defaultDesign().studio, source: 'image', image: missing } }, store.revision), /画像を選び直して/);
+  assert.equal(server.requests.filter(request => request.method === 'PUT').length, 0);
+  const { ref } = await store.uploadImage({ type: 'image/png' });
+  await store.applyDraft({ ...defaultDesign(), studio: { ...defaultDesign().studio, source: 'image', image: ref } }, store.revision);
+  assert.equal(server.current.design.studio.image, ref);
+});

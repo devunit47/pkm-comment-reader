@@ -4,7 +4,10 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS } from './browser-support.js';
+
+const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
+const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
 
 // The talk (stream) layout is saved in customization/current, not in the browser.
 const savedSpeech = async base => (await readDesign(base)).ratios['16:9']?.layout?.panels.speech;
@@ -99,8 +102,7 @@ test('credits follow voice, style, engine and platform, survive reload and appea
   await page.reload(); await appReady(page); await credits(page, 'VOICEVOX:四国めたん');
   assert.equal(await page.locator('#voice').inputValue(), '2');
   for (const style of ['panel', 'bubble', 'image']) {
-    await page.locator('[data-page="studio"]').click();
-    await page.locator('#studio-speech-style').selectOption(style);
+    await speechStyle(page, style);
     await page.locator('#enter-talk').click();
     assert.equal(await page.locator('#stage-speech-credit').isVisible(), true);
     assert.equal(await page.locator('#stage-speech-credit').evaluate(element => {
@@ -129,8 +131,7 @@ test('short and resized speech panels keep readable text and visible credits for
   for (const engine of ['voicevox', 'coeiroink']) {
     await choose(page, engine);
     for (const style of ['panel', 'bubble', 'image']) {
-      await page.locator('[data-page="studio"]').click();
-      await page.locator('#studio-speech-style').selectOption(style);
+      await speechStyle(page, style);
       await page.locator('#enter-talk').click();
       for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
         await page.setViewportSize(viewport);
@@ -349,8 +350,6 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   const { page, errors } = await open(t, base);
   await choose(page, 'voicevox');
   await page.setViewportSize({ width: 1280, height: 720 });
-  await page.locator('[data-page="studio"]').click();
-  await page.locator('#theme-css').locator('xpath=ancestor::details').locator('summary').click();
   const check = async height => {
     await page.locator('#enter-talk').click();
     await page.waitForFunction(expected => {
@@ -361,15 +360,12 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
     await editorScreenshot(page, `speech-custom-css-${height}px-1280x720`);
     assert.deepEqual(await savedSpeech(base), panels.speech, 'CSS does not rewrite saved layout');
     await page.locator('#leave-talk').click();
-    await page.locator('[data-page="studio"]').click();
   };
-  await page.locator('#theme-css').fill('.pokome-workspace .stage-speech { min-height: 300px; }');
-  await page.locator('#theme-apply').click();
+  await themeCSS(page, '.pokome-workspace .stage-speech { min-height: 300px; }');
   await check(300);
-  await page.locator('#theme-reset').click();
+  await applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css-clear').click(); });
   await check(220);
-  await page.locator('#theme-css').fill('.pokome-workspace .stage-speech { min-height: 300px; }');
-  await page.locator('#theme-apply').click();
+  await themeCSS(page, '.pokome-workspace .stage-speech { min-height: 300px; }');
   await check(300);
   await page.locator('#appearance-recovery #open-reset').click();
   await page.locator('#appearance-recovery #confirm-reset').click();

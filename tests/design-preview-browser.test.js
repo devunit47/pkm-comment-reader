@@ -8,8 +8,8 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { defaultActorImage, talkActorImage, talkLayout } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady } from './browser-support.js';
+import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -150,7 +150,7 @@ browserTest('design preview edits multiple text/image items independently, appli
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page), before = await appearance(page);
   await editor.locator('#add-text').click();
-  const first = await editor.locator('#overlay-select').inputValue();
+  const first = await editor.locator('#target-select').inputValue();
   const text = '<img src=x onerror=alert(1)>\n日本語の二行目';
   await editor.locator('#overlay-text').fill(text);
   // Native color pickers are OS UI; drive the same input event with a value.
@@ -163,20 +163,20 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.equal(await firstItem.evaluate(element => getComputedStyle(element).color), 'rgb(18, 52, 86)');
   assert.equal(await firstItem.evaluate(element => getComputedStyle(element).fontSize), '44px');
   await editor.locator('#add-text').click();
-  const second = await editor.locator('#overlay-select').inputValue();
+  const second = await editor.locator('#target-select').inputValue();
   await editor.locator('#overlay-text').fill('独立した二つ目');
   await number(editor, 'x', 55); await number(editor, 'z', 2);
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
   await countItems(page, 3); await ready(page);
-  const red = await editor.locator('#overlay-select').inputValue();
+  const red = await editor.locator('#target-select').inputValue();
   await number(editor, 'x', 60);
   await editor.locator('#overlay-image').setInputFiles(imageFile('blue.png', bluePNG));
   await countItems(page, 4); await ready(page);
-  const blue = await editor.locator('#overlay-select').inputValue();
+  const blue = await editor.locator('#target-select').inputValue();
   assert.notEqual(red, blue);
   assert.equal(await frame.locator('.pokome-overlay img').count(), 2);
   assert.equal(await firstItem.evaluate(element => element.style.left), '12%');
-  await editor.locator('#overlay-select').selectOption(first);
+  await editorTarget(editor, first);
   const move = frame.locator(`.overlay-hit[data-overlay-id="${first}"] button[data-resize="false"]`);
   const resize = frame.locator(`.overlay-hit[data-overlay-id="${first}"] button[data-resize="true"]`);
   await move.press('ArrowRight'); await move.press('Shift+ArrowDown');
@@ -196,8 +196,8 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.equal(await firstItem.evaluate(element => getComputedStyle(element).zIndex), '9');
   await editor.locator('#overlay-hidden').check(); assert.equal(await firstItem.isVisible(), false);
   await editor.locator('#overlay-hidden').uncheck(); assert.equal(await firstItem.isVisible(), true);
-  await editor.locator('#overlay-select').selectOption(second); await editor.locator('#delete-overlay').click();
-  await editor.locator('#overlay-select').selectOption(blue); await editor.locator('#delete-overlay').click();
+  await editorTarget(editor, second); await editor.locator('#delete-overlay').click();
+  await editorTarget(editor, blue); await editor.locator('#delete-overlay').click();
   await countItems(page, 2);
   assert.deepEqual(await appearance(page), before, 'all edits remain isolated before Apply');
   await applyDesign(editor);
@@ -217,7 +217,7 @@ browserTest('design preview edits multiple text/image items independently, appli
 browserTest('numeric resizing keeps anchors and displays clamped dimensions through reload', async t => {
   const item = createOverlay('text', { id: 'numeric-edge', x: 80, y: 80, w: 10, h: 10 });
   const { page, editor, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: overlays([item]) } } }) });
-  await openPreview(page);
+  await openPreview(page); await editorTarget(editor, 'numeric-edge');
   const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator(`#overlay-${key}`).inputValue())])));
   await number(editor, 'w', 30); await number(editor, 'h', 30);
   assert.deepEqual(await geometry(), { x: 80, y: 80, w: 20, h: 20 });
@@ -231,7 +231,7 @@ browserTest('numeric resizing keeps anchors and displays clamped dimensions thro
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
   await applyDesign(editor); await page.reload(); await appReady(page);
   assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 88, y: 85, w: 12, h: 15 });
-  await openPreview(page);
+  await openPreview(page); await editorTarget(editor, 'numeric-edge');
   assert.deepEqual(await geometry(), { x: 88, y: 85, w: 12, h: 15 });
   assert.deepEqual(errors, []);
 });
@@ -339,10 +339,11 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   const before = await appearance(page), previewRequests = [];
   page.on('request', request => { if (request.frame() !== page.mainFrame()) previewRequests.push(request.url()); });
   let frame = await openPreview(page);
-  await editor.getByText('画面のデザインも試す', { exact: true }).click();
+  await editorTarget(editor, 'screen');
   await editor.locator('#draft-theme').selectOption('rose');
+  await editorTarget(editor, 'header');
   await editor.locator('#draft-title').fill('未適用の題名');
-  await editor.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await editorThemeCSS(editor);
   await editor.locator('#draft-css').fill('.pokome-workspace .pokome-comment__author { color: #123456; }');
   assert.equal(await frame.locator('#talk-stage').getAttribute('data-theme'), 'rose');
   assert.equal(await frame.locator('.stage-comment.pokome-comment').count(), 10);
@@ -354,16 +355,19 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   await editor.locator('#add-text').click();
   assert.deepEqual(await appearance(page), before);
   assert.deepEqual(previewRequests, [], 'the script-free iframe issues no external requests');
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
   assert.deepEqual(await appearance(page), before);
   frame = await openPreview(page); await countItems(page, 0);
   assert.equal(await frame.locator('#stage-title').textContent(), DEFAULT_STUDIO.title);
   await editor.locator('#add-text').click();
   await frame.locator('.overlay-hit button').first().press('Escape');
+  // A changed draft asks before it is discarded.
+  await editor.locator('#editor-confirm-accept').click();
   assert.equal(await editor.locator('#design-dialog').isVisible(), false);
   assert.deepEqual(await appearance(page), before);
   await openPreview(page); await editor.locator('#add-text').click();
   await page.evaluate(() => { history.pushState({ previewTest: true }, ''); history.back(); });
+  await editor.locator('#editor-confirm-accept').click();
   await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
   assert.deepEqual(await appearance(page), before);
   assert.deepEqual(errors, []);
@@ -381,10 +385,11 @@ browserTest('a draft whose save failed and was cancelled is never saved by a lat
   await editor.locator('#apply-design').click();
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('書き込めません'), ROOT);
   assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
   assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
-  await page.locator('#studio-theme').selectOption('rose');
-  const saved = await waitForDesign(url, design => design.studio.theme === 'rose');
+  // A remaining instant-save field stores the design through the same queue.
+  await page.locator('#output-size').selectOption('1920x1080');
+  const saved = await waitForDesign(url, design => design.outputSize === '1920x1080');
   assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');
   await page.reload(); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
@@ -396,10 +401,10 @@ browserTest('invalid CSS and quota failure preserve the live design and leave an
   const { page, editor, errors } = await fixture(t);
   await openPreview(page); const before = await appearance(page);
   await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('保存待ち');
-  await editor.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await editorThemeCSS(editor);
   await editor.locator('#draft-css').fill('body { display:none; }');
-  await editor.locator('#apply-design').click();
-  assert.match(await editor.locator('#design-status').textContent(), /適用できませんでした/);
+  assert.equal(await editor.locator('#apply-design').isDisabled(), true);
+  assert.match(await editor.locator('#design-status').textContent(), /入力したCSSは未反映です/);
   assert.deepEqual(await appearance(page), before);
   await editor.locator('#draft-css').fill('.pokome-workspace .pokome-comment__author { color:#abcdef; }');
   await page.route('**/api/design/current', route => route.request().method() === 'PUT'
@@ -429,11 +434,11 @@ browserTest('preview preparation disables reset and cancellation does not poison
   await editor.locator('#open-design-preview').click(); await requested;
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   assert.equal(await editor.locator('#draft-reset').isDisabled(), true);
-  await editor.locator('#cancel-design').click(); release();
+  await closeEditor(editor); release();
   await openPreview(page);
   assert.equal(await editor.locator('#draft-reset').isEnabled(), true);
   await editor.locator('#add-text').click(); await countItems(page, 1);
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
   assert.equal(await savedOverlays(page), null);
   assert.deepEqual(errors, []);
 });
@@ -444,15 +449,15 @@ browserTest('pending image decode cannot resurrect items after reset or cancel',
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
   await page.waitForFunction(() => window.__imageGate.entered === 1);
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
-  await editor.locator('#draft-reset').click();
+  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click();
   await releaseImageGate(page); await countItems(page, 0); await ready(page);
   assert.deepEqual(await appearance(page), before);
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
 
   await beginImageGate(page); await openPreview(page);
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
   await page.waitForFunction(() => window.__imageGate.entered === 1);
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
   await releaseImageGate(page); await openPreview(page); await countItems(page, 0);
   assert.deepEqual(await appearance(page), before);
   assert.deepEqual(errors, []);
@@ -472,14 +477,14 @@ browserTest('latest image wins without waiting for superseded decode, and deleti
   await releaseImageGate(page); await ready(page); await countItems(page, 1);
   assert.equal(await frame.locator('.pokome-overlay img').getAttribute('src'), servedImage(bluePNG));
   assert.equal(await frame.locator('.pokome-overlay img').evaluate(image => image.complete && image.naturalWidth), 1, 'the preview loads folder images under its CSP');
-  await editor.locator('#draft-reset').click();
+  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click();
   await editor.locator('#add-text').click(); await editor.locator('#overlay-text').fill('削除する文字');
-  const textId = await editor.locator('#overlay-select').inputValue();
+  const textId = await editor.locator('#target-select').inputValue();
   await countItems(page, 1); await ready(page);
   await beginImageGate(page);
   await editor.locator('#overlay-image').setInputFiles(imageFile('red.png'));
   await page.waitForFunction(() => window.__imageGate.entered === 1);
-  await editor.locator('#overlay-select').selectOption(textId);
+  await editorTarget(editor, textId);
   await editor.locator('#delete-overlay').click(); await countItems(page, 0);
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   await releaseImageGate(page); await countItems(page, 1); await ready(page);
@@ -516,11 +521,11 @@ browserTest('a design saved elsewhere reaches the page live and an older open dr
   await saveDesign(url, { theme: externalCSS });
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('別の画面'), ROOT);
   assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(18, 52, 86\)/, 'the live page already shows it');
-  await editor.locator('#apply-design').click();
-  await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('適用できませんでした'), ROOT);
+  assert.equal(await editor.locator('#apply-design').isDisabled(), true);
+  assert.equal(await editor.locator('#restart-design').isVisible(), true);
   assert.equal(await savedOverlays(page), null);
   assert.equal((await readDesign(url)).theme, externalCSS);
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
   // Reopening starts from the newer design, without reloading the page.
   const frame = await openPreview(page);
   assert.equal(await frame.locator('.pokome-comment__author').first().evaluate(element => getComputedStyle(element).color), 'rgb(18, 52, 86)');
@@ -535,7 +540,7 @@ browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS
     ratios: { ...design.ratios, '16:9': { layout: { panels }, overlays: overlays([]) } } }) });
   const frame = await openPreview(page), speech = frame.locator('.stage-speech');
   assert.ok(Math.abs(await speech.evaluate(element => parseFloat(getComputedStyle(element).top)) - 420) < 1);
-  await editor.getByText('追加CSSをプレビュー', { exact: true }).click();
+  await editorThemeCSS(editor);
   await editor.locator('#draft-css').fill('.pokome-workspace .stage-speech { min-height:100px; }');
   assert.ok(Math.abs(await speech.evaluate(element => parseFloat(getComputedStyle(element).top)) - 540) < 1, 'lowering min-height uses raw y75/h25 rather than the old clamped top');
   await editor.locator('#preview-width').selectOption('640x360');
@@ -544,14 +549,14 @@ browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS
     return Math.abs(parseFloat(frame.contentWindow.getComputedStyle(frame.contentDocument.querySelector('.stage-speech')).top) - 260) < 1;
   }, ROOT);
   assert.deepEqual((await readDesign(url)).ratios['16:9'].layout, { panels });
-  await editor.locator('#cancel-design').click();
+  await closeEditor(editor);
   assert.deepEqual(errors, []);
 });
 
 browserTest('640x360 preview scroll keeps protected handles aligned with their actual overlay rectangles', async t => {
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page);
-  await editor.locator('#add-text').click(); const id = await editor.locator('#overlay-select').inputValue();
+  await editor.locator('#add-text').click(); const id = await editor.locator('#target-select').inputValue();
   await number(editor, 'y', 60); await number(editor, 'h', 20);
   await editor.locator('#preview-width').selectOption('640x360');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerWidth === 640, ROOT);
@@ -575,10 +580,7 @@ browserTest('640x360 preview scroll keeps protected handles aligned with their a
   assert.deepEqual(errors, []);
 });
 
-async function actorControls(editor) {
-  if (!await editor.locator('#draft-theme').evaluate(element => element.closest('details').open)) await editor.getByText('画面のデザインも試す', { exact: true }).click();
-  if (!await editor.locator('#draft-actor-placement').evaluate(element => element.open)) await editor.locator('#draft-actor-heading').click();
-}
+async function actorControls(editor) { await editorTarget(editor, 'actor'); }
 async function actorNumber(editor, key, value) {
   await editor.locator('#actor-' + key).fill(String(value));
   await editor.locator('#actor-' + key).dispatchEvent('change');
@@ -622,7 +624,7 @@ browserTest('actor placement drafts keep three ratios, remember theme values and
   assert.deepEqual(errors, []);
 });
 
-browserTest('actor drafts cancel, clamp numeric input and reset all ratios while retaining panel layouts', async t => {
+browserTest('actor drafts cancel, clamp numeric input and reset every ratio with the whole design', async t => {
   const { page, editor, url } = await fixture(t, { design: design => ({ ...design, ratios: {
     ...design.ratios, '16:9': { layout: { panels: { actor: { x: 10, y: 10, w: 70, h: 70 } } }, overlays: overlays([]), actorImage: { mode: 'custom', scale: 130 } },
     '9:16': { layout: null, overlays: overlays([]), actorImage: { mode: 'theme', scale: 140 } },
@@ -631,17 +633,19 @@ browserTest('actor drafts cancel, clamp numeric input and reset all ratios while
   await openPreview(page); await actorControls(editor);
   await actorNumber(editor, 'scale', 200.9); assert.equal(await editor.locator('#actor-scale').inputValue(), '200');
   await actorNumber(editor, 'offsetY', 200); assert.equal(await editor.locator('#actor-offsetY').inputValue(), '100');
-  await actorNumber(editor, 'offsetX', ''); assert.equal(await editor.locator('#actor-offsetX').inputValue(), '0');
-  await editor.locator('#cancel-design').click(); assert.deepEqual(await readDesign(url), before);
+  await actorNumber(editor, 'offsetX', 7.5); await actorNumber(editor, 'offsetX', '');
+  assert.equal(await editor.locator('#actor-offsetX').inputValue(), '7.5', 'an empty number keeps the draft value');
+  await closeEditor(editor); assert.deepEqual(await readDesign(url), before);
   await openPreview(page); await actorControls(editor);
   assert.equal(await editor.locator('#actor-scale').inputValue(), '130');
-  await editor.locator('#draft-reset').click();
+  await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click(); await editor.locator('#editor-confirm-accept').click(); await actorControls(editor);
   assert.equal(await editor.locator('#actor-mode').inputValue(), 'theme');
   await applyDesign(editor);
   const saved = await readDesign(url);
   for (const ratio of ['16:9', '9:16', '4:3']) {
     assert.deepEqual(talkActorImage(saved, ratio), defaultActorImage());
-    assert.deepEqual(talkLayout(saved, ratio), talkLayout(before, ratio));
+    // The whole design returns to the default, panel layouts included.
+    assert.equal(saved.ratios[ratio], null);
   }
 });
 
@@ -659,8 +663,7 @@ browserTest('actor save failure keeps a usable draft and an external change bloc
   await actorNumber(editor, 'offsetY', 2.5);
   await saveDesign(url, design => ({ ...design, studio: { ...design.studio, title: '別のタブ' } }));
   await editor.locator('#design-status').filter({ hasText: '別の画面' }).waitFor();
-  await editor.locator('#apply-design').click();
-  await editor.locator('#design-status').filter({ hasText: '適用できませんでした' }).waitFor();
+  assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   const saved = await readDesign(url);
   assert.equal(saved.studio.title, '別のタブ'); assert.deepEqual(talkActorImage(saved, '16:9'), defaultActorImage());
   assert.equal(await editor.locator('#actor-scale').inputValue(), '160');
@@ -671,13 +674,13 @@ browserTest('image numeric, keyboard and pointer resizing use outside bounds and
   const frame = await openPreview(page);
   await editor.locator('#overlay-image').setInputFiles(imageFile('outside.png'));
   await countItems(page, 1); await ready(page);
-  const id = await editor.locator('#overlay-select').inputValue();
+  const id = await editor.locator('#target-select').inputValue();
   const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator('#overlay-' + key).inputValue())])));
   for (const [key, value] of Object.entries({ w: 200, h: 200, x: -100, y: -100 })) await number(editor, key, value);
   assert.deepEqual(await geometry(), { x: -100, y: -100, w: 200, h: 200 });
   assert.equal(await editor.locator('#overlay-x').getAttribute('min'), '-100');
   assert.equal(await editor.locator('#overlay-x').getAttribute('max'), '0');
-  await editor.locator('#overlay-select').selectOption(id);
+  await editorTarget(editor, id);
   await number(editor, 'w', 100); await number(editor, 'h', 100);
   assert.deepEqual(await geometry(), { x: -98, y: -98, w: 100, h: 100 });
   await number(editor, 'x', 0); await number(editor, 'y', 8.5);
