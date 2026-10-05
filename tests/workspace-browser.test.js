@@ -407,8 +407,11 @@ test('first setup guide and full settings backup restore work through the UI', {
     await waitForDesign(base, design => design.studio.theme === 'rose');
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
+    // The file is read asynchronously, so wait for the status before checking the button.
+    await page.locator('#backup-status').filter({ hasText: '読み込めませんでした' }).waitFor();
     assert.equal(await page.locator('#confirm-restore').isDisabled(), true);
     await page.locator('#restore-settings').setInputFiles({ name: 'settings.json', mimeType: 'application/json', buffer: backup });
+    await page.locator('#backup-status').filter({ hasText: '見た目はcustomizationフォルダーのまま' }).waitFor();
     assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     await page.locator('[data-page="studio"]').click();
@@ -425,7 +428,8 @@ test('first setup guide and full settings backup restore work through the UI', {
     delete legacy.settings['pokome-history-limit'];
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
-    assert.match(await page.locator('#backup-status').textContent(), /取り込みます/);
+    await page.locator('#backup-status').filter({ hasText: '取り込みます' }).waitFor();
+    assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     const imported = await waitForDesign(base, design => design.studio.theme === 'violet');
     assert.equal(imported.studio.title, '旧版のタイトル');
