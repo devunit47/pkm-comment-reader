@@ -25,6 +25,88 @@ async function fixture(t) {
   await editor.locator('#apply-design:not(:disabled)').waitFor();
   return { directory, base, page, before, editor };
 }
+for (const id of ['css', 'actor', 'speech', 'overlay']) {
+  test(`${id} folder candidates preserve pending PC files until a new load starts`, { skip: !browserAvailable }, async t => {
+    const { base, page, before, editor } = await fixture(t);
+    let uploads = 0, folderReads = 0;
+    page.on('request', request => {
+      if (request.url().endsWith('/api/design/images') && request.method() === 'PUT') uploads++;
+      if (/\/api\/customizations\/(styles|images)\//.test(request.url())) folderReads++;
+    });
+    await page.evaluate(() => {
+      const text = Blob.prototype.text, decode = HTMLImageElement.prototype.decode;
+      window.pcReadStarted = 0; window.pcReadFinished = 0;
+      Blob.prototype.text = async function () {
+        const held = this instanceof File && this.name === 'pc.css' && window.holdPCRead;
+        if (held) { window.holdPCRead = false; window.pcReadStarted++; await new Promise(resolve => { window.releasePCRead = resolve; }); }
+        const result = await text.call(this);
+        if (held) window.pcReadFinished++;
+        return result;
+      };
+      HTMLImageElement.prototype.decode = async function () {
+        const held = this.src.startsWith('blob:') && window.holdPCRead;
+        if (held) { window.holdPCRead = false; window.pcReadStarted++; await new Promise(resolve => { window.releasePCRead = resolve; }); }
+        await decode.call(this);
+        if (held) window.pcReadFinished++;
+      };
+    });
+    const target = id === 'css' || id === 'overlay' ? 'screen' : id;
+    const input = { css: '#draft-css-file', actor: '#draft-image', speech: '#draft-speechImage', overlay: '#overlay-image' }[id];
+    const file = id === 'css' ? { name: 'pc.css', mimeType: 'text/css', buffer: Buffer.from('.pokome-workspace .pokome-panel { border-radius: 29px; }') }
+      : { name: 'pc.png', mimeType: 'image/png', buffer: PNG };
+    const name = id === 'css' ? 'test.css' : 'test.png';
+    const completion = id === 'css' ? '下書きに読み込みました' : id === 'overlay' ? '画像を追加しました' : '画像を下書きに入れました';
+    async function prepare() {
+      if (id === 'css') await editorThemeCSS(editor); else await editorTarget(editor, target);
+      if (!await editor.locator(`#local-${id}-select`).isVisible()) await editor.locator(`#local-${id} summary`).click();
+      await editor.locator(`#local-${id}-select option[value="${name}"]`).waitFor({ state: 'attached' });
+    }
+    async function startPC(number) {
+      await page.evaluate(() => { window.holdPCRead = true; });
+      await editor.locator(input).setInputFiles(file);
+      await page.waitForFunction(count => window.pcReadStarted === count, number);
+      await editor.locator('#design-status').filter({ hasText: id === 'css' ? 'CSSを読み込んでいます' : '画像を確認しています' }).waitFor();
+      assert.equal(await editor.locator('#apply-design').isDisabled(), true);
+    }
+    await prepare(); await startPC(1);
+    await editor.locator(`#local-${id}-select`).selectOption(name);
+    assert.equal(await editor.locator('#apply-design').isDisabled(), true, 'choosing a candidate must retain the pending PC read');
+    assert.equal(folderReads, 0);
+    assert.deepEqual(await readDesign(base), before);
+    await page.evaluate(() => window.releasePCRead());
+    await editor.locator('#design-status').filter({ hasText: completion }).waitFor();
+    await editor.locator('#apply-design:not(:disabled)').waitFor();
+    if (id === 'css') assert.match(await editor.locator('#draft-css').inputValue(), /29px/);
+    else assert.equal(uploads, 1);
+    await editor.locator('#apply-design').click();
+    await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+    const saved = await readDesign(base);
+    if (id === 'css') assert.match(saved.theme, /29px/);
+    else if (id === 'overlay') assert.equal(saved.ratios['16:9'].overlays.items.length, 1);
+    else assert.match(saved.studio[id === 'actor' ? 'image' : 'speechImage'], /^images\/[0-9a-f]{64}\.png$/);
+
+    await editor.locator('#open-design-preview').click();
+    await editor.locator('#apply-design:not(:disabled)').waitFor();
+    await prepare(); await startPC(2);
+    await editor.locator(`#local-${id}-select`).selectOption('');
+    await editor.locator(`#local-${id}-select`).selectOption(name);
+    assert.equal(await editor.locator('#apply-design').isDisabled(), true);
+    await editor.locator(`#local-${id}-load`).click();
+    await editor.locator('#design-status').filter({ hasText: completion }).waitFor();
+    await editor.locator('#apply-design:not(:disabled)').waitFor();
+    assert.equal(folderReads, 1);
+    const completedUploads = uploads;
+    await page.evaluate(() => window.releasePCRead());
+    await page.waitForFunction(() => window.pcReadFinished === 2);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    assert.equal(uploads, completedUploads, 'a superseded PC read must not register its late image');
+    if (id === 'css') assert.match(await editor.locator('#draft-css').inputValue(), /7px/);
+    if (id === 'overlay') assert.equal(await editor.locator('#target-select option').count(), 8);
+    assert.deepEqual(await readDesign(base), saved);
+    await closeEditor(editor);
+  });
+}
+
 test('folder CSS enters the draft and undo history without saving before Apply', { skip: !browserAvailable }, async t => {
   const { base, page, before, editor } = await fixture(t);
   await editorThemeCSS(editor);
@@ -67,22 +149,40 @@ test('all three folder image destinations are draft operations and persist only 
   assert.equal(saved.ratios['16:9'].overlays.items.length, 1);
 });
 
-test('pending folder CSS blocks Apply and a new choice or closing invalidates its late response', { skip: !browserAvailable }, async t => {
+test('pending folder CSS survives a candidate change and a new load or closing invalidates its late response', { skip: !browserAvailable }, async t => {
   const { base, page, before, editor } = await fixture(t);
   await editorThemeCSS(editor); await editor.locator('#local-css summary').click();
   await editor.locator('#local-css-select option[value="test.css"]').waitFor({ state: 'attached' });
-  for (const action of ['choice', 'close']) {
+  await page.evaluate(() => {
+    const native = Blob.prototype.text;
+    window.oldCSSReadFinished = 0;
+    Blob.prototype.text = async function () {
+      const text = await native.call(this);
+      if (text === '.pokome-workspace { color: red; }') window.oldCSSReadFinished++;
+      return text;
+    };
+  });
+  for (const action of ['load', 'close']) {
+    const completed = await page.evaluate(() => window.oldCSSReadFinished);
     let release, started;
     const gate = new Promise(resolve => { release = resolve; }), began = new Promise(resolve => { started = resolve; });
     await page.route('**/api/customizations/styles/test.css', async route => { started(); await gate; await route.fulfill({ contentType: 'text/css', body: '.pokome-workspace { color: red; }' }); }, { times: 1 });
     await editor.locator('#local-css-select').selectOption('test.css'); await editor.locator('#local-css-load').click(); await began;
     assert.equal(await editor.locator('#apply-design').isDisabled(), true);
-    if (action === 'choice') await editor.locator('#local-css-select').selectOption('');
+    if (action === 'load') {
+      await editor.locator('#local-css-select').selectOption('');
+      assert.equal(await editor.locator('#apply-design').isDisabled(), true);
+      await editor.locator('#local-css-select').selectOption('test.css');
+      await editor.locator('#local-css-load').click();
+      await editor.locator('#design-status').filter({ hasText: '下書きに読み込みました' }).waitFor();
+    }
     else await closeEditor(editor);
     const response = page.waitForResponse('**/api/customizations/styles/test.css'); release(); await (await response).finished();
-    if (action === 'choice') {
+    await page.waitForFunction(count => window.oldCSSReadFinished > count, completed);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    if (action === 'load') {
       await editor.locator('#apply-design:not(:disabled)').waitFor();
-      assert.equal(await editor.locator('#draft-css').inputValue(), '');
+      assert.match(await editor.locator('#draft-css').inputValue(), /7px/);
     }
     assert.deepEqual(await readDesign(base), before);
   }
@@ -129,7 +229,7 @@ test('late folder images cannot change a discarded, closed, superseded or cleare
       if (this.src.startsWith('blob:')) window.folderDecoded++;
     };
   });
-  const cases = ['actor', 'speech', 'overlay'].flatMap(id => ['choice', 'discard', 'close'].map(action => [id, action]));
+  const cases = ['actor', 'speech', 'overlay'].flatMap(id => ['load', 'discard', 'close'].map(action => [id, action]));
   cases.push(['actor', 'remove'], ['speech', 'standard']);
   for (const [id, action] of cases) {
     if (!await editor.locator('#design-dialog').isVisible()) {
@@ -155,22 +255,29 @@ test('late folder images cannot change a discarded, closed, superseded or cleare
     await editor.locator('#local-' + id + '-select').selectOption('test.png');
     await editor.locator('#local-' + id + '-load').click(); await began;
     assert.equal(await editor.locator('#apply-design').isDisabled(), true, id + ':' + action);
-    if (action === 'choice') await editor.locator('#local-' + id + '-select').selectOption('');
+    if (action === 'load') {
+      await editor.locator('#local-' + id + '-select').selectOption('');
+      assert.equal(await editor.locator('#apply-design').isDisabled(), true, 'a candidate is not a new read');
+      await editor.locator('#local-' + id + '-select').selectOption('test.png');
+      await editor.locator('#local-' + id + '-load').click();
+      await editor.locator('#design-status').filter({ hasText: id === 'overlay' ? '画像を追加しました' : '画像を下書きに入れました' }).waitFor();
+    }
     else if (action === 'close') await closeEditor(editor);
     else if (action === 'discard') {
       await editorTarget(editor, 'screen'); await editor.locator('#draft-reset').click();
       await editor.locator('#editor-confirm-accept').click();
     } else await editor.locator(action === 'remove' ? '#draft-image-remove' : '#draft-speechImage-reset').click();
+    const decodedBeforeRelease = action === 'load' ? await page.evaluate(() => window.folderDecoded) : decoded;
     const response = page.waitForResponse('**/api/customizations/images/test.png');
     release(); await (await response).finished();
-    await page.waitForFunction(count => window.folderDecoded > count, decoded);
+    await page.waitForFunction(count => window.folderDecoded > count, decodedBeforeRelease);
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
-    assert.equal(uploads, uploadsBefore, id + ':' + action + ' must invalidate the old image before upload');
+    assert.equal(uploads, uploadsBefore + (action === 'load' ? 1 : 0), id + ':' + action + ' must invalidate the old image before upload');
     if (action === 'close') {
       await editor.locator('#open-design-preview').click();
       await editor.locator('#apply-design:not(:disabled)').waitFor();
     } else await editor.locator('#apply-design:not(:disabled)').waitFor();
-    assert.equal(await editor.locator('#target-select option').count(), 6, 'no late overlay is inserted');
+    assert.equal(await editor.locator('#target-select option').count(), id === 'overlay' && action === 'load' ? 7 : 6, 'no late overlay is inserted');
     assert.deepEqual(await readDesign(base), before);
     await closeEditor(editor);
   }

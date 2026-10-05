@@ -678,7 +678,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
     } catch (error) { if (current()) status(error.message); }
     finally { if (current()) { requests.delete(key); pending--; buttons(); } }
   }
-  // A newer choice wins over a file still being read or uploaded.
+  // Explicit edits or removals invalidate a file still being read or uploaded.
   function dropRequest(key) { if (requests.delete(key)) { pending--; buttons(); } }
   for (const [id, key, patch] of [['draft-image', 'actor-image', ref => ({ source: 'image', image: ref })], ['draft-speechImage', 'speech-image', ref => ({ speechStyle: 'image', speechImage: ref })]]) {
     $(id).onchange = () => { const file = $(id).files[0]; $(id).value = ''; if (file) return draftImage(() => file, key, patch); };
@@ -758,7 +758,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
   for (const [id, kind] of Object.entries(LOCAL_PICKERS)) {
     const select = $('local-' + id + '-select'), key = { css: 'css-file', actor: 'actor-image', speech: 'speech-image', overlay: 'add-image' }[id];
     $('local-' + id).querySelector('.local-refresh').onclick = refreshLocal;
-    select.onchange = () => { dropRequest(key); buttons(); };
+    select.onchange = buttons;
     $('local-' + id + '-load').onclick = () => {
       const name = select.value; if (!name || !editable()) return;
       const read = async () => (await localRequest('/' + kind + '/' + encodeURIComponent(name))).blob();
