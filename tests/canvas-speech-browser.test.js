@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveTalk, waitForDesign, appReady, blockExternalFonts, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, editorTarget } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-canvas-speech-'));
@@ -52,6 +52,8 @@ function bottomAlignedPanels() {
 test('one-axis resize preserves untouched saved dimensions and desktop intent', { skip: !browserAvailable }, async t => {
   const { base, page, errors } = await fixture(t);
   const panels = bottomAlignedPanels();
+  panels.speech.x = 40;
+  await saveDesign(base, design => ({ ...design, theme: '.pokome-workspace .stage-grid::after { content: ""; position: absolute; left: 900px; top: 500px; width: 1px; height: 1px; }' }));
   const scenarios = [
     { key: 'ArrowUp', axis: 'h' }, { key: 'ArrowDown', axis: 'h' },
     { key: 'ArrowLeft', axis: 'w' }, { key: 'ArrowRight', axis: 'w' },
@@ -64,11 +66,14 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
     await saveTalk(base, { layout: { panels } });
     await page.waitForFunction(() => {
       const style = document.querySelector('.stage-speech').style;
-      return style.width === '50%' && style.height === '25%' && style.left === '50%';
+      return style.width === '50%' && style.height === '25%' && style.left === '40%';
     });
     const canvas = await openSpeechCanvas(page);
     const desktop = await speechBox(page);
     await canvasSize(page, canvas, '640x360');
+    const scroll = await page.frameLocator('#design-preview-frame').locator('#talk-stage').evaluate(stage => { stage.scrollLeft = 40; stage.scrollTop = 60; return [stage.scrollLeft, stage.scrollTop]; });
+    assert.deepEqual(scroll, [40, 60]);
+    const start = await speechBox(page);
     const resize = canvas.locator('.canvas-target[data-target-id="speech"] .canvas-handle[data-edge="se"]');
     if (scenario.key) await canvas.locator('.canvas-target[data-target-id="speech"]').press('Shift+' + scenario.key);
     else {
@@ -79,6 +84,8 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
       await page.mouse.up();
     }
     const stored = Object.fromEntries(await Promise.all(['x', 'y', 'w', 'h'].map(async key => [key, Number(await canvas.locator('#panel-' + key).inputValue())])));
+    const changed = await speechBox(page);
+    for (const key of ['x', 'y']) assert.ok(Math.abs(changed[key] - start[key]) < .02, `${key}: the displayed opposite edge stays fixed after scrolling`);
     await canvasSize(page, canvas, '1280x720');
     const returned = await speechBox(page);
     const label = scenario.key || `pointer-${scenario.axis}`;

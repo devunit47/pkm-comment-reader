@@ -321,9 +321,9 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     const p = clone(targetValue(id));
     if (!isPanel(id) || p.hidden) return p;
     const stage = previewStage.getBoundingClientRect(), rect = panelElement(id).getBoundingClientRect();
-    const shown = { x: (rect.left - stage.left) / stage.width * 100, y: (rect.top - stage.top) / stage.height * 100, w: rect.width / stage.width * 100, h: rect.height / stage.height * 100 };
+    const shown = { x: (rect.left - stage.left + previewStage.scrollLeft) / stage.width * 100, y: (rect.top - stage.top + previewStage.scrollTop) / stage.height * 100, w: rect.width / stage.width * 100, h: rect.height / stage.height * 100 };
     if (id === 'speech') {
-      if (resize) { if (axes[0]) p.w = shown.w; if (axes[1]) p.h = shown.h; }
+      if (resize) { if (axes[0]) { p.x = shown.x; p.w = shown.w; } if (axes[1]) { p.y = shown.y; p.h = shown.h; } }
       else { p.x = shown.x; p.y = shown.y; }
     } else if (!resize && Math.abs(shown.y - p.y) > .01) { p.y = shown.y; p.h = shown.h; }
     return p;
@@ -373,8 +373,8 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
   function resizeTarget(item, dx, dy, edge, keepRatio = false) {
     const image = item.type === 'image', minimum = isPanel(selected) ? 5 : 2, maximum = image ? 200 : 100;
     let w = item.w + (edge.includes('w') ? -dx : edge.includes('e') ? dx : 0), h = item.h + (edge.includes('n') ? -dy : edge.includes('s') ? dy : 0);
-    const maxW = image ? maximum : edge.includes('w') ? item.x + item.w : isPanel(selected) ? maximum : 100 - item.x;
-    const maxH = image ? maximum : edge.includes('n') ? item.y + item.h : isPanel(selected) ? maximum : 100 - item.y;
+    const maxW = image ? maximum : edge.includes('w') ? item.x + item.w : 100 - item.x;
+    const maxH = image ? maximum : edge.includes('n') ? item.y + item.h : 100 - item.y;
     if (keepRatio && image && edge.length === 2) {
       // Ratios of logical pixel dimensions cancel to the same common scale.
       let factor = Math.abs(w / item.w - 1) > Math.abs(h / item.h - 1) ? w / item.w : h / item.h;
@@ -415,6 +415,10 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
           patch[key] = Math.round(patch[key] / 2) * 2;
         }
         // Bounds take priority when snapping would round past the opposite edge.
+        if (original.type !== 'image') {
+          if (edge.includes('e')) patch.w = Math.min(patch.w, 100 - original.x);
+          if (edge.includes('s')) patch.h = Math.min(patch.h, 100 - original.y);
+        }
         if (edge.includes('w')) {
           if (original.type !== 'image') patch.w = Math.min(patch.w, original.x + original.w);
           patch.x = original.x + original.w - patch.w;
@@ -573,7 +577,10 @@ export function initializeDesignPreview({ designStore, themeEditor, getLiveRatio
     if (!editable() || !isPanel(selected)) return;
     const element = $(`panel-${key}`), current = targetValue(selected);
     if (key !== 'hidden' && element.value === '') { panelFields(); return; }
-    session.seal(); changedTarget(selected, { [key]: key === 'hidden' ? element.checked : numberOr(element, current[key]) });
+    const patch = key === 'w' || key === 'h'
+      ? resizePatch(current, key === 'w' ? numberOr(element, current.w) - current.w : 0, key === 'h' ? numberOr(element, current.h) - current.h : 0)
+      : { [key]: key === 'hidden' ? element.checked : numberOr(element, current[key]) };
+    session.seal(); changedTarget(selected, patch);
   });
   dialog.addEventListener('keydown', event => { if (event.key === 'Escape' && dragCleanup) { event.preventDefault(); event.stopPropagation(); dragCleanup(); } });
   for (const [id, direction] of [['canvas-forward', 'forward'], ['canvas-backward', 'backward']]) $(id).onclick = () => {

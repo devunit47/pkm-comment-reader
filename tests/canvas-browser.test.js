@@ -160,3 +160,25 @@ browserTest('returning a drag to its start restores geometry and keeps only earl
   assert.equal(await editor.locator('#draft-state').textContent(), '変更なし', 'a saved layout also returns unchanged');
   assert.equal(await editor.locator('#undo-design').isDisabled(), true);
 });
+
+for (const method of ['pointer', 'keyboard', 'number']) browserTest(`east and south panel ${method} resize keeps its origin at the canvas boundary`, async t => {
+  const { page, editor } = await fixture(t);
+  await editorTarget(editor, 'actor');
+  for (const snap of [false, true]) for (const origin of [60, 60.5]) for (const edge of ['e', 's']) {
+    await editor.locator('#canvas-snap').setChecked(snap);
+    for (const [key, value] of Object.entries({ w: 30, h: 30, x: origin, y: origin })) await number(editor, `panel-${key}`, value);
+    const hit = editor.locator('.canvas-target[data-target-id=actor]');
+    if (method === 'pointer') {
+      const handle = await hit.locator(`[data-edge=${edge}]`).boundingBox(), canvas = await editor.locator('#design-preview-frame').boundingBox();
+      const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
+      await page.mouse.move(x, y); await page.mouse.down();
+      await page.mouse.move(x + (edge === 'e' ? canvas.width * .2 : 0), y + (edge === 's' ? canvas.height * .2 : 0)); await page.mouse.up();
+    } else if (method === 'keyboard') {
+      for (let i = 0; i < 20; i++) await hit.press(edge === 'e' ? 'Shift+ArrowRight' : 'Shift+ArrowDown');
+    } else await number(editor, edge === 'e' ? 'panel-w' : 'panel-h', 50);
+    const position = Number(await editor.locator(edge === 'e' ? '#panel-x' : '#panel-y').inputValue());
+    const dimension = Number(await editor.locator(edge === 'e' ? '#panel-w' : '#panel-h').inputValue());
+    assert.equal(position, origin, `${edge}, snap=${snap}, origin=${origin} keeps the opposite edge`);
+    assert.equal(dimension, 100 - origin, `${edge} stops at the canvas edge`);
+  }
+});
