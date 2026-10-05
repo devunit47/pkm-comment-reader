@@ -9,7 +9,7 @@ export const canvasZIndex = (z, index) => orderZ(z) * 32 + index;
 // Stable ties match the shared stage DOM: fixed panels, then overlay array order.
 export function canvasOrder(layout, overlays) {
   return [
-    ...PANEL_IDS.talk.map(id => ({ kind: 'panel', id, z: orderZ(layout?.panels[id]?.z) })),
+    ...PANEL_IDS.talk.map(id => ({ kind: 'panel', id, z: orderZ(layout ? layout.panels[id]?.z : 0) })),
     ...(overlays?.items ?? []).map(item => ({ kind: 'overlay', id: item.id, z: orderZ(item.z) })),
   ].sort((a, b) => a.z - b.z);
 }
@@ -44,7 +44,7 @@ export function layoutFromRects(stageRect, panelRects) {
       x: (rect.left - stageRect.left) / stageRect.width * 100,
       y: (rect.top - stageRect.top) / stageRect.height * 100,
       w: rect.width / stageRect.width * 100, h: rect.height / stageRect.height * 100,
-      z: 1, hidden: false,
+      z: 0, hidden: false,
     };
   }
   return normalizeLayout({ panels }, PANEL_IDS.talk);

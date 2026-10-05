@@ -145,8 +145,8 @@ export function applyTalkLayout(stage, layout) {
     const p = layout?.panels?.[id];
     if (!p) {
       element.removeAttribute('style');
-      // Default grid panels participate in the same order without saving coordinates.
-      element.style.zIndex = canvasZIndex(1, index);
+      // Zero keeps legacy additions above stylesheet panels, including after materialization.
+      element.style.zIndex = canvasZIndex(0, index);
       continue;
     }
     element.style.setProperty('position', 'absolute');

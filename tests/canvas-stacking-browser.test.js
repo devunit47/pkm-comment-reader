@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, saveDesign, appReady, blockExternalFonts, closeEditor, uploadDesignImage } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, readDesign, waitForDesign, appReady, blockExternalFonts, closeEditor, editorTarget, uploadDesignImage } from './browser-support.js';
 
 const ids = ['header', 'chat', 'speech', 'actor', 'footer'];
 // Hit testing reports the actual browser paint order, including ancestor
@@ -80,10 +80,12 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
     await output.locator('[data-overlay-id="second"]').waitFor({ state: 'attached' });
     assert.deepEqual(await paintOrder(output.locator('#talk-stage')), expected, `${name}: reloaded output`);
   }
-  // A stylesheet layout still has the model's default panel z=1. Merely
-  // previewing it must not put a z=0 addition in front or materialize a layout.
+  // Legacy stylesheet panels paint below z=0 additions. Materialization must preserve that order.
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, '16:9': {
-    layout: null, overlays: { version: 1, items: [createOverlay('text', { id: 'behind', text: '背景の文字', x: 0, y: 0, w: 100, h: 100, z: 0 })], assets: {} },
+    layout: null, overlays: { version: 1, items: [
+      createOverlay('image', { id: 'zero', assetId: 'red', x: 0, y: 0, w: 100, h: 100, z: 0 }),
+      createOverlay('text', { id: 'one', text: '前面の文字', x: 0, y: 0, w: 100, h: 100, z: 1 }),
+    ], assets: { red: ref } },
   } } }));
   await page.goto(url); await appReady(page);
   await page.locator('[data-page="studio"]').click();
@@ -91,13 +93,33 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
   await editor.locator('#open-design-preview').click();
   await editor.locator('#apply-design:not(:disabled)').waitFor();
   const previewStage = page.frameLocator('#design-preview-frame').locator('#talk-stage');
-  await previewStage.locator('[data-overlay-id="behind"]').waitFor({ state: 'attached' });
-  assert.deepEqual(await paintOrder(previewStage, 'chat'), ['chat', 'behind'], 'default layout: canvas');
+  await previewStage.locator('[data-overlay-id="one"]').waitFor({ state: 'attached' });
+  const expectedDefault = ['one', 'zero', 'chat'];
+  const legacyOrder = async stage => (await paintOrder(stage, 'chat')).filter(id => expectedDefault.includes(id));
+  assert.deepEqual(await legacyOrder(previewStage), expectedDefault, 'default layout retains master paint order: canvas');
+  assert.deepEqual(await editor.locator('#target-select option').evaluateAll(options => options.map(o => o.value)), ['screen', ...ids, 'zero', 'one']);
+  assert.equal((await readDesign(url)).ratios['16:9'].layout, null, 'reading leaves the saved layout unchanged');
   await closeEditor(editor);
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
-  assert.deepEqual(await paintOrder(page.locator('#talk-stage'), 'chat'), ['chat', 'behind'], 'default layout: talk');
+  assert.deepEqual(await legacyOrder(page.locator('#talk-stage')), expectedDefault, 'default layout retains master paint order: talk');
   await output.goto(`${url}/output.html`); await output.reload();
-  await output.locator('[data-overlay-id="behind"]').waitFor({ state: 'attached' });
-  assert.deepEqual(await paintOrder(output.locator('#talk-stage'), 'chat'), ['chat', 'behind'], 'default layout: reloaded output');
+  await output.locator('[data-overlay-id="one"]').waitFor({ state: 'attached' });
+  assert.deepEqual(await legacyOrder(output.locator('#talk-stage')), expectedDefault, 'default layout retains master paint order: reloaded output');
+  await page.locator('#leave-talk').click(); await page.locator('[data-page="studio"]').click();
+  await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await editorTarget(editor, 'chat');
+  await editor.locator('#panel-x').fill('6'); await editor.locator('#panel-x').dispatchEvent('change');
+  assert.deepEqual(await legacyOrder(previewStage), expectedDefault, 'materialized draft keeps paint order');
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  const saved = await waitForDesign(url, design => !!design.ratios['16:9'].layout);
+  assert.deepEqual(ids.map(id => saved.ratios['16:9'].layout.panels[id].z), [0, 0, 0, 0, 0]);
+  await page.reload(); await appReady(page);
+  await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
+  assert.deepEqual(await legacyOrder(page.locator('#talk-stage')), expectedDefault, 'saved materialized layout: reloaded talk');
+  await output.reload(); await output.locator('[data-overlay-id="one"]').waitFor({ state: 'attached' });
+  assert.deepEqual(await legacyOrder(output.locator('#talk-stage')), expectedDefault, 'saved materialized layout: reloaded output');
+  await page.locator('#leave-talk').click(); await page.locator('[data-page="studio"]').click();
+  await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  assert.deepEqual(await legacyOrder(previewStage), expectedDefault, 'saved materialized layout: reopened canvas');
   assert.deepEqual(errors, []);
 });

@@ -14,7 +14,7 @@ test('rendered stacking keeps every tie below the next saved z', () => {
 
 test('canvas order combines panels and overlays, retaining the fixed tie order', () => {
   assert.deepEqual(keys(layout(), overlays()), ['overlay:picture', 'panel:header', 'panel:actor', 'panel:footer', 'panel:chat', 'panel:speech', 'overlay:chat']);
-  assert.deepEqual(keys(null, { items: [{ id: 'a', z: 1 }] }), ['panel:header', 'panel:chat', 'panel:speech', 'panel:actor', 'panel:footer', 'overlay:a']);
+  assert.deepEqual(keys(null, { items: [{ id: 'zero', z: 0 }, { id: 'one', z: 1 }] }), ['panel:header', 'panel:chat', 'panel:speech', 'panel:actor', 'panel:footer', 'overlay:zero', 'overlay:one']);
 });
 
 test('moving across tied targets changes only adjacent display order and does not mutate inputs', () => {
@@ -42,7 +42,7 @@ test('measured rectangles retain fractional coordinates relative to the rendered
   const result = layoutFromRects({ left: 10, top: 20, width: 1000, height: 500 }, rects);
   assert.ok(Math.abs(result.panels.chat.x - 2.05) < 1e-10);
   assert.ok(Math.abs(result.panels.chat.y - 4.1) < 1e-10);
-  assert.deepEqual({ ...result.panels.chat, x: 0, y: 0 }, { x: 0, y: 0, w: 20, h: 20, z: 1, hidden: false });
+  assert.deepEqual({ ...result.panels.chat, x: 0, y: 0 }, { x: 0, y: 0, w: 20, h: 20, z: 0, hidden: false });
   assert.equal(layoutFromRects({ width: 0, height: 500 }, rects), null);
   assert.equal(layoutFromRects({ left: 0, top: 0, width: 100, height: 100 }, {}), null);
 });
