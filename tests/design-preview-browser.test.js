@@ -86,7 +86,7 @@ async function fixture(t, { design, storage = {} } = {}) {
   }, storage);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto(url);
+  await page.goto(url); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
   return { page, url, errors, editor: page.locator(ROOT) };
 }
@@ -177,8 +177,9 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.equal(await frame.locator('.pokome-overlay img').count(), 2);
   assert.equal(await firstItem.evaluate(element => element.style.left), '12%');
   await editorTarget(editor, first);
-  const move = frame.locator(`.overlay-hit[data-overlay-id="${first}"] button[data-resize="false"]`);
-  const resize = frame.locator(`.overlay-hit[data-overlay-id="${first}"] button[data-resize="true"]`);
+  const move = editor.locator(`.canvas-target[data-target-id="${first}"]`);
+  const resize = editor.locator(`.canvas-target[data-target-id="${first}"] .canvas-handle[data-edge="se"]`);
+  await editor.locator('#canvas-snap').uncheck();
   await move.press('ArrowRight'); await move.press('Shift+ArrowDown');
   assert.equal(Number(await editor.locator('#overlay-x').inputValue()), 13);
   assert.equal(Number(await editor.locator('#overlay-h').inputValue()), 17);
@@ -240,17 +241,19 @@ browserTest('keyboard resizing keeps its position at canvas edges and minimum si
   const item = createOverlay('text', { id: 'edge', x: 90, y: 90, w: 10, h: 10 });
   const { page, editor, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: overlays([item]) } } }) });
   const frame = await openPreview(page);
-  const move = frame.locator('.overlay-hit button[data-resize="false"]');
-  const resize = frame.locator('.overlay-hit button[data-resize="true"]');
+  const move = editor.locator('.canvas-target[tabindex="0"]');
+  const resize = editor.locator('.canvas-target[tabindex="0"] .canvas-handle[data-edge="se"]');
   const geometry = async () => Object.fromEntries(await Promise.all(['x','y','w','h'].map(async key => [key, Number(await editor.locator(`#overlay-${key}`).inputValue())])));
-  for (let index = 0; index < 3; index++) { await move.press('Shift+ArrowRight'); await resize.press('ArrowDown'); }
+  await editorTarget(editor, 'edge');
+  await editor.locator('#canvas-snap').uncheck();
+  for (let index = 0; index < 3; index++) { await move.press('Shift+ArrowRight'); await resize.press('Shift+ArrowDown'); }
   assert.deepEqual(await geometry(), { x: 90, y: 90, w: 10, h: 10 });
-  await move.press('Shift+ArrowLeft'); await resize.press('ArrowUp');
+  await move.press('Shift+ArrowLeft'); await resize.press('Shift+ArrowUp');
   assert.deepEqual(await geometry(), { x: 90, y: 90, w: 9, h: 9 });
   await number(editor, 'x', 0); await number(editor, 'y', 0);
-  for (let index = 0; index < 10; index++) { await resize.press('ArrowLeft'); await move.press('Shift+ArrowUp'); }
+  for (let index = 0; index < 10; index++) { await resize.press('Shift+ArrowLeft'); await move.press('Shift+ArrowUp'); }
   assert.deepEqual(await geometry(), { x: 0, y: 0, w: 2, h: 2 });
-  await resize.press('ArrowRight'); await move.press('Shift+ArrowDown');
+  await resize.press('Shift+ArrowRight'); await move.press('Shift+ArrowDown');
   assert.deepEqual(await geometry(), { x: 0, y: 0, w: 3, h: 3 });
   await applyDesign(editor); await page.reload(); await appReady(page);
   assert.deepEqual((await savedOverlays(page)).items[0], { ...item, x: 0, y: 0, w: 3, h: 3 });
@@ -261,10 +264,11 @@ browserTest('pointer resizing clamps size without moving the anchor at both prev
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page);
   await editor.locator('#add-text').click();
+  await editor.locator('#canvas-snap').uncheck();
   for (const resolution of ['1280x720', '640x360']) {
     await editor.locator('#preview-width').selectOption(resolution);
     for (const [key, value] of Object.entries({ w: 10, h: 10, x: 80, y: 80 })) await number(editor, key, value);
-    const resize = frame.locator('.overlay-hit button[data-resize="true"]');
+    const resize = editor.locator('.canvas-target[tabindex="0"] .canvas-handle[data-edge="se"]');
     const handle = await resize.boundingBox(), canvas = await frame.locator('#talk-stage').boundingBox();
     const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
     await page.mouse.move(x, y); await page.mouse.down();
@@ -360,7 +364,7 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   frame = await openPreview(page); await countItems(page, 0);
   assert.equal(await frame.locator('#stage-title').textContent(), DEFAULT_STUDIO.title);
   await editor.locator('#add-text').click();
-  await frame.locator('.overlay-hit button').first().press('Escape');
+  await editor.locator('.canvas-target[tabindex="0"]').press('Escape');
   // A changed draft asks before it is discarded.
   await editor.locator('#editor-confirm-accept').click();
   assert.equal(await editor.locator('#design-dialog').isVisible(), false);
@@ -497,14 +501,17 @@ browserTest('latest image wins without waiting for superseded decode, and deleti
 browserTest('an image chosen for one ratio stays in that ratio when the preview switches before it finishes', async t => {
   const { page, editor, errors } = await fixture(t);
   await openPreview(page);
+  await editor.locator('#preview-ratio').selectOption('9:16');
   await editor.locator('#preview-width').selectOption('1080x1920');
   await beginImageGate(page);
   await editor.locator('#overlay-image').setInputFiles(imageFile('portrait.png'));
   await page.waitForFunction(() => window.__imageGate.entered === 1);
+  await editor.locator('#preview-ratio').selectOption('16:9');
   await editor.locator('#preview-width').selectOption('1920x1080');
   await releaseImageGate(page); await ready(page);
   await countItems(page, 0);
   assert.match(await editor.locator('#design-status').textContent(), /9:16/);
+  await editor.locator('#preview-ratio').selectOption('9:16');
   await editor.locator('#preview-width').selectOption('1080x1920');
   await countItems(page, 1);
   await applyDesign(editor);
@@ -553,29 +560,24 @@ browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS
   assert.deepEqual(errors, []);
 });
 
-browserTest('640x360 preview scroll keeps protected handles aligned with their actual overlay rectangles', async t => {
+browserTest('640x360 preview keeps external selection frames aligned with their overlay rectangles', async t => {
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page);
   await editor.locator('#add-text').click(); const id = await editor.locator('#target-select').inputValue();
   await number(editor, 'y', 60); await number(editor, 'h', 20);
   await editor.locator('#preview-width').selectOption('640x360');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerWidth === 640, ROOT);
-  const stage = frame.locator('#talk-stage');
-  assert.ok(await stage.evaluate(element => element.scrollHeight > element.clientHeight));
-  await stage.evaluate(element => { element.scrollTop = 60; });
-  await page.waitForFunction(([root, id]) => {
-    const doc = document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentDocument;
-    const stage = doc.querySelector('#talk-stage'), overlay = doc.querySelector(`.pokome-overlay[data-overlay-id="${id}"]`).getBoundingClientRect(), hit = doc.querySelector(`.overlay-hit[data-overlay-id="${id}"]`).getBoundingClientRect();
-    return stage.scrollTop > 0 && ['left','top','width','height'].every(key => Math.abs(overlay[key] - hit[key]) < 1);
-  }, [ROOT, id]);
-  const move = frame.locator(`.overlay-hit[data-overlay-id="${id}"] button[data-resize="false"]`);
+  const overlay = frame.locator('.pokome-overlay[data-overlay-id="' + id + '"]');
+  const move = editor.locator('.canvas-target[data-target-id="' + id + '"]');
+  const aligned = async () => {
+    const a = await overlay.boundingBox(), b = await move.boundingBox();
+    assert.ok(['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < 1), JSON.stringify({ a, b }));
+  };
+  await aligned();
+  await editor.locator('#canvas-snap').uncheck();
   await move.press('ArrowRight');
   assert.equal(Number(await editor.locator('#overlay-x').inputValue()), 6);
-  const rects = await frame.locator('body').evaluate((body, id) => {
-    const overlay = body.querySelector(`.pokome-overlay[data-overlay-id="${id}"]`).getBoundingClientRect(), hit = body.querySelector(`.overlay-hit[data-overlay-id="${id}"]`).getBoundingClientRect();
-    return { overlay: { x: overlay.x, y: overlay.y }, hit: { x: hit.x, y: hit.y } };
-  }, id);
-  assert.ok(Math.abs(rects.overlay.x - rects.hit.x) < 1 && Math.abs(rects.overlay.y - rects.hit.y) < 1);
+  await aligned();
   assert.equal(await savedOverlays(page), null);
   assert.deepEqual(errors, []);
 });
@@ -606,12 +608,14 @@ browserTest('actor placement drafts keep three ratios, remember theme values and
   assert.equal(await editor.locator('#actor-offsetX').inputValue(), '-12.3456');
   const expected = { '16:9': { ...defaultActorImage(), mode: 'custom', scale: 110, offsetX: -12.3456, alignY: 'bottom', overflow: true } };
   for (const [resolution, ratio, scale] of [['1080x1920', '9:16', 150], ['1440x1080', '4:3', 200]]) {
+    await editor.locator('#preview-ratio').selectOption(ratio);
     await editor.locator('#preview-width').selectOption(resolution);
     assert.match(await editor.locator('#draft-actor-heading').textContent(), new RegExp(ratio));
     assert.equal(await editor.locator('#actor-scale').inputValue(), '100');
     await editor.locator('#actor-mode').selectOption('custom'); await actorNumber(editor, 'scale', scale);
     expected[ratio] = { ...defaultActorImage(), mode: 'custom', scale };
   }
+  await editor.locator('#preview-ratio').selectOption('16:9');
   await editor.locator('#preview-width').selectOption('1280x720');
   assert.equal(await editor.locator('#actor-scale').inputValue(), '110');
   assert.deepEqual(await readDesign(url), before); assert.equal(puts.length, 0);
@@ -685,12 +689,13 @@ browserTest('image numeric, keyboard and pointer resizing use outside bounds and
   assert.deepEqual(await geometry(), { x: -98, y: -98, w: 100, h: 100 });
   await number(editor, 'x', 0); await number(editor, 'y', 8.5);
   assert.deepEqual(await geometry(), { x: 0, y: 8.5, w: 100, h: 100 });
-  const move = frame.locator('.overlay-hit button[data-resize="false"]');
+  const move = editor.locator('.canvas-target[tabindex="0"]');
+  await editor.locator('#canvas-snap').uncheck();
   await move.press('ArrowLeft'); await move.press('Shift+ArrowRight');
   assert.deepEqual(await geometry(), { x: -1, y: 8.5, w: 101, h: 100 });
   await number(editor, 'x', 0); await number(editor, 'y', 0);
   await number(editor, 'w', 30); await number(editor, 'h', 30);
-  const handle = await frame.locator('.overlay-hit button[data-resize="true"]').boundingBox();
+  const handle = await editor.locator('.canvas-target[tabindex="0"] .canvas-handle[data-edge="se"]').boundingBox();
   const canvas = await frame.locator('#talk-stage').boundingBox();
   const x = handle.x + handle.width / 2, y = handle.y + handle.height / 2;
   await page.mouse.move(x,y); await page.mouse.down(); await page.mouse.move(x + canvas.width * .8,y + canvas.height * .8); await page.mouse.up();

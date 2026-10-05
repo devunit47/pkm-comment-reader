@@ -200,6 +200,7 @@ browserTest('live, output and preview choose their own actor ratio and follow sa
   await page.locator('[data-page="studio"]').click(); await page.locator('#open-design-preview').click();
   const frame = page.frameLocator('#design-preview-frame');
   for (const [ratio, size] of cases) {
+    await page.locator('#preview-ratio').selectOption(ratio);
     await page.locator('#preview-width').selectOption(size);
     await page.waitForFunction(scale => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').contentDocument?.getElementById('talk-stage')?.style.getPropertyValue('--actor-image-size') === `${scale}%`, ratios[ratio].scale);
     assert.equal(await frame.locator('#talk-stage').evaluate(stage => stage.style.getPropertyValue('--actor-image-position')), `${ratios[ratio].alignX} ${ratios[ratio].alignY}`);
