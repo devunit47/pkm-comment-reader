@@ -66,6 +66,40 @@ test('different ports share settings, serialize distinct fields and notify every
   controller.abort();
 });
 
+test('every successful save sends SSE even when the normalized value is unchanged', { timeout: 5000 }, async t => {
+  const { base, save } = await serve(t);
+  const controller = new AbortController(); t.after(() => controller.abort());
+  const response = await fetch(`${base}/api/settings/events`, {
+    signal: AbortSignal.any([controller.signal, AbortSignal.timeout(2000)]),
+  });
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffered = '';
+  async function nextChange(revision) {
+    for (;;) {
+      const end = buffered.indexOf('\n\n');
+      if (end >= 0) {
+        const frame = buffered.slice(0, end); buffered = buffered.slice(end + 2);
+        if (frame.startsWith('event: change\n')) {
+          const event = JSON.parse(frame.split('\ndata: ')[1]);
+          if (event.revision === revision) return event;
+        }
+        continue;
+      }
+      const chunk = await reader.read().catch(error => {
+        throw new Error('Every successful save must send an SSE change event', { cause: error });
+      });
+      assert.equal(chunk.done, false);
+      buffered += decoder.decode(chunk.value);
+    }
+  }
+  const first = await (await save('historyLimit', 42)).json();
+  assert.deepEqual(await nextChange(first.revision), { revision: first.revision });
+  const repeated = await (await save('historyLimit', 42)).json();
+  assert.equal(repeated.revision, first.revision);
+  assert.deepEqual(await nextChange(repeated.revision), { revision: repeated.revision });
+  controller.abort();
+});
+
 async function startChild(t, script, args) {
   const child = spawn(process.execPath, ['--input-type=module', '-e', script, ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
   let errors = ''; child.stderr.setEncoding('utf8'); child.stderr.on('data', value => { errors += value; });

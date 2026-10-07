@@ -27,8 +27,8 @@ export function createSettingsStorage(directory = DEFAULT_DATA_DIRECTORY) {
   };
   const defaults = () => ({ settings: normalizeSettings({}), revision: 'default' });
   const unreadable = revision => ({ settings: normalizeSettings({}), revision, writable: false, warning });
-  const notify = revision => {
-    if (revision === shared.revision) return;
+  const notify = (revision, saved = false) => {
+    if (!saved && revision === shared.revision) return;
     shared.revision = revision;
     for (const broadcast of shared.listeners) broadcast(revision);
   };
@@ -141,7 +141,7 @@ export function createSettingsStorage(directory = DEFAULT_DATA_DIRECTORY) {
         await atomicWrite(path, content, root, check);
         const after = await load();
         if (after.writable === false) throw Object.assign(failure(422, after.warning), { writable: false });
-        notify(after.revision); return after;
+        notify(after.revision, true); return after;
       } finally { await release(); }
     });
   }
