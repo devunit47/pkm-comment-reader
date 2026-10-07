@@ -255,3 +255,10 @@ body.talk-mode:has(#talk-stage[data-frame-ratio]),body.talk-mode:has(#talk-stage
 }
 
 #settings-warning{padding:12px 16px;overflow-wrap:anywhere}
+
+/* Match Twitch sizing without stretching text-only rows. */
+@layer pokome-settings{#talk-stage .pokome-comment__emote{display:inline-block !important;width:auto !important;height:2em !important;max-width:100% !important;object-fit:contain !important;vertical-align:middle !important;margin-block:-.5em !important}
+/* Only rows containing images need room for their full paint height. */
+#talk-stage .pokome-comment__emote-piece{display:inline-flex !important;align-items:center !important;height:2em !important;vertical-align:middle !important;max-width:100% !important}}
+
+.pokome-comment__badge{display:inline-block;font-size:.8em;margin-inline-end:.25em;vertical-align:baseline}

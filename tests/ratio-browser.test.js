@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
@@ -25,8 +25,7 @@ async function fixture(t, viewport = { width: 1440, height: 1000 }) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   const context = await browser.newContext({ viewport });
-  await context.route('https://fonts.googleapis.com/**', route => route.abort());
-  await context.route('https://fonts.gstatic.com/**', route => route.abort());
+  await blockExternalFonts(context);
   const errors = [];
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const page = await context.newPage();

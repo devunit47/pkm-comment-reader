@@ -1,3 +1,4 @@
+import { normalizeCommentContent } from '../shared/comment-model.js';
 import { canvasZIndex } from '../shared/canvas-model.js';
 import { talkSpeechStyles } from '../shared/workspace-model.js';
 import { THEME_ACCENTS } from '../shared/studio.js';
@@ -109,14 +110,60 @@ export function selectOutputComments(messages, { maxVisible = 0, holdSeconds = 0
 }
 
 // The live stage and stream output share cards so themes apply identically.
-export function renderStageComments(list, messages) {
+const ROLE_SYMBOLS = Object.freeze({ broadcaster: ['♛', '配信者'], moderator: ['⚑', 'モデレーター'], vip: ['◆', 'VIP'], subscriber: ['★', 'サブスク'] });
+
+function serviceNameColor(color, studio) {
+  const background = ['light', 'dark'].includes(studio.commentItemBackground) ? studio.commentItemBackground : studio.commentPanel;
+  if (!color || !['light', 'dark'].includes(background)) return color;
+  const rgb = color.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+  const luminance = channels => channels.map(channel => channel / 255).map(channel => channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4)
+    .reduce((sum, channel, index) => sum + channel * [.2126, .7152, .0722][index], 0);
+  const readable = channels => background === 'light' ? 1.05 / (luminance(channels) + .05) >= 3 : (luminance(channels) + .05) / .05 >= 3;
+  if (readable(rgb)) return color;
+  const target = background === 'light' ? 0 : 255;
+  const mix = amount => rgb.map(channel => Math.round(channel + (target - channel) * amount));
+  // Find the smallest brightness change that remains readable after rounding.
+  let low = 0, high = 1;
+  for (let i = 0; i < 16; i++) { const middle = (low + high) / 2; if (readable(mix(middle))) high = middle; else low = middle; }
+  return '#' + mix(high).map(channel => channel.toString(16).padStart(2, '0')).join('');
+}
+
+export function renderStageComments(list, messages, studio = {}) {
   const doc = list.ownerDocument;
   list.replaceChildren(...messages.map(message => {
+    const content = normalizeCommentContent(message);
     const card = doc.createElement('div');
     card.className = 'stage-comment pokome-comment';
-    card.title = `${message.user}: ${message.text}`;
+    card.title = `${message.user}: ${content.text}`;
     const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = message.user;
-    const body = doc.createElement('p'); body.className = 'pokome-comment__body'; body.textContent = message.text;
+    if (studio.commentBadges && content.badges.length) {
+      author.textContent = '';
+      for (const role of content.badges) {
+        const [symbol, label] = ROLE_SYMBOLS[role];
+        const badge = doc.createElement('span'); badge.className = 'pokome-comment__badge'; badge.textContent = symbol;
+        badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); badge.setAttribute('title', label);
+        author.append(badge);
+      }
+      const name = doc.createElement('span'); name.textContent = message.user; author.append(name);
+    }
+    if (studio.commentAuthorColor === 'service' && content.color) author.style.setProperty('color', serviceNameColor(content.color, studio), 'important');
+    const body = doc.createElement('p'); body.className = 'pokome-comment__body';
+    if (studio.commentEmotes === 'text') body.textContent = content.text;
+    else for (const part of content.parts) {
+      const piece = doc.createElement('span');
+      if (part.type === 'text') piece.textContent = part.text;
+      else {
+        piece.className = 'pokome-comment__emote-piece';
+        const image = doc.createElement('img'); image.className = 'pokome-comment__emote';
+        image.setAttribute('alt', part.name); image.setAttribute('title', part.name);
+        // Intrinsic widths can reflow cards after decoding.
+        image.onload = () => markClippedComments(list);
+        image.onerror = () => { piece.className = ''; piece.textContent = part.name; markClippedComments(list); };
+        image.setAttribute('src', `https://static-cdn.jtvnw.net/emoticons/v2/${part.id}/default/dark/3.0`);
+        piece.append(image);
+      }
+      body.append(piece);
+    }
     card.append(author, body);
     return card;
   }));
@@ -178,8 +225,9 @@ export function renderCommentLook(stage, studio) {
   set('--stage-comment-max-lines', studio.commentMaxLines > 0 ? String(studio.commentMaxLines) : null);
   flag('commentText', studio.commentTextColor ? '' : null);
   set('--stage-comment-text', studio.commentTextColor);
-  flag('commentAuthor', studio.commentAuthorColor ? '' : null);
-  set('--stage-comment-author', studio.commentAuthorColor);
+  const fixedAuthor = studio.commentAuthorColor !== 'service' ? studio.commentAuthorColor : '';
+  flag('commentAuthor', fixedAuthor ? '' : null);
+  set('--stage-comment-author', fixedAuthor);
   flag('commentOutline', studio.commentOutline === 'none' ? null : studio.commentOutline);
   set('--stage-comment-outline', studio.commentOutline === 'none' ? null : studio.commentOutlineColor);
   flag('commentLineHeight', studio.commentLineHeight === null ? null : '');

@@ -1,3 +1,4 @@
+import { normalizeCommentContent } from '../shared/comment-model.js';
 import { normalizeAutoSpeech } from '../shared/speech-options.js';
 export { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions } from '../shared/speech-options.js';
 
@@ -12,8 +13,9 @@ export function readSavedAutoSpeech(settings) {
 }
 
 const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
-export function prepareSpeechText(text, options, platform) {
+export function prepareSpeechText(text, options, platform, parts) {
   if (typeof text !== 'string') return '';
+  if (platform === 'twitch' && parts) text = normalizeCommentContent({ text, parts }).parts.map(part => part.type === 'text' ? part.text : ' ').join('');
   if (platform === 'kick') text = text.replace(/\[emote:[^\]\r\n]*\]/giu, ' ');
   if (options.skipCommands && /^[!/]/u.test(text.trimStart())) return '';
   if (options.skipUrls) {

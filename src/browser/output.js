@@ -58,7 +58,7 @@ function renderChat() {
   clearTimeout(expiryTimer);
   const now = Date.now();
   const selected = selectOutputComments(view.messages, studio, now);
-  renderStageComments(list, selected);
+  renderStageComments(list, selected, studio);
   alignNewest();
   if (studio.holdSeconds && selected.length) {
     const next = Math.min(...selected.map(message => message.receivedAt + studio.holdSeconds * 1000));
@@ -94,7 +94,7 @@ renderSpeech();
 
 if (typeof BroadcastChannel === 'function') {
   const channel = new BroadcastChannel(OUTPUT_CHANNEL);
-  const presence = type => channel.postMessage({ v: 1, type, id, role: 'output', width: innerWidth, height: innerHeight, background: options.background });
+  const presence = type => channel.postMessage({ v: 2, type, id, role: 'output', width: innerWidth, height: innerHeight, background: options.background });
   channel.onmessage = event => {
     const result = applyOutputMessage(view, normalizeOutputMessage(event.data));
     if (result.resync) presence('hello');

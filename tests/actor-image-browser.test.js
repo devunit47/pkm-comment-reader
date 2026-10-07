@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, viewport = { width: 1280, height: 720 }) {
@@ -21,8 +21,7 @@ async function fixture(t, viewport = { width: 1280, height: 720 }) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   const context = await browser.newContext({ viewport });
-  await context.route('https://fonts.googleapis.com/**', route => route.abort());
-  await context.route('https://fonts.gstatic.com/**', route => route.abort());
+  await blockExternalFonts(context);
   const errors = [];
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const page = await context.newPage();

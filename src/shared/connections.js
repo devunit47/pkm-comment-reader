@@ -1,3 +1,4 @@
+import { normalizeNameColor, normalizeBadges, parseTwitchEmotes } from './comment-model.js';
 export function connectionPresentation(status) {
   if (status === '接続中') return { kind: 'connected', label: '接続済み', detail: 'コメント受信待機中' };
   if (status === '接続準備中') return { kind: 'connecting', label: '接続準備中', detail: '接続完了を待っています' };
@@ -32,7 +33,8 @@ export function parseTwitchMessage(line, channel) {
     .map(tag => { const index = tag.indexOf('='); return [tag.slice(0, index), tag.slice(index + 1)]; }));
   const displayName = (tags['display-name'] || match[2]).replace(/\\([s:rn\\])/g,
     (_, value) => ({ s: ' ', ':': ';', r: '\r', n: '\n', '\\': '\\' })[value]);
-  return { user: displayName, login: match[2], text: match[4] };
+  return { user: displayName, login: match[2], text: match[4], color: normalizeNameColor(tags.color),
+    badges: normalizeBadges((tags.badges || '').split(',').map(badge => badge.split('/')[0])), parts: parseTwitchEmotes(match[4], tags.emotes) };
 }
 
 // Each instance owns one service's socket, lookup, timers and callbacks.

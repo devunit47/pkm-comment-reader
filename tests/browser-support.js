@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { after } from 'node:test';
 
@@ -97,11 +97,15 @@ export async function waitForDesign(base, predicate, timeout = 8000) {
 // recovery button is created last, so its presence means the page is ready.
 export const appReady = page => page.locator('#appearance-recovery').waitFor({ state: 'attached' });
 
+const emotePixels = await readFile(new URL('fixtures/presets/actor.png', import.meta.url));
+
 // The app links Google Fonts; a slow external stylesheet delays its scripts.
 // Tests block it so start-up never depends on the network.
 export async function blockExternalFonts(page) {
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
+  // Preview samples use Twitch emotes; no test should depend on the CDN.
+  await page.route('https://static-cdn.jtvnw.net/**', route => route.fulfill({ contentType: 'image/png', body: emotePixels }));
 }
 
 // The design editor shows one target's settings at a time. Narrow docks list
