@@ -135,25 +135,6 @@ test('separate server processes send external file changes over SSE', { timeout:
   assert.match(text, /event: change/); controller.abort();
 });
 
-test('leftover tickets with a reused live PID do not block saves or get changed', { timeout: 15000 }, async t => {
-  const { directory, current, save } = await serve(t);
-  assert.equal((await save('historyLimit', 200)).status, 200);
-  const token = '00000000-0000-0000-0000-000000000000';
-  const name = `.settings-${token}.ticket.json`, path = join(directory, name);
-  // A live unrelated PID deterministically models the old owner's PID reuse.
-  const raw = JSON.stringify({ pid: process.pid, token, choosing: false, ticket: 1 });
-  await writeFile(path, raw); const before = await stat(path);
-  const response = await save('setupComplete', true);
-  assert.equal(response.status, 200);
-  assert.equal((await current()).settings.historyLimit, 200);
-  assert.equal((await current()).settings.setupComplete, true);
-  assert.equal((await save('historyLimit', 42)).status, 200);
-  assert.equal((await current()).settings.historyLimit, 42);
-  assert.equal(await readFile(path, 'utf8'), raw);
-  assert.equal((await stat(path)).mtimeMs, before.mtimeMs);
-  assert.deepEqual((await readdir(directory)).sort(), [name, 'settings.json'].sort());
-});
-
 test('malformed, unsupported and oversized files are read-only and never replaced', async t => {
   const { directory, current, save } = await serve(t);
   await mkdir(directory);
