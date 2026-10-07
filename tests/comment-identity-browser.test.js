@@ -118,7 +118,8 @@ browserTest('identity rendering preserves line limits and clipping across six pr
     await page.emulateMedia({ colorScheme: scheme }); await output.emulateMedia({ colorScheme: scheme });
     const studio = { ...applyCommentPreset(normalizeStudio({ theme }), preset), commentAuthorColor: 'service', commentBadges: true, commentEmotes: 'image' };
     for (const [ratio, size, width, height] of [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]]) {
-      const label = `${scheme}/${theme}/${preset}/${ratio}`;      await output.setViewportSize({ width, height });
+      const label = `${scheme}/${theme}/${preset}/${ratio}`;
+      await output.setViewportSize({ width, height });
       await saveDesign(base, design => ({ ...design, outputSize: size, studio }));
       for (const target of [page, output]) await target.waitForFunction(({ theme, ratio, style, panel }) => {
         const stage = document.querySelector('#talk-stage');
@@ -130,7 +131,12 @@ browserTest('identity rendering preserves line limits and clipping across six pr
       const preview = page.frameLocator('#design-preview-frame');
       await preview.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
       const results = [];
-      for (const [owner, list] of [[page, page.locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {        await owner.bringToFront();        await owner.waitForTimeout(50);        results.push(await inspect(list, studio.commentMaxLines));      }      for (const result of results) {
+      for (const [owner, list] of [[page, page.locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {
+        await owner.bringToFront();
+        await owner.waitForTimeout(50);
+        results.push(await inspect(list, studio.commentMaxLines));
+      }
+      for (const result of results) {
         assert.ok(result.viewportHeight > 0, `${label}: visible viewport`);
         assert.deepEqual(result.overflow, [], `${label}: overflow/line clamp`);
         assert.deepEqual(result.clipping, [], `${label}: clipping`);
@@ -140,9 +146,24 @@ browserTest('identity rendering preserves line limits and clipping across six pr
       assert.ok(results.every(result => result.color === results[0].color), `${label}: same name color`);
       await page.bringToFront();
       await closeEditor(page);
-      combinations++;    }
+      combinations++;
+    }
   }
   assert.equal(combinations, 144);
   t.diagnostic('Edge: 144 preset/theme/scheme/ratio combinations, each compared across live, preview and output');
   assert.deepEqual(errors, []);
+});
+
+browserTest('one-comment previews retain role and emote samples in both newest positions', async t => {
+  const { page } = await fixture(t, { maxVisible: 1, commentBadges: true, commentAuthorColor: 'service' });
+  await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
+  const frame = page.frameLocator('#design-preview-frame');
+  for (const position of ['bottom', 'top']) {
+    await page.locator('#draft-newestPosition').selectOption(position);
+    await frame.locator('.stage-comment').waitFor({ state: 'attached' });
+    assert.equal(await frame.locator('.stage-comment').count(), 1);
+    assert.equal(await frame.locator('img.pokome-comment__emote').count(), 1, `${position}: emote sample`);
+    assert.equal(await frame.locator('.pokome-comment__badge').count(), 4, `${position}: role samples`);
+  }
 });

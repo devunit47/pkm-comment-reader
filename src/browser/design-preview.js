@@ -19,10 +19,10 @@ const SAMPLE_COMMENTS = Object.freeze([
   'コメント欄の幅で折り返しが変わります。', '背景が明るい場面と暗い場面で確認しましょう。',
   '表示件数は履歴の保持件数とは別の設定です。', 'これが最後に届いたサンプルコメントです。',
 ].map((text, index) => {
-  if (index === 0) text += ' 😀 Kappa';
+  if ((index === 0 || index === 9)) text += ' 😀 Kappa';
   const start = Array.from(text).length - 5;
   return { id: `sample-${index + 1}`, user: `サンプル${String(index + 1).padStart(2, '0')}`, receivedAt: index + 1,
-    ...normalizeCommentContent({ text, badges: index === 0 ? ['broadcaster', 'moderator', 'vip', 'subscriber'] : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, index === 0 ? `25:${start}-${start + 4}` : '') }) };
+    ...normalizeCommentContent({ text, badges: (index === 0 || index === 9) ? ['broadcaster', 'moderator', 'vip', 'subscriber'] : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, (index === 0 || index === 9) ? `25:${start}-${start + 4}` : '') }) };
 }));
 const size = value => value.split('x').map(Number);
 // Panels and additions share the same canvas controls.
