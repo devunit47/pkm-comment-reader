@@ -1,15 +1,13 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { watchFile, unwatchFile } from 'node:fs';
-import { lstat, readdir, unlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { safeDirectory } from './local-customization.js';
-import { atomicWrite, createEventStream, failure, guardDirectory, readAllowed, readBody, readStable, retryTransient, writeAllowed } from './storage-utils.js';
+import { atomicWrite, createEventStream, failure, guardDirectory, readAllowed, readBody, readStable, writeAllowed } from './storage-utils.js';
 import { MAX_SETTINGS_BYTES, SETTINGS_FIELDS, normalizeSettings, settingsDocument } from '../shared/settings-model.js';
 
 export const DEFAULT_DATA_DIRECTORY = fileURLToPath(new URL('../../data/', import.meta.url));
 const directories = new Map();
-const TICKET_NAME = /^\.settings-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.ticket\.json$/;
 const warning = '設定ファイルを読めません。標準の設定を使っています。原本を保護するため保存を止めています。アプリを終了し、data/settings.jsonを別の場所へ退避してから、ファイルを修正するか対応する版で開き直してください。';
 
 export function createSettingsStorage(directory = DEFAULT_DATA_DIRECTORY) {
@@ -50,99 +48,20 @@ export function createSettingsStorage(directory = DEFAULT_DATA_DIRECTORY) {
     }
   }
 
-  async function lock() {
-    const check = await guardDirectory(dirname(root), root), token = randomUUID();
-    const ticketPath = join(root, `.settings-${token}.ticket.json`);
-    const invalid = () => failure(409, '保存用のロックを確認できません。アプリを終了してdataフォルダーを確認してください。');
-    const discard = async (path, expected) => {
-      await check();
-      const actual = await lstat(path).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
-      if (!actual) return;
-      if (!actual.isFile() || actual.isSymbolicLink() || actual.dev !== expected.dev || actual.ino !== expected.ino) return;
-      await retryTransient(async () => {
-        await check();
-        try { await unlink(path); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      });
-    };
-    const running = pid => {
-      try { process.kill(pid, 0); return true; }
-      catch (error) { if (error.code === 'ESRCH') return false; if (error.code === 'EPERM') return true; throw error; }
-    };
-    async function participants(cleanDead) {
-      await check();
-      const entries = await readdir(root, { withFileTypes: true }), result = [];
-      await check();
-      for (const entry of entries) {
-        if (!entry.name.startsWith('.settings-') || !entry.name.endsWith('.ticket.json')) continue;
-        const match = TICKET_NAME.exec(entry.name);
-        if (!match || !entry.isFile() || entry.isSymbolicLink()) throw invalid();
-        const path = join(root, entry.name);
-        try {
-          const info = await lstat(path), owner = JSON.parse((await readStable(path, 1024)).bytes.toString('utf8'));
-          await check();
-          if (!owner || owner.token !== match[1] || !Number.isSafeInteger(owner.pid) || owner.pid < 1 ||
-              typeof owner.choosing !== 'boolean' || !Number.isSafeInteger(owner.ticket) ||
-              (owner.choosing ? owner.ticket !== 0 : owner.ticket < 1)) throw invalid();
-          if (running(owner.pid)) result.push(owner);
-          // Unique names are never reused, so simultaneous recovery can only
-          // remove the dead participant's file, never a new owner's lock.
-          else if (cleanDead) await discard(path, info);
-        } catch (error) {
-          if (error.code === 'ENOENT') continue;
-          if (error.code === 'EDIRECTORYCHANGED') throw error;
-          throw invalid();
-        }
-      }
-      return result;
-    }
-    async function release() {
-      await check();
-      let info, owner;
-      try { info = await lstat(ticketPath); owner = JSON.parse((await readStable(ticketPath, 1024)).bytes.toString('utf8')); }
-      catch (error) { if (error.code === 'ENOENT') return; throw error; }
-      if (owner.token === token && owner.pid === process.pid) await discard(ticketPath, info);
-    }
-    let published = false;
-    try {
-      // Publish the doorway before reading others. A participant arriving
-      // after the wait snapshot must then choose a larger ticket.
-      await atomicWrite(ticketPath, JSON.stringify({ pid: process.pid, token, choosing: true, ticket: 0 }), root, check);
-      published = true;
-      const maximum = (await participants(false)).reduce((max, owner) => Math.max(max, owner.ticket), 0);
-      if (maximum >= Number.MAX_SAFE_INTEGER) throw invalid();
-      const ticket = maximum + 1;
-      await atomicWrite(ticketPath, JSON.stringify({ pid: process.pid, token, choosing: false, ticket }), root, check);
-      for (let attempt = 0; attempt < 100; attempt++) {
-        // Read a fresh list after choosing, and compare UUIDs by ASCII order
-        // so equal tickets have the same ordering in every process.
-        const others = (await participants(true)).filter(owner => owner.token !== token);
-        if (!others.some(owner => owner.choosing || owner.ticket < ticket || (owner.ticket === ticket && owner.token < token))) return release;
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-      throw failure(409, 'ほかの画面が設定を保存中です。少し待ってからやり直してください。');
-    } catch (error) {
-      if (published) await release().catch(() => {});
-      throw error;
-    }
-  }
-
   async function save(field, value) {
     if (!SETTINGS_FIELDS.includes(field)) throw failure(404, '設定項目が見つかりません。');
     return exclusive(async () => {
       if ((await load()).writable === false) throw Object.assign(failure(422, warning), { writable: false });
       await safeDirectory(root, true);
-      const release = await lock();
-      try {
-        const before = await load();
-        if (before.writable === false) throw Object.assign(failure(422, before.warning), { writable: false });
-        const document = settingsDocument({ ...before.settings, [field]: value }), content = JSON.stringify(document, null, 2);
-        if (Buffer.byteLength(content) > MAX_SETTINGS_BYTES) throw failure(413, '設定のデータが大きすぎます。ユーザー管理の件数を減らしてください。');
-        const check = await guardDirectory(dirname(root), root);
-        await atomicWrite(path, content, root, check);
-        const after = await load();
-        if (after.writable === false) throw Object.assign(failure(422, after.warning), { writable: false });
-        notify(after.revision, true); return after;
-      } finally { await release(); }
+      const before = await load();
+      if (before.writable === false) throw Object.assign(failure(422, before.warning), { writable: false });
+      const document = settingsDocument({ ...before.settings, [field]: value }), content = JSON.stringify(document, null, 2);
+      if (Buffer.byteLength(content) > MAX_SETTINGS_BYTES) throw failure(413, '設定のデータが大きすぎます。ユーザー管理の件数を減らしてください。');
+      const check = await guardDirectory(dirname(root), root);
+      await atomicWrite(path, content, root, check);
+      const after = await load();
+      if (after.writable === false) throw Object.assign(failure(422, after.warning), { writable: false });
+      notify(after.revision, true); return after;
     });
   }
 
