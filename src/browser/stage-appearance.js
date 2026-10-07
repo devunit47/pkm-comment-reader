@@ -153,10 +153,13 @@ export function renderStageComments(list, messages, studio = {}) {
       const piece = doc.createElement('span');
       if (part.type === 'text') piece.textContent = part.text;
       else {
+        piece.className = 'pokome-comment__emote-piece';
         const image = doc.createElement('img'); image.className = 'pokome-comment__emote';
         image.setAttribute('alt', part.name); image.setAttribute('title', part.name);
-        image.onerror = () => { piece.textContent = part.name; markClippedComments(list); };
-        image.setAttribute('src', `https://static-cdn.jtvnw.net/emoticons/v2/${part.id}/default/dark/2.0`);
+        // Intrinsic widths can reflow cards after decoding.
+        image.onload = () => markClippedComments(list);
+        image.onerror = () => { piece.className = ''; piece.textContent = part.name; markClippedComments(list); };
+        image.setAttribute('src', `https://static-cdn.jtvnw.net/emoticons/v2/${part.id}/default/dark/3.0`);
         piece.append(image);
       }
       body.append(piece);

@@ -355,7 +355,7 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   await editor.locator('#add-text').click();
   assert.deepEqual(await appearance(page), before);
   assert.ok(previewRequests.length > 0, 'image samples request their emotes');
-  assert.ok(previewRequests.every(url => /^https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[A-Za-z0-9_]+\/default\/dark\/2\.0$/.test(url)), 'the script-free iframe requests only allowed emote images');
+  assert.ok(previewRequests.every(url => /^https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[A-Za-z0-9_]+\/default\/dark\/3\.0$/.test(url)), 'the script-free iframe requests only allowed emote images');
   await closeEditor(editor);
   assert.deepEqual(await appearance(page), before);
   frame = await openPreview(page); await countItems(page, 0);

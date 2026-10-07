@@ -26,7 +26,7 @@ test('emotes use an ID-built URL with a textual fallback, and text mode creates 
   assert.equal(card.children[0].textContent, '<b>viewer</b>');
   const image = descendants(card).find(element => element.tag === 'img');
   assert.ok(image);
-  assert.equal(image.attributes.src, 'https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/2.0');
+  assert.equal(image.attributes.src, 'https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/3.0');
   assert.equal(image.attributes.alt, 'Kappa');
   assert.equal(image.attributes.title, 'Kappa');
   image.onerror();
