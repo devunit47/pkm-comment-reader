@@ -13,15 +13,18 @@ export function validChannel(platform, channel) {
     : platform === 'kick' && /^[a-z0-9_-]{1,50}$/i.test(channel));
 }
 
-export function readSavedConnections(storage) {
+export function normalizeConnections(saved) {
   const result = { twitch: '', kick: '' };
-  try {
-    const saved = JSON.parse(storage.getItem('pokome-connections') || '{}');
-    for (const platform of Object.keys(result)) {
-      if (validChannel(platform, saved?.[platform])) result[platform] = saved[platform].toLowerCase();
-    }
-  } catch { /* Invalid or unavailable storage leaves the fields empty. */ }
+  for (const platform of Object.keys(result)) {
+    if (validChannel(platform, saved?.[platform])) result[platform] = saved[platform].toLowerCase();
+  }
   return result;
+}
+
+export function readSavedConnections(storage) {
+  try {
+    return normalizeConnections(JSON.parse(storage.getItem('pokome-connections') || '{}'));
+  } catch { return normalizeConnections(); }
 }
 
 export function parseTwitchMessage(line, channel) {

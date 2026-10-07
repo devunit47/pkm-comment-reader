@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory } from './browser-support.js';
 
 const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
 const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
@@ -54,7 +54,7 @@ async function serve(t, server) {
 }
 async function local(t) {
   const state = { speakers: voicevoxSpeakers(), fail: false };
-  const base = await serve(t, createServer({ customizationDirectory: await temporary(t, 'pokome-credit-'), fetchImpl: async url => {
+  const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await temporary(t, 'pokome-credit-'), fetchImpl: async url => {
     if (url.endsWith('/speakers')) {
       if (state.fail) return new Response('', { status: 503 });
       return Response.json(url.includes(':50021/') ? state.speakers : [{ speakerName: 'つくよみちゃん', speakerUuid: uuid, styles: [{ styleId: 0, styleName: 'れいせい' }] }]);

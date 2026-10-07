@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultDesign } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, appReady, blockExternalFonts, uploadDesignImage, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, appReady, blockExternalFonts, uploadDesignImage, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory } from './browser-support.js';
 
 // The full-screen editor: one target's settings at a time, a single draft for
 // every ratio, and nothing written before Apply.
@@ -16,7 +16,7 @@ const ROOT = '#design-preview-editor';
 async function fixture(t, { design, viewport = { width: 1440, height: 900 } } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-editor-browser-'));
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
     await browser.close();
     if (server.listening) await new Promise(resolve => server.close(resolve));

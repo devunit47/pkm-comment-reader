@@ -100,13 +100,15 @@ export function readHistoryLimit(storage) {
   catch { return DEFAULT_HISTORY_LIMIT; }
 }
 
-export function readSavedVoices(storage) {
+export function normalizeVoices(saved) {
   const result = { twitch: '', kick: '' };
-  try {
-    const saved = JSON.parse(storage?.getItem('pokome-voices') || '{}');
     for (const platform of Object.keys(result)) {
       if (typeof saved?.[platform] === 'string' && saved[platform].length <= 500) result[platform] = saved[platform];
     }
-  } catch { /* Use the system voice when storage is unavailable. */ }
   return result;
+}
+
+export function readSavedVoices(storage) {
+  try { return normalizeVoices(JSON.parse(storage?.getItem('pokome-voices') || '{}')); }
+  catch { return normalizeVoices(); }
 }

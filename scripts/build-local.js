@@ -4,12 +4,12 @@ import { mkdir, readdir, copyFile, writeFile, readFile, unlink } from 'node:fs/p
 import { pathToFileURL } from 'node:url';
 
 // The asset-only phase is also testable on non-Windows hosts. Never copy user files
-// from the source customization directory into the distributable.
+// from the source customization or data directory into the distributable.
 export async function stageLocalFiles(destination = new URL('../dist-local/', import.meta.url)) {
   const files = LOCAL_FILES;
   const extra = ['node.exe', 'node-LICENSE.txt', 'Start.cmd', 'Start.ps1', 'Readme.txt'];
   const directories = ['src', 'src/browser', 'src/server', 'src/shared'];
-  const allowed = [...files, ...extra, ...directories, 'src/browser/kick.js', 'customization'];
+  const allowed = [...files, ...extra, ...directories, 'src/browser/kick.js', 'customization', 'data'];
   await mkdir(destination, { recursive: true });
   for (const directory of ['', ...directories]) {
     const prefix = directory ? directory + '/' : '';
@@ -19,11 +19,12 @@ export async function stageLocalFiles(destination = new URL('../dist-local/', im
     if (entries.some(entry => {
       const path = prefix + entry.name;
       return !allowed.includes(path) || entry.isSymbolicLink() ||
-        entry.isDirectory() !== [...directories, 'customization'].includes(path);
+        entry.isDirectory() !== [...directories, 'customization', 'data'].includes(path);
     })) throw new Error('空の出力先を使用してください。');
   }
   // Preserve this destination's user folder during rebuilds, but never follow links.
   await ensureCustomizationDirectories(new URL('customization/', destination));
+  await safeDirectory(new URL('data/', destination), true);
   for (const directory of directories) await safeDirectory(new URL(directory + '/', destination), true);
   for (const file of files) await copyFile(new URL('../' + file, import.meta.url), new URL(file, destination));
   await unlink(new URL('src/browser/kick.js', destination)).catch(error => { if (error.code !== 'ENOENT') throw error; });
@@ -70,7 +71,7 @@ Write-Host ('ブラウザで ' + $readerBrowserUrl + ' を開きました。')
 Write-Host 'このウィンドウを閉じてもアプリは動作します。'
 Read-Host 'Enterでこのウィンドウを閉じる' | Out-Null
 `, 'utf8');
-  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n\r\nカスタマイズ素材は、このアプリと同じ場所のcustomization/stylesにCSS（UTF-8・1,000,000バイト以下）、customization/imagesにPNG・JPEG・WebP・GIF（20 MiB・1600万画素以下）を入れてください。直下の通常ファイルのみ対応します。\r\n配信デザインページまたは雑談画面の「デザインを編集」を開き、CSSは「画面全体」の「詳細：テーマCSS」、画像は「立ち絵」「読み上げ」または「画像を追加」の「customizationフォルダーから選ぶ」で一覧を更新して選びます。素材は下書きに読み込み、エディタの「適用」で見た目をまとめて保存します。読み込み中は適用できません。ファイル編集後も同じ手順で読み込み直してください。画像は選んだ時点でcustomization/current/imagesにコピーされ、下書きには参照を入れます。適用済みの見た目は元ファイルを削除しても保持されます。新しい版へ更新するときは、customizationフォルダーごとコピーしてください。\r\n標準デザインのstyle.css・src/shared/theme.js・src/shared/studio.js・speech-background.svgはcustomizationの外にあります。変更せず、独自の素材だけをcustomizationに置いてください。\r\nソース側のcustomization内の素材は配布用フォルダーへコピーしません。再ビルド時は出力先に既にあるcustomizationの内容を保持します。出力先を他の人へ渡す前に、個人の素材が残っていないか確認してください。\r\n出力の大きさはエディタの「画面全体」で変更します。配信出力欄は適用中の大きさを表示し、「エディタで変更」から開けます。ホームは標準の配置を使います。設定バックアップには接続先・ユーザー名が含まれるため、共有先にご注意ください。見た目と画像はバックアップに入らず、customization/currentにあります。旧バックアップからも接続先・音声・ユーザー管理・履歴件数だけを復元し、古い見た目・画像・配置は取り込みません。\r\n', 'utf8');
+  await writeFile(new URL('Readme.txt', destination), 'Start.cmdをダブルクリックして起動します（http://localhost:5174/）。Node.jsのインストールは不要です。\r\n音声ソフトは別途インストールして起動してください。\r\nブラウザを閉じてもローカルサーバーは動作します。PCの終了時に停止します。\r\n\r\nカスタマイズ素材は、このアプリと同じ場所のcustomization/stylesにCSS（UTF-8・1,000,000バイト以下）、customization/imagesにPNG・JPEG・WebP・GIF（20 MiB・1600万画素以下）を入れてください。直下の通常ファイルのみ対応します。\r\n配信デザインページまたは雑談画面の「デザインを編集」を開き、CSSは「画面全体」の「詳細：テーマCSS」、画像は「立ち絵」「読み上げ」または「画像を追加」の「customizationフォルダーから選ぶ」で一覧を更新して選びます。素材は下書きに読み込み、エディタの「適用」で見た目をまとめて保存します。読み込み中は適用できません。ファイル編集後も同じ手順で読み込み直してください。画像は選んだ時点でcustomization/current/imagesにコピーされ、下書きには参照を入れます。適用済みの見た目は元ファイルを削除しても保持されます。新しい版へ更新するときは、customizationとdataフォルダーごとコピーしてください。\r\n標準デザインのstyle.css・src/shared/theme.js・src/shared/studio.js・speech-background.svgはcustomizationの外にあります。変更せず、独自の素材だけをcustomizationに置いてください。\r\nソース側のcustomization内の素材は配布用フォルダーへコピーしません。再ビルド時は出力先に既にあるcustomizationの内容を保持します。出力先を他の人へ渡す前に、個人の素材が残っていないか確認してください。\r\n出力の大きさはエディタの「画面全体」で変更します。配信出力欄は適用中の大きさを表示し、「エディタで変更」から開けます。ホームは標準の配置を使います。dataフォルダーと設定バックアップには接続先・ユーザー名が含まれるため、人に渡さないでください。更新前のブラウザ設定は自動では移しません。更新前に旧版の「設定のバックアップ」を保存して、新版で復元してください。見た目と画像はバックアップに入らず、customization/currentにあります。接続先・音声・ユーザー管理・履歴件数・初回案内・配信出力の背景はdata/settings.jsonへ保存し、ブラウザ・ポート・OBSのドックで共有します。新しいバックアップはversion 2です。旧バックアップ（version 1）からも接続先・音声・ユーザー管理・履歴件数を復元し、古い見た目・画像・配置は取り込みません。\r\n', 'utf8');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await buildLocal(); console.log('Windows local package: dist-local/');

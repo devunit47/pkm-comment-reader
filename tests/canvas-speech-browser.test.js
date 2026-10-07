@@ -4,11 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, editorTarget, temporaryDataDirectory } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-canvas-speech-'));
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const browser = await chromium.launch({ headless: true, executablePath });

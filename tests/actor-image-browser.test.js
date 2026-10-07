@@ -6,13 +6,13 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, viewport = { width: 1280, height: 720 }) {
   const browser = await chromium.launch({ headless: true, executablePath });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-actor-image-'));
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
     await browser.close();
     if (server.listening) await new Promise(resolve => server.close(resolve));

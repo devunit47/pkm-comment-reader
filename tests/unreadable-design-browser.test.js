@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path';
 import { createServer } from '../server.js';
 import { UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget, temporaryDataDirectory } from './browser-support.js';
 
 async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-unreadable-browser-'));
@@ -22,7 +22,7 @@ async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace)
       await utimes(join(target, ref), past, past);
     }
   }
-  const server = createServer({ customizationDirectory: folder });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: folder });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   let browser;
   t.after(async () => {

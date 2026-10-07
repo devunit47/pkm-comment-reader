@@ -7,7 +7,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { defaultDesign } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS, temporaryDataDirectory } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const hidingCSS = '.pokome-workspace { display: none !important; }';
@@ -114,7 +114,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
     'pokome-workspace-v1': { version: 1, home: { panels: { comments: { hidden: true } } } },
     'pokome-theme-v1': { obsolete: true },
   };
-  const base = await serve(t, createServer({ customizationDirectory: directory }));
+  const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }));
   const { page, errors, requests } = await openBrowser(t, base, preserved);
   await studio(page); await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
   await applyCSS(page, 'first.css'); await applyImage(page, 'actor.png');
@@ -165,7 +165,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
 
 test('appearance recovery keeps an open draft stale until it is restarted', { skip: !browserAvailable }, async t => {
   const directory = await fixture(t);
-  const base = await serve(t, createServer({ customizationDirectory: directory }));
+  const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }));
   const { page } = await openBrowser(t, base);
   await studio(page);
   const editor = page.locator('#design-preview-editor');

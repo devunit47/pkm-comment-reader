@@ -5,16 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
 after(() => Promise.all(folders.map(folder => rm(folder, { recursive: true, force: true }))));
 const scratch = async () => { const folder = await mkdtemp(join(tmpdir(), 'pokome-workspace-')); folders.push(folder); return folder; };
 
-test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !browserAvailable }, async () => {
+test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
@@ -157,9 +157,9 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
 });
 
 
-test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async () => {
+test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
@@ -210,10 +210,10 @@ test('platform buttons toggle saved connections independently and open settings 
 });
 
 
-test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !browserAvailable }, async () => {
+test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
   const uuid = '3c37646f-3881-5374-2a83-149267990abc';
-  const server = createServer({ customizationDirectory: await scratch(), fetchImpl: async url => {
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch(), fetchImpl: async url => {
     if (url.endsWith('/speakers') && url.includes(':50021')) return Response.json([{ name: 'ボイステスト', styles: [{ id: 3, name: 'ノーマル' }] }]);
     if (url.endsWith('/v1/speakers')) return Response.json([{ speakerName: '声色テスト', speakerUuid: uuid, styles: [{ styleId: 0, styleName: 'れいせい' }] }]);
     if (url.includes('/audio_query?')) return Response.json({ accent_phrases: [] });
@@ -266,9 +266,9 @@ test('local engines select voices, play synchronized previews, stop and persist 
 });
 
 
-test('standard home keeps operating controls reachable despite obsolete saved layout', { skip: !browserAvailable }, async () => {
+test('standard home keeps operating controls reachable despite obsolete saved layout', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
     await page.addInitScript(() => {
@@ -317,9 +317,9 @@ test('standard home keeps operating controls reachable despite obsolete saved la
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });
 
-test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async () => {
+test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -383,9 +383,9 @@ test('first setup guide and full settings backup restore work through the UI', {
 
 // Regression: after a reload in talk mode, leaving talk mode went back to the
 // stale talk history entry and immediately re-entered talk mode.
-test('leaving talk mode after a reload in talk mode returns to the operating screen', { skip: !browserAvailable }, async () => {
+test('leaving talk mode after a reload in talk mode returns to the operating screen', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -403,9 +403,9 @@ test('leaving talk mode after a reload in talk mode returns to the operating scr
 });
 
 
-test('home ignores obsolete layout without clearing the saved value', { skip: !browserAvailable }, async () => {
+test('home ignores obsolete layout without clearing the saved value', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);

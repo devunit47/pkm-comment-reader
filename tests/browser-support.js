@@ -2,6 +2,8 @@ import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 
 const require = createRequire(import.meta.url);
 // Optional browser checks work with an installed Playwright, a supplied runtime,
@@ -16,6 +18,35 @@ export const chromium = playwright?.chromium;
 export const executablePath = [process.env.BROWSER_EXECUTABLE, chromium?.executablePath(),
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].filter(Boolean).find(existsSync);
 export const browserAvailable = process.env.SKIP_BROWSER_TESTS !== '1' && !!chromium && !!executablePath;
+
+// Browser tests must never read or write the app folder's private settings.
+export async function temporaryDataDirectory(t) {
+  const directory = await mkdtemp(join(tmpdir(), 'pokome-settings-browser-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+export async function readSettings(base) {
+  return (await (await fetch(`${base}/api/settings`)).json()).settings;
+}
+export async function saveSetting(base, field, value) {
+  const response = await fetch(`${base}/api/settings/${field}`, {
+    method: 'PUT', body: JSON.stringify(value),
+    headers: { 'Content-Type': 'application/json', Origin: base, 'Sec-Fetch-Site': 'same-origin' },
+  });
+  if (!response.ok) throw new Error(`saveSetting failed: ${response.status} ${await response.text()}`);
+  return (await response.json()).settings;
+}
+export async function waitForSettings(base, predicate, timeout = 8000) {
+  const end = Date.now() + timeout;
+  let settings;
+  while (Date.now() < end) {
+    settings = await readSettings(base);
+    if (predicate(settings)) return settings;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw new Error(`settings did not reach the expected state: ${JSON.stringify(settings)}`);
+}
 
 // The applied design lives on the local server (customization/current). These
 // helpers seed and read it the same way the app does, through the API.

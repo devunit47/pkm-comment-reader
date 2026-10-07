@@ -9,7 +9,7 @@ import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -51,7 +51,7 @@ async function fixture(t, { design, storage = {} } = {}) {
     if (directory) await rm(directory, { recursive: true, force: true });
   });
   directory = await mkdtemp(join(tmpdir(), 'pokome-preview-browser-'));
-  server = createServer({ customizationDirectory: directory });
+  server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   if (design) await saveDesign(url, design);

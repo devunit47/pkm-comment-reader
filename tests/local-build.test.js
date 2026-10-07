@@ -16,7 +16,7 @@ async function output(t) {
 test('local asset staging packages the backend and empty user folders without copying user files', async t => {
   const { folder, destination } = await output(t);
   await stageLocalFiles(destination);
-  assert.deepEqual((await readdir(folder)).sort(), [...new Set(LOCAL_FILES.map(file => file.split('/')[0])), 'customization'].sort());
+  assert.deepEqual((await readdir(folder)).sort(), [...new Set(LOCAL_FILES.map(file => file.split('/')[0])), 'customization', 'data'].sort());
   for (const directory of ['src', 'src/browser', 'src/server', 'src/shared']) {
     const prefix = directory + '/';
     const entries = LOCAL_FILES.filter(file => file.startsWith(prefix)).map(file => file.slice(prefix.length).split('/')[0]);
@@ -25,10 +25,12 @@ test('local asset staging packages the backend and empty user folders without co
   assert.deepEqual((await readdir(join(folder, 'customization'))).sort(), ['images', 'styles']);
   assert.deepEqual(await readdir(join(folder, 'customization', 'images')), []);
   assert.deepEqual(await readdir(join(folder, 'customization', 'styles')), []);
+  assert.deepEqual(await readdir(join(folder, 'data')), []);
   assert.ok(LOCAL_FILES.includes('src/server/local-customization.js'));
   assert.ok(BROWSER_ASSETS.includes('src/browser/customization.js'));
   assert.ok(!BROWSER_ASSETS.includes('src/server/local-customization.js'));
   assert.ok(LOCAL_FILES.every(file => !file.startsWith('customization/')));
+  assert.ok(LOCAL_FILES.every(file => !file.startsWith('data/')));
   const config = await readFile(join(folder, 'src/shared/app-config.js'), 'utf8');
   assert.match(config, /enabledPlatforms = Object\.freeze\(\['twitch'\]\)/);
   assert.doesNotMatch(config, /kick/);
@@ -43,10 +45,14 @@ test('rebuilding preserves the destination customization directory, including un
   await writeFile(join(folder, 'customization', 'styles', 'my-design.css'), '.pokome-workspace { color: red; }');
   await writeFile(join(folder, 'customization', 'images', 'notes.txt'), 'Keep my original notes');
   await writeFile(join(folder, 'customization', 'README.txt'), 'My folder notes');
+  await writeFile(join(folder, 'data', 'settings.json'), '{"private":"Keep my settings"}');
+  await writeFile(join(folder, 'data', 'notes.txt'), 'Keep my private notes');
   await stageLocalFiles(destination);
   assert.equal(await readFile(join(folder, 'customization', 'styles', 'my-design.css'), 'utf8'), '.pokome-workspace { color: red; }');
   assert.equal(await readFile(join(folder, 'customization', 'images', 'notes.txt'), 'utf8'), 'Keep my original notes');
   assert.equal(await readFile(join(folder, 'customization', 'README.txt'), 'utf8'), 'My folder notes');
+  assert.equal(await readFile(join(folder, 'data', 'settings.json'), 'utf8'), '{"private":"Keep my settings"}');
+  assert.equal(await readFile(join(folder, 'data', 'notes.txt'), 'utf8'), 'Keep my private notes');
   await writeFile(join(folder, 'src', 'browser', 'private.env'), 'Keep private');
   await assert.rejects(stageLocalFiles(destination), /空の出力先/);
   assert.equal(await readFile(join(folder, 'src', 'browser', 'private.env'), 'utf8'), 'Keep private');
@@ -79,4 +85,5 @@ test('JavaScript checking excludes customization source files', async () => {
   assert.match(checker, /'customization'/);
   const ignored = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
   assert.match(ignored, /^customization\/$/m);
+  assert.match(ignored, /^data\/$/m);
 });
