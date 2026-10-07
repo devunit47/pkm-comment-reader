@@ -34,6 +34,49 @@ const metrics = stage => {
       return [id, [box.x - rect.x, box.y - rect.y, box.width, box.height]];
     })) };
 };
+for (const scene of ['talk', 'preview', 'output']) {
+  browserTest(`${scene} keeps a decorative speech heading speaker when volume controls move outside the scene`, async t => {
+    const { page, url, context, errors } = await fixture(t);
+    const output = scene === 'output' ? await context.newPage() : null;
+    if (output) { await output.goto(`${url}/output.html`); await output.locator('#talk-stage').waitFor(); }
+    for (const theme of ['mint', 'rose', 'violet', 'paper']) for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      if (output) await output.emulateMedia({ colorScheme });
+      for (const [speechStyle, speechBackground] of [['panel', '#ffffff'], ['bubble', '#ffffff'], ['bubble', '#000000']]) {
+        await saveDesign(url, design => ({ ...design, studio: { ...design.studio, theme, speechStyle, speechBackground } }));
+        await page.waitForFunction(({ theme, speechStyle, speechBackground }) => {
+          const stage = document.getElementById('talk-frame').contentDocument.getElementById('talk-stage');
+          return stage.dataset.theme === theme && stage.querySelector('.stage-speech').dataset.style === speechStyle && stage.style.getPropertyValue('--speech-background') === speechBackground;
+        }, { theme, speechStyle, speechBackground });
+        const editor = page.locator('#design-preview-editor');
+        if (scene === 'preview') { await page.locator('#stage-design-edit').click(); await editor.locator('#apply-design:not(:disabled)').waitFor(); }
+        const view = output || page.frameLocator(scene === 'preview' ? '#design-preview-editor #design-preview-frame' : '#talk-frame');
+        const stage = view.locator('#talk-stage');
+        if (output) await output.waitForFunction(({ theme, speechStyle, speechBackground }) => {
+          const stage = document.getElementById('talk-stage');
+          return stage.dataset.theme === theme && stage.querySelector('.stage-speech').dataset.style === speechStyle && stage.style.getPropertyValue('--speech-background') === speechBackground;
+        }, { theme, speechStyle, speechBackground });
+        const icon = stage.locator('.stage-speech-heading > svg.stage-speaker');
+        const label = `${scene}/${theme}/${colorScheme}/${speechStyle}/${speechBackground}`;
+        assert.equal(await icon.count(), 1, `${label}: heading retains its speaker`);
+        assert.equal(await icon.isVisible(), true, label);
+        assert.equal(await icon.getAttribute('aria-hidden'), 'true', label);
+        assert.equal(await stage.locator('.stage-speech-heading :is(button,[tabindex],[role="button"])').count(), 0, `${label}: heading is decoration only`);
+        const appearance = await icon.evaluate(e => {
+          const css = e.ownerDocument.defaultView.getComputedStyle(e), box = e.getBoundingClientRect();
+          return { color: css.color, stroke: css.stroke, width: box.width, height: box.height };
+        });
+        assert.deepEqual([appearance.width, appearance.height], [20, 20], label);
+        assert.equal(appearance.stroke, appearance.color, label);
+        if (speechStyle === 'bubble') assert.equal(appearance.color, speechBackground === '#ffffff' ? 'rgb(0, 0, 0)' : 'rgb(255, 255, 255)', `${label}: speaker follows bubble ink`);
+        assert.equal(await page.locator('#talk-controls #stage-volume-settings').count(), 1, 'volume control stays in the parent');
+        assert.equal(await stage.locator('#stage-volume-settings').count(), 0, 'scene has no volume control');
+        if (scene === 'preview') await editor.locator('#cancel-design').click();
+      }
+    }
+    assert.deepEqual(errors, []);
+  });
+}
 browserTest('talk renders at the output size and preserves preview geometry through window resizing', async t => {
   const { page, errors } = await fixture(t);
   const editor = page.locator('#design-preview-editor');
