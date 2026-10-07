@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, studio = {}) {
@@ -52,14 +52,14 @@ browserTest('Twitch emotes and service colors reach live, preview and output; fa
   const { context, page, base, requests, errors } = await fixture(t, { commentAuthorColor: 'service', commentPanel: 'light' });
   await receive(page, '😀 Kappa hello');
   await page.locator('.nav[data-page="studio"]').click();
-  await page.locator('#stage-chat-list img.pokome-comment__emote').waitFor({ state: 'attached' });
+  await talkStage(page).locator('#stage-chat-list img.pokome-comment__emote').waitFor({ state: 'attached' });
   const output = await context.newPage(); await output.goto(`${base}/output.html`);
   await output.locator('#stage-chat-list img.pokome-comment__emote').waitFor({ state: 'attached' });
   await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   const frame = page.frameLocator('#design-preview-frame');
   await frame.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
   const color = locator => locator.evaluate(element => getComputedStyle(element).color);
-  const liveColor = await color(page.locator('#stage-chat-list .stage-comment').filter({ hasText: 'viewer' }).first().locator('strong'));
+  const liveColor = await color(talkStage(page).locator('#stage-chat-list .stage-comment').filter({ hasText: 'viewer' }).first().locator('strong'));
   assert.equal(await color(output.locator('#stage-chat-list .stage-comment').filter({ hasText: 'viewer' }).first().locator('strong')), liveColor);
   assert.equal(await color(frame.locator('.stage-comment').first().locator('strong')), liveColor);
   assert.ok(requests.every(url => /^https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[A-Za-z0-9_]+\/default\/dark\/3\.0$/.test(url)));
@@ -68,8 +68,8 @@ browserTest('Twitch emotes and service colors reach live, preview and output; fa
   await receive(page, 'Kappa', 'emotes=25:0-4');
   assert.equal(await page.evaluate(() => window.spoken.length), 1);
   await receive(page, 'Broken', 'emotes=broken:0-5');
-  await page.waitForFunction(() => [...document.querySelectorAll('#stage-chat-list .pokome-comment__body')].some(element => element.textContent === 'Broken' && !element.querySelector('img')));
-  assert.equal(await page.locator('#stage-chat-list .stage-comment').filter({ hasText: 'Broken' }).locator('.pokome-comment__emote-piece').count(), 0, 'failed images use normal text spacing');
+  await page.waitForFunction(() => [...document.getElementById('talk-frame').contentDocument.querySelectorAll('#stage-chat-list .pokome-comment__body')].some(element => element.textContent === 'Broken' && !element.querySelector('img')));
+  assert.equal(await talkStage(page).locator('#stage-chat-list .stage-comment').filter({ hasText: 'Broken' }).locator('.pokome-comment__emote-piece').count(), 0, 'failed images use normal text spacing');
   assert.equal(await page.locator('#comment-list img').count(), 0);
   await applyInEditor(page, async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-commentEmotes').selectOption('text'); });
   await output.waitForFunction(() => !document.querySelector('#stage-chat-list img.pokome-comment__emote'));
@@ -145,8 +145,9 @@ browserTest('identity rendering preserves line limits and clipping across six pr
       await output.setViewportSize({ width, height });
       await saveDesign(base, design => ({ ...design, outputSize: size, studio }));
       for (const target of [page, output]) await target.waitForFunction(({ theme, ratio, style, panel, fontSize }) => {
-        const stage = document.querySelector('#talk-stage');
-        return stage.dataset.theme === theme && (stage.dataset.frameRatio || document.body.dataset.ratio) === ratio && document.querySelector('#stage-chat-list').dataset.commentStyle === style && (stage.dataset.commentPanel || 'theme') === panel && parseFloat(getComputedStyle(stage.querySelector('.pokome-comment__body')).fontSize) === fontSize;
+        const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+        const stage = doc.querySelector('#talk-stage');
+        return stage.dataset.theme === theme && (stage.dataset.ratio || doc.body.dataset.ratio) === ratio && doc.querySelector('#stage-chat-list').dataset.commentStyle === style && (stage.dataset.commentPanel || 'theme') === panel && parseFloat(getComputedStyle(stage.querySelector('.pokome-comment__body')).fontSize) === fontSize;
       }, { theme, ratio, style: studio.commentStyle, panel: studio.commentPanel, fontSize });
       await page.bringToFront();
       await page.locator('#stage-design-edit').click(); await editorTarget(page, 'chat');
@@ -154,7 +155,7 @@ browserTest('identity rendering preserves line limits and clipping across six pr
       const preview = page.frameLocator('#design-preview-frame');
       await preview.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
       const results = [];
-      for (const [owner, list] of [[page, page.locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {
+      for (const [owner, list] of [[page, talkStage(page).locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {
         await owner.bringToFront();
         await owner.waitForTimeout(50);
         await list.evaluate(element => Promise.all([...element.querySelectorAll('img')].map(image => image.decode().catch(() => {}))));
@@ -199,8 +200,8 @@ browserTest('emotes are twice the text height, preserve their image ratio and re
   const { page } = await fixture(t, { fontSize: 64, commentMaxLines: 2, commentLineHeight: 1.2, commentItemBackground: 'light' });
   await receive(page, 'Kappa Kappa', 'emotes=25:0-4,6-10');
   await page.locator('#enter-talk').click();
-  await page.waitForFunction(() => [...document.querySelectorAll('#stage-chat-list img')].every(image => image.complete && image.naturalHeight));
-  const measured = await page.locator('#stage-chat-list .stage-comment').first().evaluate(card => {
+  await page.waitForFunction(() => [...document.getElementById('talk-frame').contentDocument.querySelectorAll('#stage-chat-list img')].every(image => image.complete && image.naturalHeight));
+  const measured = await talkStage(page).locator('#stage-chat-list .stage-comment').first().evaluate(card => {
     const body = card.querySelector('p'), bounds = body.getBoundingClientRect(), cardBounds = card.getBoundingClientRect();
     return { font: parseFloat(getComputedStyle(body).fontSize), images: [...body.querySelectorAll('img')].map(image => {
       const rect = image.getBoundingClientRect(), style = getComputedStyle(image);

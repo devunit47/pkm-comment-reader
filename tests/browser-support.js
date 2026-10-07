@@ -95,7 +95,11 @@ export async function waitForDesign(base, predicate, timeout = 8000) {
 
 // The page loads the design from the server before it finishes starting. The
 // recovery button is created last, so its presence means the page is ready.
-export const appReady = page => page.locator('#appearance-recovery').waitFor({ state: 'attached' });
+export async function appReady(page, { scene = true } = {}) {
+  await page.locator('#appearance-recovery').waitFor({ state: 'attached' });
+  if (scene) await page.frameLocator('#talk-frame').locator('#talk-stage').waitFor({ state: 'attached' });
+}
+export const talkStage = page => page.frameLocator('#talk-frame');
 
 const emotePixels = await readFile(new URL('fixtures/presets/actor.png', import.meta.url));
 

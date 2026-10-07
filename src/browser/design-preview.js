@@ -93,8 +93,7 @@ ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? 'æœ¬æ–
 // The full-screen design editor. Everything edited here stays in one draft
 // (every ratio) until Apply stores it with a single revision-checked write.
 // getLiveRatio tells which ratio the talk screen shows.
-export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:9' }) {
-  const live = document.getElementById('talk-stage');
+export function initializeDesignPreview({ designStore, live, getLiveRatio = () => '16:9' }) {
   let presetDraft = null, presetApply = null, returnFocus = null, hostOrigin = null;
   const assetOptions = () => overlayOptions(presetDraft?.images || designStore.images), imageOptions = () => studioOptions(presetDraft?.images || designStore.images);
   const imageScope = () => presetDraft ? `presets/${presetDraft.id}` : 'current';
@@ -522,8 +521,7 @@ export function initializeDesignPreview({ designStore, getLiveRatio = () => '16:
       const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch{visibility:hidden!important}#talk-stage button{pointer-events:none}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}`;
       frameDoc.head.append(css, theme, controls);
       previewStage = frameDoc.importNode(live, true); previewStage.hidden = false;
-      // The copy carries the live ratio's layout and edit frame; show the preview ratio's own.
-      delete previewStage.dataset.frameRatio; previewStage.style.removeProperty('--frame');
+      // The copy starts with the preview ratio's own layout.
       applyTalkLayout(previewStage, talkLayout(design(), ratio));
       for (const element of previewStage.querySelectorAll('dialog,[popover],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
       for (const element of previewStage.querySelectorAll('button,input,select,textarea,a')) { element.setAttribute('tabindex', '-1'); element.removeAttribute('href'); }

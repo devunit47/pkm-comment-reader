@@ -49,7 +49,7 @@ export function compileTheme(css, Sheet = globalThis.CSSStyleSheet) {
 
 // Shows the applied theme CSS on the operating page. It is edited in the
 // design editor and reflected here only after it is saved.
-export function initializeTheme(designStore) {
+export function initializeTheme(designStore, stage) {
   document.querySelector('main').classList.add('pokome-workspace');
   document.querySelector('.sidebar').classList.add('pokome-workspace');
   const style = document.createElement('style');
@@ -57,7 +57,15 @@ export function initializeTheme(designStore) {
   document.head.append(style);
   // Shows a theme that is already stored, such as one changed in another tab.
   const reflectTheme = css => {
-    try { style.textContent = compileTheme(css); } catch { style.textContent = ''; }
+    let compiled = '';
+    try { compiled = compileTheme(css); } catch { /* Unreadable themes keep the base appearance. */ }
+    style.textContent = compiled;
+    const doc = stage.ownerDocument;
+    if (doc !== document) {
+      let sceneStyle = doc.getElementById('pokome-user-theme');
+      if (!sceneStyle) { sceneStyle = doc.createElement('style'); sceneStyle.id = 'pokome-user-theme'; doc.head.append(sceneStyle); }
+      sceneStyle.textContent = compiled;
+    }
   };
   reflectTheme(designStore.design.theme);
   return { reflectTheme };

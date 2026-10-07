@@ -7,7 +7,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { defaultDesign } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS, temporaryDataDirectory, readSettings, saveSetting } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS, temporaryDataDirectory, readSettings, saveSetting, talkStage } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const hidingCSS = '.pokome-workspace { display: none !important; }';
@@ -132,9 +132,9 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.equal(await page.locator('.sidebar').isVisible(), true);
   assert.equal(await currentCSS(page), '');
   assert.equal((await savedStudio(page)).theme, DEFAULT_STUDIO.theme);
-  assert.equal(await page.locator('#stage-title').textContent(), DEFAULT_STUDIO.title);
-  assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
-  assert.match(await page.locator('#talk-stage').getAttribute('style'), /\.\/speech-background\.svg/);
+  assert.equal(await talkStage(page).locator('#stage-title').textContent(), DEFAULT_STUDIO.title);
+  assert.equal(await talkStage(page).locator('#actor-image').getAttribute('src'), null);
+  assert.match(await talkStage(page).locator('#talk-stage').getAttribute('style'), /\.\/speech-background\.svg/);
   assert.deepEqual(await readDesign(base), defaultDesign());
   assert.equal(await page.locator('#workspace-editor,#layout-session').count(), 0);
   assert.deepEqual(await readSettings(base), savedSettings);

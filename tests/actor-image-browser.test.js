@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, viewport = { width: 1280, height: 720 }) {
@@ -55,7 +55,8 @@ async function outputPage(context, url, query = '') {
 }
 async function waitActor(page, settings) {
   await page.waitForFunction(settings => {
-    const stage = document.getElementById('talk-stage'), image = document.getElementById('actor-image');
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    const stage = doc.getElementById('talk-stage'), image = doc.getElementById('actor-image');
     return stage?.dataset.actorImage === 'custom' && image?.complete && image.naturalWidth > 0 &&
       stage.dataset.actorImageOverflow === String(settings.overflow) &&
       stage.style.getPropertyValue('--actor-image-size') === `${settings.scale}%` &&
@@ -258,9 +259,9 @@ browserTest('live, preview and output share actor and outside overlay geometry, 
     const box = element => { const rect = element.getBoundingClientRect(); return { x: (rect.x - canvas.x) / canvas.width, y: (rect.y - canvas.y) / canvas.height, w: rect.width / canvas.width, h: rect.height / canvas.height }; };
     return { actor: box(stage.querySelector('#actor-image')), overlays: [...stage.querySelectorAll(':scope > .pokome-overlay')].map(element => ({ ...box(element), z: getComputedStyle(element).zIndex })), clip: getComputedStyle(stage).overflow, actorClip: getComputedStyle(stage.querySelector('.stage-actor')).overflow };
   };
-  const live = await page.locator('#talk-stage').evaluate(geometry);
+  const live = await talkStage(page).locator('#talk-stage').evaluate(geometry);
   assert.deepEqual(await output.locator('#talk-stage').evaluate(geometry), live);
-  await page.locator('#talk-stage').focus(); await page.keyboard.press('Escape'); await page.locator('[data-page="studio"]').click();
+  await talkStage(page).locator('#talk-stage').focus(); await page.keyboard.press('Escape'); await page.locator('[data-page="studio"]').click();
   await page.locator('#open-design-preview').click();
   const preview = page.frameLocator('#design-preview-frame');
   await preview.locator('#actor-image').waitFor();
@@ -283,7 +284,7 @@ browserTest('live, preview and output share actor and outside overlay geometry, 
   }
   await page.locator('#enter-talk').click();
   assert.deepEqual(await page.evaluate(scrollSize), { x: 1280, y: 720, w: 1280, h: 720 });
-  await page.locator('#talk-stage').focus(); await page.keyboard.press('Escape');
+  await talkStage(page).locator('#talk-stage').focus(); await page.keyboard.press('Escape');
   assert.ok((await page.evaluate(scrollSize)).y > 720, 'the operating page keeps its ordinary vertical scroll');
   assert.deepEqual(errors, []);
 });

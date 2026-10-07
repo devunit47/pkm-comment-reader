@@ -16,9 +16,11 @@ import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAuto
 import { readSavedVoices, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
 import { enabledPlatforms } from '../shared/app-config.js';
 import { initializeWorkspace } from './workspace.js';
+import { initializeTalkView } from './talk-view.js';
 import { initializeTheme } from '../shared/theme.js';
 
-const $ = id => document.getElementById(id);
+const talkStage = document.getElementById('talk-stage');
+const $ = id => document.getElementById(id) ?? (id === 'talk-stage' ? talkStage : talkStage.querySelector(`#${id}`));
 const names = { twitch: 'Twitch', kick: 'Kick' };
 const states = { twitch: createChatState(), kick: createChatState() };
 let active = 'twitch';
@@ -47,6 +49,10 @@ for (const platform of Object.keys(states)) {
   states[platform].rules = Object.assign(Object.create(null), savedSettings.users[platform]);
 }
 const designStore = await createDesignStore();
+const talkView = initializeTalkView(talkStage, { onPointerDown() {
+  const popover = $('stage-volume-dialog');
+  if (popover.matches(':popover-open')) popover.hidePopover();
+} });
 let studio = designStore.design.studio;
 let shownTalkRatio = nearestRatio(...(OUTPUT_SIZES[designStore.design.outputSize] ?? OUTPUT_SIZES['1280x720']));
 let historyLimit = readHistoryLimit(savedSettings);
@@ -463,7 +469,7 @@ for (const event of ['pointerup', 'pointercancel']) $('stage-volume').addEventLi
 });
 $('stage-volume-settings').onclick = () => { openStageVolume(); $('stage-volume').focus(); };
 $('stage-volume-dialog').addEventListener('keydown', event => {
-  if (event.key === 'Escape') event.stopPropagation();
+  if (event.key === 'Escape') { event.stopPropagation(); $('stage-volume-settings').focus({ preventScroll: true }); }
 });
 for (const id of ['volume', 'rate']) $(id).oninput = () => {
   states[active][id] = Number($(id).value);
@@ -596,7 +602,7 @@ function renderStudio() {
   for (const property of ['--speech-background', '--speech-ink', '--speech-image', '--speech-image-ink']) {
     preview.style.setProperty(property, stage.style.getPropertyValue(property));
   }
-  const stageColors = getComputedStyle(stage);
+  const stageColors = stage.ownerDocument.defaultView.getComputedStyle(stage);
   preview.style.setProperty('--stage-surface', stageColors.getPropertyValue('--stage-surface'));
   preview.style.setProperty('--stage-text', stageColors.getPropertyValue('--stage-text'));
   preview.style.setProperty('--stage-border', stageColors.getPropertyValue('--stage-border'));
@@ -609,15 +615,16 @@ function renderStudio() {
 function enterTalk(fromHistory = false) {
   if (document.body.classList.contains('talk-mode')) return;
   if (fromHistory !== true) history.pushState({ ...history.state, pokomeTalk: true }, '');
-  $('talk-stage').hidden = false;
+  $('talk-view').hidden = false; $('talk-controls').hidden = false;
+  talkView.scale();
   document.body.classList.add('talk-mode');
   renderStageChat();
   $('stage-chat-list').scrollTop = $('stage-chat-list').scrollHeight;
   updateStageCommentVisibility();
   renderStageSpeech();
   // Move focus to the canvas so controls disappear for screen capture.
-  $('talk-stage').setAttribute('tabindex', '-1');
-  $('talk-stage').focus({ preventScroll: true });
+  $('talk-view').setAttribute('tabindex', '-1');
+  $('talk-view').focus({ preventScroll: true });
 }
 function leaveTalk(fromHistory = false) {
   if (!document.body.classList.contains('talk-mode')) return;
@@ -625,7 +632,7 @@ function leaveTalk(fromHistory = false) {
   if ($('stage-connection-dialog').open) $('stage-connection-dialog').close();
   if ($('stage-volume-dialog').matches(':popover-open')) $('stage-volume-dialog').hidePopover();
   document.body.classList.remove('talk-mode');
-  $('talk-stage').hidden = true;
+  $('talk-view').hidden = true; $('talk-controls').hidden = true;
   page('home');
   $('enter-talk').focus({ preventScroll: true });
 }
@@ -653,6 +660,7 @@ $('stage-connection-dialog').addEventListener('close', () => {
   const panel = $('stage-connection-content').firstElementChild;
   if (panel && connectionPanelOrigin) connectionPanelOrigin.replaceWith(panel);
   connectionPanelOrigin = null;
+  if (document.body.classList.contains('talk-mode')) $('stage-connection').focus({ preventScroll: true });
 });
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && document.body.classList.contains('talk-mode') && !$('stage-connection-dialog').open) leaveTalk();
@@ -742,14 +750,19 @@ $('auto-speech').checked = states[active].autoSpeech;
 renderSpeechSettings();
 renderSpeechOptions();
 render();
-const themeEditor = initializeTheme(designStore);
+const themeEditor = initializeTheme(designStore, talkStage);
 // The talk screen may switch ratio before the preview exists; it catches up when created.
 let showLiveOverlays = () => {};
-const workspaceEditor = initializeWorkspace(designStore, { onTalkRatioChange: ratio => {
+const workspaceEditor = initializeWorkspace(designStore, { talk: talkStage, talkView, onTalkRatioChange: ratio => {
   shownTalkRatio = ratio; renderTalkAppearance(); showLiveOverlays();
 } });
-const designPreview = initializeDesignPreview({ designStore,
+const designPreview = initializeDesignPreview({ designStore, live: talkStage,
   getLiveRatio: () => workspaceEditor.talkRatio(),
+});
+talkView.ready.then(ready => {
+  if (!ready) return;
+  themeEditor.reflectTheme(designStore.design.theme); workspaceEditor.reload();
+  renderStudio(); designPreview.showLive(); renderStageChat(); renderStageSpeech();
 });
 initializeCustomization({ platforms: enabledPlatforms, designStore,
   async resetAppearance() {

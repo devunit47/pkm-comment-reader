@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings, saveSetting } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings, saveSetting, talkStage } from './browser-support.js';
 
 const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
 const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
@@ -90,7 +90,8 @@ async function open(t, url) {
 }
 async function credits(page, expected) {
   await page.waitForFunction(value => ['preview-speech-credit', 'stage-speech-credit'].every(id => {
-    const element = document.getElementById(id);
+    const doc = id === 'stage-speech-credit' ? document.getElementById('talk-frame').contentDocument : document;
+    const element = doc.getElementById(id);
     return element.textContent === value && element.hidden === !value;
   }), expected);
 }
@@ -122,12 +123,12 @@ test('credits follow voice, style, engine and platform, survive reload and appea
   for (const style of ['panel', 'bubble', 'image']) {
     await speechStyle(page, style);
     await page.locator('#enter-talk').click();
-    assert.equal(await page.locator('#stage-speech-credit').isVisible(), true);
-    assert.equal(await page.locator('#stage-speech-credit').evaluate(element => {
+    assert.equal(await talkStage(page).locator('#stage-speech-credit').isVisible(), true);
+    assert.equal(await talkStage(page).locator('#stage-speech-credit').evaluate(element => {
       const credit = element.getBoundingClientRect(), panel = element.closest('.stage-speech').getBoundingClientRect();
       return credit.left >= panel.left && credit.right <= panel.right && credit.top >= panel.top && credit.bottom <= panel.bottom + 1;
     }), true, style);
-    assert.equal(await page.locator('.stage-speech-content #stage-speech-credit').count(), 0);
+    assert.equal(await talkStage(page).locator('.stage-speech-content #stage-speech-credit').count(), 0);
     await page.locator('#leave-talk').click();
   }
   await page.locator('#appearance-recovery #open-reset').click();
@@ -153,7 +154,7 @@ test('short and resized speech panels keep readable text and visible credits for
       await page.locator('#enter-talk').click();
       for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
         await page.setViewportSize(viewport);
-        const geometry = await page.locator('.stage-speech').evaluate(panel => {
+        const geometry = await talkStage(page).locator('.stage-speech').evaluate(panel => {
           const bounds = panel.getBoundingClientRect();
           const credit = panel.querySelector('#stage-speech-credit');
           const attribution = credit.getBoundingClientRect();
@@ -180,8 +181,8 @@ test('short and resized speech panels keep readable text and visible credits for
         assert.equal(geometry.separate, true, label + ' attribution outside text');
         assert.equal(geometry.readable, true, label + ' at least one readable text line');
         assert.equal(geometry.fontSize, '22px', label + ' preserves speech typography');
-        await page.locator('#stage-speech-text').evaluate(text => { text.textContent = 'Long speech remains readable without moving the credit. '.repeat(100); });
-        const longSpeech = await page.locator('#stage-speech-credit').evaluate(credit => {
+        await talkStage(page).locator('#stage-speech-text').evaluate(text => { text.textContent = 'Long speech remains readable without moving the credit. '.repeat(100); });
+        const longSpeech = await talkStage(page).locator('#stage-speech-credit').evaluate(credit => {
           const c = credit.getBoundingClientRect();
           const body = document.querySelector('.stage-speech-content');
           return { visible: !credit.hidden && c.top >= 0 && c.bottom <= innerHeight,
@@ -209,7 +210,7 @@ test('short and resized speech panels keep readable text and visible credits for
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   for (const viewport of [{ width: 640, height: 360 }, { width: 960, height: 540 }]) {
     await page.setViewportSize(viewport);
-    const contained = await page.locator('#stage-speech-credit').evaluate(credit => {
+    const contained = await talkStage(page).locator('#stage-speech-credit').evaluate(credit => {
       const c = credit.getBoundingClientRect(), p = credit.closest('.stage-speech').getBoundingClientRect();
       return p.height >= 220 && c.top >= p.top && c.bottom <= p.bottom + 1 && c.left >= p.left && c.right <= p.right + 1 && c.top >= 0 && c.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
     });
@@ -240,7 +241,7 @@ test('saved bottom-aligned speech stays in the unscrolled viewport after reload 
     await page.locator('#enter-talk').click();
     for (const viewport of [{ width: 1280, height: 720 }, { width: 640, height: 360 }, { width: 960, height: 540 }]) {
       await page.setViewportSize(viewport);
-      const geometry = await page.locator('#stage-speech-credit').evaluate(credit => {
+      const geometry = await talkStage(page).locator('#stage-speech-credit').evaluate(credit => {
         const c = credit.getBoundingClientRect(), p = credit.closest('.stage-speech').getBoundingClientRect();
         return { visible: !credit.hidden && c.top >= 0 && c.bottom <= innerHeight && c.left >= 0 && c.right <= innerWidth,
           contained: c.top >= p.top && c.bottom <= p.bottom + 1,
@@ -315,9 +316,10 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   const check = async height => {
     await page.locator('#enter-talk').click();
     await page.waitForFunction(expected => {
-      const panel = document.querySelector('.stage-speech').getBoundingClientRect();
-      const credit = document.querySelector('#stage-speech-credit').getBoundingClientRect();
-      return panel.height === expected && panel.bottom <= innerHeight && credit.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
+      const doc = document.getElementById('talk-frame').contentDocument;
+      const panel = doc.querySelector('.stage-speech').getBoundingClientRect();
+      const credit = doc.querySelector('#stage-speech-credit').getBoundingClientRect();
+      return panel.height === expected && panel.bottom <= doc.defaultView.innerHeight && credit.bottom <= doc.defaultView.innerHeight && doc.querySelector('#talk-stage').scrollTop === 0;
     }, height);
     await editorScreenshot(page, `speech-custom-css-${height}px-1280x720`);
     assert.deepEqual(await savedSpeech(base), panels.speech, 'CSS does not rewrite saved layout');
@@ -336,9 +338,9 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   assert.equal(await page.locator('#pokome-user-theme').textContent(), '');
   await page.locator('#enter-talk').click();
   await page.waitForFunction(() => {
-    const panel = document.querySelector('.stage-speech');
-    const bounds = panel.getBoundingClientRect(), credit = document.querySelector('#stage-speech-credit').getBoundingClientRect();
-    return panel.style.top === '' && bounds.bottom <= innerHeight && credit.bottom <= innerHeight && document.querySelector('#talk-stage').scrollTop === 0;
+    const doc = document.getElementById('talk-frame').contentDocument, panel = doc.querySelector('.stage-speech');
+    const bounds = panel.getBoundingClientRect(), credit = doc.querySelector('#stage-speech-credit').getBoundingClientRect();
+    return panel.style.top === '' && bounds.bottom <= doc.defaultView.innerHeight && credit.bottom <= doc.defaultView.innerHeight && doc.querySelector('#talk-stage').scrollTop === 0;
   });
   assert.deepEqual(errors, []);
 });
@@ -350,7 +352,7 @@ test('compact chat stays bounded and follows new demo messages while credit rema
   for (let i = 0; i < 20; i++) await page.locator('#demo').click();
   await page.setViewportSize({ width: 960, height: 540 });
   await page.locator('#enter-talk').click();
-  const measure = () => page.locator('#stage-chat-list').evaluate(list => {
+  const measure = () => talkStage(page).locator('#stage-chat-list').evaluate(list => {
     const last = list.lastElementChild.getBoundingClientRect(), bounds = list.getBoundingClientRect();
     const credit = document.querySelector('#stage-speech-credit').getBoundingClientRect();
     return { count: list.children.length,
@@ -367,7 +369,7 @@ test('compact chat stays bounded and follows new demo messages while credit rema
   // Deliver another demo message through the application's normal click handler
   // while talk mode is active, without leaving and re-entering (which scrolls).
   await page.locator('#demo').evaluate(button => button.click());
-  await page.waitForFunction(() => document.querySelector('#stage-chat-list').children.length === 33);
+  await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('#stage-chat-list').children.length === 33);
   const updated = await measure();
   assert.equal(updated.count, 33);
   for (const field of ['gridBounded', 'innerScroll', 'atBottom', 'newestVisible', 'creditVisible', 'unscrolled']) assert.equal(updated[field], true, field + ' after new message');
@@ -407,19 +409,19 @@ test('playing, queued and retained speech keep original attribution across metad
   await credits(page, 'VOICEVOX:ずんだもん');
   await page.evaluate(() => window.creditAudio[1].onended());
   await credits(page, 'VOICEVOX:ずんだもん');
-  await page.waitForFunction(() => document.querySelector('#stage-speech-text').textContent === '次のコメントを待っています。');
+  await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('#stage-speech-text').textContent === '次のコメントを待っています。');
   await credits(page, 'VOICEVOX:更新後の音声名');
   assert.equal(await page.locator('#preview-text').textContent(), selectedPreview);
   await page.locator('#test-voice').click();
   await page.waitForFunction(() => window.creditAudio.length === 3);
   await choose(page, 'coeiroink'); await credits(page, 'COEIROINK:つくよみちゃん');
   assert.equal(await page.evaluate(() => window.creditAudio[2].paused), true);
-  assert.equal(await page.locator('#stage-speech-text').textContent(), '次のコメントを待っています。');
+  assert.equal(await talkStage(page).locator('#stage-speech-text').textContent(), '次のコメントを待っています。');
   state.failSynthesis = true;
   await page.locator('#test-voice').click();
   await page.waitForFunction(() => document.querySelector('#engine-status').textContent.includes('生成に失敗'));
   await credits(page, 'COEIROINK:つくよみちゃん');
-  assert.equal(await page.locator('#stage-speech-text').textContent(), '次のコメントを待っています。');
+  assert.equal(await talkStage(page).locator('#stage-speech-text').textContent(), '次のコメントを待っています。');
   assert.equal(await page.locator('#speech-status').textContent(), '待機中');
   await choose(page, 'browser'); await credits(page, '');
   assert.deepEqual(errors, []);

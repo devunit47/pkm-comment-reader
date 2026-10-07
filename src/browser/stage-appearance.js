@@ -203,7 +203,7 @@ export function applyTalkLayout(stage, layout) {
   }
   const speech = stage.querySelector(TALK_PANEL_SELECTORS.speech);
   if (speech && layout?.panels?.speech) {
-    const styles = talkSpeechStyles(layout.panels, parseFloat(getComputedStyle(speech).minHeight) || 0);
+    const styles = talkSpeechStyles(layout.panels, parseFloat(stage.ownerDocument.defaultView.getComputedStyle(speech).minHeight) || 0);
     for (const [id, values] of Object.entries(styles)) {
       const element = stage.querySelector(TALK_PANEL_SELECTORS[id]);
       if (element) for (const [property, value] of Object.entries(values)) element.style.setProperty(property, value);
