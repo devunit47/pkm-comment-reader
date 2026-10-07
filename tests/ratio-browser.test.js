@@ -238,8 +238,9 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   await preview.locator('#open-design-preview').click();
   await page.waitForFunction(root => !document.querySelector(root).shadowRoot.getElementById('apply-design').disabled, PREVIEW);
   const frame = page.frameLocator(`${PREVIEW} #design-preview-frame`);
-  assert.equal(await frame.locator('#safe-guides .guide-line').count(), 1);
-  assert.equal(await frame.locator('#safe-guides .guide-shade').count(), 0);
+  // Landscape streams are not cropped at the edges, so 16:9 has no guide or toggle.
+  assert.equal(await frame.locator('#safe-guides > *').count(), 0);
+  assert.equal(await preview.locator('#preview-guides').isHidden(), true);
   await preview.locator('#add-text').click(); await preview.locator('#overlay-text').fill('横の文字');
   await preview.locator('#preview-ratio').selectOption('9:16');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 1920, PREVIEW);
@@ -250,12 +251,14 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   assert.equal(await frame.locator('.pokome-overlay').count(), 0, '9:16 starts without the 16:9 additions');
   // At 1920px tall the speech minimum fits, so the comments sit at their saved 64%.
   assert.equal(await frame.locator('#talk-stage .stage-chat').evaluate(element => { const stage = element.closest('#talk-stage').getBoundingClientRect(); return Math.round((element.getBoundingClientRect().top - stage.top) / stage.height * 100); }), 64);
+  assert.equal(await preview.locator('#preview-guides').isVisible(), true);
   assert.equal(await frame.locator('#safe-guides .guide-shade').count(), 2);
   assert.deepEqual(await frame.locator('#safe-guides .guide-shade').evaluateAll(nodes => nodes.map(node => node.style.height)), ['6%', '10%']);
   await preview.locator('#preview-guides').uncheck();
   assert.equal(await frame.locator('#safe-guides').isHidden(), true);
   await preview.locator('#add-text').click(); await preview.locator('#overlay-text').fill('縦の文字');
   await preview.locator('#preview-ratio').selectOption('16:9');
+  assert.equal(await frame.locator('#safe-guides > *').count(), 0);
   await preview.locator('#preview-width').selectOption('1280x720');
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentWindow.innerHeight === 720, PREVIEW);
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-preview-frame').contentDocument.querySelector('.pokome-overlay')?.textContent === '横の文字', PREVIEW);

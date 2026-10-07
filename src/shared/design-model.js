@@ -156,10 +156,6 @@ export function withTalk(design, ratio, { layout, overlays, actorImage } = {}) {
   return { ...design, ratios: { ...design.ratios, [ratio]: created ? { layout: nextLayout, overlays: nextOverlays, actorImage: nextActorImage } : null } };
 }
 
-// Edges that viewers' apps often cover (portrait) or that should stay clear of
-// text (landscape), in percent. Shown only in the preview; tune here.
-export const SAFE_AREAS = Object.freeze({
-  '16:9': Object.freeze({ top: 5, bottom: 5, left: 5, right: 5, shade: false }),
-  '9:16': Object.freeze({ top: 6, bottom: 10, left: 0, right: 0, shade: true }),
-  '4:3': Object.freeze({ top: 5, bottom: 5, left: 5, right: 5, shade: false }),
-});
+// Top and bottom of a portrait stream that viewers' apps often cover, in
+// percent. Landscape players do not crop edges, so they have no guide.
+export const PORTRAIT_COVERED = Object.freeze({ top: 6, bottom: 10 });
