@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings, saveSetting } from './browser-support.js';
 
 const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
 const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
@@ -437,7 +437,22 @@ test('a late voice-list response cannot overwrite another engine or platform cre
   }, { times: 1 });
   await page.locator('#speech-engine').selectOption('voicevox'); await received;
   await credits(page, 'VOICEVOX:音声名未取得');
-  await choose(page, 'coeiroink'); await credits(page, 'COEIROINK:つくよみちゃん');
+  let releaseCoeiroink, startedCoeiroink;
+  const coeiroinkGate = new Promise(resolve => { releaseCoeiroink = resolve; });
+  const coeiroinkReceived = new Promise(resolve => { startedCoeiroink = resolve; });
+  t.after(() => { release(); releaseCoeiroink(); });
+  await page.route('**/api/speech/coeiroink/voices', async route => {
+    startedCoeiroink(); await coeiroinkGate; await route.continue();
+  }, { times: 1 });
+  const selecting = choose(page, 'coeiroink'); await coeiroinkReceived;
+  const settings = await waitForSettings(base, settings => settings.speechEngines.twitch.engine === 'coeiroink');
+  // Replace the active preference through SSE while its voice request waits.
+  const reflected = page.waitForResponse(async response => new URL(response.url()).pathname === '/api/settings' &&
+    (await response.json()).settings.speechEngines.kick.coeiroink === uuid + ':0');
+  await saveSetting(base, 'speechEngines', { ...settings.speechEngines, kick: { ...settings.speechEngines.kick, coeiroink: uuid + ':0' } });
+  await (await reflected).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  releaseCoeiroink(); await selecting; await credits(page, 'COEIROINK:つくよみちゃん');
   const finished = page.waitForResponse('**/api/speech/voicevox/voices');
   release(); await (await finished).finished();
   await page.waitForTimeout(100); await credits(page, 'COEIROINK:つくよみちゃん');

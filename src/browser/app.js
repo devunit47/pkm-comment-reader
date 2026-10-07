@@ -484,8 +484,7 @@ function loadBrowserVoices() {
 async function loadVoices(refresh = false, chooseDefault = true) {
   const generation = ++voiceLoadGeneration;
   const platform = active;
-  const preference = enginePreferences[platform];
-  const engine = preference.engine;
+  const engine = enginePreferences[platform].engine;
   $('speech-engine').value = engine;
   $('refresh-voices').hidden = engine === 'browser';
   $('voice').disabled = engine !== 'browser';
@@ -506,6 +505,8 @@ async function loadVoices(refresh = false, chooseDefault = true) {
     }
     if (generation !== voiceLoadGeneration || active !== platform) return;
     const list = engineVoices[engine];
+    // SSE can replace the preference object while the voice request is pending.
+    const preference = enginePreferences[platform];
     $('voice').replaceChildren(...list.map(voice => { const option = make('option', '', voice.name); option.value = voice.id; return option; }));
     if (!list.some(voice => voice.id === preference[engine])) {
       if (chooseDefault) {
