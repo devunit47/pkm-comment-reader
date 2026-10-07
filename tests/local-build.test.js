@@ -80,9 +80,10 @@ test('packaging still requires Windows while shared staging remains portable', {
   assert.deepEqual(await readdir(folder), []);
 });
 
-test('JavaScript checking excludes customization source files', async () => {
+test('JavaScript checking excludes customization and private data files', async () => {
   const checker = await readFile(new URL('../scripts/check-js.js', import.meta.url), 'utf8');
   assert.match(checker, /'customization'/);
+  assert.match(checker, /'data'/);
   const ignored = await readFile(new URL('../.gitignore', import.meta.url), 'utf8');
   assert.match(ignored, /^customization\/$/m);
   assert.match(ignored, /^data\/$/m);

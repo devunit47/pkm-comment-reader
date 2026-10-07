@@ -292,6 +292,17 @@ browserTest('unreadable settings stay protected and persistent guidance and chan
     assert.equal(noticeOverflow, false, 'save failure text wraps inside a 150px dock');
   }
   assert.equal(await readFile(join(dataDirectory, 'settings.json'), 'utf8'), raw);
+  const backup = { format: 'pokome-settings', version: 1, settings: {
+    'pokome-connections': JSON.stringify({ twitch: 'backup_channel', kick: '' }),
+    'pokome-auto-speech': JSON.stringify({ twitch: false, kick: false }),
+    'pokome-voices': JSON.stringify({ twitch: '', kick: '' }),
+    'pokome-speech-engines': JSON.stringify({ twitch: { engine: 'browser' }, kick: { engine: 'browser' } }),
+    'pokome-speech-options': JSON.stringify({ twitch: { maxLength: 100 }, kick: {} }),
+    'pokome-users-v2': JSON.stringify({ twitch: {}, kick: {} }), 'pokome-history-limit': '40',
+  } };
+  await page.locator('[data-page="settings"]').click();
+  await page.locator('#restore-settings').setInputFiles({ name: 'old-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
+  await page.locator('#backup-status').filter({ hasText: '見た目はcustomizationフォルダーのまま' }).waitFor();
   for (const colorScheme of ['light', 'dark']) {
     const palette = colorScheme === 'light'
       ? { background: '#f2f5f2', panel: '#ffffff', text: '#25382f', muted: '#54645a', line: '#b6c5bd', computedBackground: 'rgb(242, 245, 242)', computedMuted: 'rgb(84, 100, 90)', computedPanel: 'rgb(255, 255, 255)', computedText: 'rgb(37, 56, 47)' }
@@ -323,7 +334,8 @@ browserTest('unreadable settings stay protected and persistent guidance and chan
               const a = controls[i].getBoundingClientRect(), b = controls[j].getBoundingClientRect();
               if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) overlap.push([controls[i].id, controls[j].id]);
             }
-            return outside.length || overlap.length ? [{ selector, outside, overlap }] : [];
+            const overflow = root.scrollWidth > root.clientWidth + 1;
+            return outside.length || overlap.length || overflow ? [{ selector, outside, overlap, overflow }] : [];
           }));
         });
         assert.deepEqual(issues, [], `${width}px ${colorScheme} ${view}`);

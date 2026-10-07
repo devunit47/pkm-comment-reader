@@ -335,14 +335,23 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#setup-welcome').isVisible(), false);
     const base = 'http://127.0.0.1:' + server.address().port;
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
-    await waitForSettings(base, settings => settings.historyLimit === 42 && settings.setupComplete);
+    await page.locator('[data-page="studio"]').click();
+    await page.locator('#output-background').selectOption('key'); await page.locator('#output-key').selectOption('ff00ff');
+    await waitForSettings(base, settings => settings.historyLimit === 42 && settings.setupComplete && settings.output.background === 'key' && settings.output.key === 'ff00ff');
     await page.locator('[data-page="settings"]').click();
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
     const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
+    const exported = JSON.parse(backup.toString());
+    assert.equal(exported.format, 'pokome-settings'); assert.equal(exported.version, 2);
+    assert.equal(exported.settings.setupComplete, true);
+    assert.deepEqual(exported.settings.output, { background: 'key', key: 'ff00ff' });
     // Backups hold operating settings only: no appearance, images or home layout.
     assert.doesNotMatch(backup.toString(), /pokome-studio|pokome-theme|pokome-overlays|pokome-workspace|data:image/);
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await saveSetting(base, 'setupComplete', false);
+    await saveSetting(base, 'output', { background: 'theme', key: '0000ff' });
+    await page.waitForFunction(() => !document.querySelector('#setup-welcome').hidden && document.querySelector('#output-background').value === 'theme' && document.querySelector('#output-key').value === '0000ff');
     await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
     await waitForDesign(base, design => design.studio.theme === 'rose');
     await page.locator('[data-page="settings"]').click();
@@ -356,17 +365,27 @@ test('first setup guide and full settings backup restore work through the UI', {
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
+    assert.equal(await page.locator('#setup-welcome').evaluate(element => element.hidden), true);
+    assert.equal(await page.locator('#output-background').inputValue(), 'key');
+    assert.equal(await page.locator('#output-key').inputValue(), 'ff00ff');
     assert.equal((await readDesign(base)).studio.theme, 'rose', 'restoring settings leaves the folder design alone');
     // A browser-only backup restores operating settings and ignores its obsolete appearance.
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-    const legacy = JSON.parse(backup.toString());
+    const legacy = { format: 'pokome-settings', version: 1, settings: {
+      'pokome-connections': JSON.stringify({ twitch: 'legacy_channel', kick: 'legacy-kick' }),
+      'pokome-auto-speech': JSON.stringify({ twitch: false, kick: true }),
+      'pokome-voices': JSON.stringify({ twitch: '', kick: '' }),
+      'pokome-speech-engines': JSON.stringify({ twitch: { engine: 'browser' }, kick: { engine: 'browser' } }),
+      'pokome-speech-options': JSON.stringify({ twitch: { maxLength: 160 }, kick: { maxLength: 220 } }),
+      'pokome-users-v2': JSON.stringify({ twitch: { '旧設定ユーザー': { hidden: true, muted: true } }, kick: {} }),
+      'pokome-history-limit': '7',
+    } };
     Object.assign(legacy.settings, {
       'pokome-studio': JSON.stringify({ theme: 'violet', title: '旧版のタイトル', image: png, source: 'image', listCount: 7 }),
       'pokome-theme-v1': '.pokome-workspace { invalid: ',
       'pokome-workspace-v1': 'malformed obsolete layout',
       'pokome-overlays-v1': JSON.stringify({ version: 1, items: [{ id: 'item-1', type: 'image', assetId: 'asset-1' }], assets: { 'asset-1': png } }),
     });
-    delete legacy.settings['pokome-history-limit'];
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
     await page.locator('#backup-status').filter({ hasText: '古い見た目・画像・配置は復元しません' }).waitFor();
@@ -378,6 +397,12 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal((await readDesign(base)).ratios['16:9'], null);
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
+    assert.equal(await page.locator('#twitch-channel').inputValue(), 'legacy_channel');
+    assert.equal(await page.locator('#max-length').inputValue(), '160');
+    assert.equal(await page.locator('#setup-welcome').evaluate(element => element.hidden), false);
+    assert.equal(await page.locator('#output-background').inputValue(), 'theme');
+    assert.equal(await page.locator('#output-key').inputValue(), '00ff00');
+    assert.deepEqual((await readSettings(base)).users.twitch['旧設定ユーザー'], { hidden: true, muted: true });
     assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
     assert.deepEqual(errors, []);

@@ -846,12 +846,13 @@ $('restore-settings').onchange = async event => {
     const file = event.target.files[0]; if (!file) return;
     if (file.size > MAX_SETTINGS_FILE_BYTES) throw new Error('設定ファイルは12MB以下にしてください。');
     const text = await file.text(), settings = parseSettings(text);
-    const original = JSON.parse(text).settings;
-    const legacy = LEGACY_APPEARANCE_KEYS.some(key => Object.hasOwn(original, key));
+    const backup = JSON.parse(text);
+    const legacy = backup.version === 1 && LEGACY_APPEARANCE_KEYS.some(key => Object.hasOwn(backup.settings, key));
     pendingSettings = settings;
-    $('backup-status').textContent = legacy
-      ? '現在の接続先・音声・ユーザー設定を置き換え、古い見た目・画像・配置は復元しません。見た目はcustomizationフォルダーのまま変わりません。「復元する」で適用します。'
-      : '現在の接続先・音声・ユーザー設定を置き換えます。見た目はcustomizationフォルダーのまま変わりません。「復元する」で適用します。';
+    $('backup-status').textContent = '現在の接続先・音声・ユーザー設定・履歴件数・初回案内・配信出力の背景を置き換えます。'
+      + (backup.version === 1 ? '旧版に含まれていない初回案内と配信出力の背景は標準に戻します。' : '')
+      + (legacy ? '古い見た目・画像・配置は復元しません。' : '')
+      + '見た目はcustomizationフォルダーのまま変わりません。「復元する」で適用します。';
     $('confirm-restore').disabled = false;
   } catch (error) { $('backup-status').textContent = '読み込めませんでした。' + error.message; }
 };
@@ -864,6 +865,6 @@ $('confirm-restore').onclick = async () => {
     await restoreSettings(settingsStore, settings); location.reload();
   } catch (error) {
     $('confirm-restore').disabled = false;
-    $('backup-status').textContent = error instanceof AggregateError ? error.message : `復元できませんでした。${error.message}`;
+    $('backup-status').textContent = `復元できませんでした。${error.message}`;
   }
 };

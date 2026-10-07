@@ -1,5 +1,5 @@
 import { normalizeHistoryLimit } from '../shared/studio.js';
-import { MAX_SETTINGS_BYTES, normalizeSettings, SETTINGS_FIELDS } from '../shared/settings-model.js';
+import { MAX_SETTINGS_BYTES, normalizeSettings, settingsDocument, SETTINGS_FIELDS } from '../shared/settings-model.js';
 
 // Only backup import understands these obsolete names. Browser storage is never read.
 const LEGACY_FIELDS = Object.freeze({
@@ -9,16 +9,13 @@ const LEGACY_FIELDS = Object.freeze({
 });
 export const LEGACY_APPEARANCE_KEYS = Object.freeze(['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1', 'pokome-workspace-v1']);
 export const MAX_SETTINGS_FILE_BYTES = MAX_SETTINGS_BYTES;
-export function exportSettings(settings) {
-  const normalized = normalizeSettings(settings);
-  return { format: 'pokome-settings', version: 1,
-    settings: Object.fromEntries(Object.entries(LEGACY_FIELDS).map(([key, field]) => [key, JSON.stringify(normalized[field])])) };
-}
+export const exportSettings = settingsDocument;
 
 export function parseSettings(text) {
   if (new TextEncoder().encode(text).length > MAX_SETTINGS_FILE_BYTES) throw new Error('設定ファイルは12MB以下にしてください。');
   const data = JSON.parse(text);
-  if (data?.format !== 'pokome-settings' || data.version !== 1 || !data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) throw new Error('対応する設定バックアップではありません。');
+  if (data?.format !== 'pokome-settings' || ![1, 2].includes(data.version) || !data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) throw new Error('対応する設定バックアップではありません。');
+  if (data.version === 2) return normalizeSettings(data.settings);
   const allowed = [...Object.keys(LEGACY_FIELDS), ...LEGACY_APPEARANCE_KEYS];
   if (Object.keys(data.settings).some(key => !allowed.includes(key)) || Object.keys(LEGACY_FIELDS).filter(key => key !== 'pokome-history-limit').some(key => !Object.hasOwn(data.settings, key))) throw new Error('必要な設定が不足しています。');
   const settings = {};
