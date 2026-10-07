@@ -94,7 +94,7 @@ renderSpeech();
 
 if (typeof BroadcastChannel === 'function') {
   const channel = new BroadcastChannel(OUTPUT_CHANNEL);
-  const presence = type => channel.postMessage({ v: 1, type, id, role: 'output', width: innerWidth, height: innerHeight, background: options.background });
+  const presence = type => channel.postMessage({ v: 2, type, id, role: 'output', width: innerWidth, height: innerHeight, background: options.background });
   channel.onmessage = event => {
     const result = applyOutputMessage(view, normalizeOutputMessage(event.data));
     if (result.resync) presence('hello');

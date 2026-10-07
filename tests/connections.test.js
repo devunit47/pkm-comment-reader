@@ -67,7 +67,7 @@ test('both sockets can receive independently; disconnecting Twitch leaves Kick c
   ki.receive(kickMessage());
   ki.receive(kickMessage()); // A duplicated Kick event must be displayed only once.
   ki.receive(kickMessage('chatrooms.999.v2', 'other-room'));
-  assert.deepEqual(twitch.messages, [{ user: 'same_user', login: 'same_user', text: 'Twitch only' }]);
+  assert.deepEqual(twitch.messages, [{ user: 'same_user', login: 'same_user', text: 'Twitch only', color: '', badges: [], parts: [{ type: 'text', text: 'Twitch only' }] }]);
   assert.equal(kick.messages.length, 1);
   assert.equal(kick.messages[0].text, 'Kick only');
   assert.deepEqual(twitch.connected, ['channel_one']);
@@ -135,7 +135,7 @@ test('malformed and wrong-room messages do not enter a service history', () => {
   assert.equal(parseKickMessage({ ...kickMessage(), data: '{bad' }, 'chatrooms.123.v2'), null);
   assert.equal(parseKickMessage(kickMessage(), 'chatrooms.456.v2'), null);
   assert.equal(parseTwitchMessage(':user!user@host PRIVMSG #other :hello', 'expected'), null);
-  assert.deepEqual(parseTwitchMessage('@display-name=Name\\sHere :user!user@host PRIVMSG #expected :hello', 'expected'), { user: 'Name Here', login: 'user', text: 'hello' });
+  assert.deepEqual(parseTwitchMessage('@display-name=Name\\sHere :user!user@host PRIVMSG #expected :hello', 'expected'), { user: 'Name Here', login: 'user', text: 'hello', color: '', badges: [], parts: [{ type: 'text', text: 'hello' }] });
 });
 
 test('sender account identity survives different display names on both services', () => {

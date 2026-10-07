@@ -1,7 +1,8 @@
+import { normalizeCommentContent } from './comment-model.js';
 // The stream output renders state that a control page publishes over a
 // same-origin BroadcastChannel. Every received value is normalized here, so
 // output.js never trusts the shape of a message from another window.
-export const OUTPUT_CHANNEL = 'pokome-output-v1';
+export const OUTPUT_CHANNEL = 'pokome-output-v2';
 export const BACKGROUNDS = Object.freeze(['transparent', 'theme', 'key']);
 export const KEY_COLORS = Object.freeze(['00ff00', 'ff00ff', '0000ff']);
 export const OUTPUT_SIZES = Object.freeze({ '1920x1080': [1920, 1080], '1280x720': [1280, 720], '1080x1920': [1080, 1920], '1440x1080': [1440, 1080] });
@@ -51,9 +52,9 @@ export function normalizeOutputPreferences(value) {
 function normalizeComment(value) {
   if (!value || typeof value !== 'object') return null;
   const id = typeof value.id === 'number' && Number.isSafeInteger(value.id) ? String(value.id) : text(value.id, 64);
-  const body = text(value.text, 2000);
-  if (!id || !body) return null;
-  return { id, user: text(value.user, 200), text: body, receivedAt: Number.isFinite(value.receivedAt) ? value.receivedAt : 0 };
+  const content = normalizeCommentContent(value);
+  if (!id || !content.text) return null;
+  return { id, user: text(value.user, 200), ...content, receivedAt: Number.isFinite(value.receivedAt) ? value.receivedAt : 0 };
 }
 
 function normalizeSpeech(value) {
@@ -63,7 +64,7 @@ function normalizeSpeech(value) {
 
 // Returns null for anything that is not a complete, known message.
 export function normalizeOutputMessage(value) {
-  if (!value || typeof value !== 'object' || value.v !== 1) return null;
+  if (!value || typeof value !== 'object' || value.v !== 2) return null;
   const { type } = value;
   if (type === 'hello' || type === 'heartbeat' || type === 'bye') {
     const id = identifier(value.id), role = value.role;
@@ -161,7 +162,7 @@ export class OutputPublisher {
     this.timer = setTimer(() => this.tick(), HEARTBEAT_MS);
     this.post({ type: 'heartbeat', id: this.id, role: 'controller' });
   }
-  post(message) { if (this.channel) this.channel.postMessage({ v: 1, ...message }); }
+  post(message) { if (this.channel) this.channel.postMessage({ v: 2, ...message }); }
   next(type, fields) { this.post({ type, controllerId: this.id, seq: ++this.seq, ...fields }); }
   snapshot() {
     const { platform, received, messages, speech, credit } = this.state;
@@ -170,7 +171,7 @@ export class OutputPublisher {
     this.sentSpeech = JSON.stringify([speech, credit]);
   }
   update({ platform, received, messages }) {
-    const list = messages.map(message => ({ id: String(message.id), user: message.user, text: message.text, receivedAt: message.receivedAt || 0 }));
+    const list = messages.map(normalizeComment).filter(Boolean);
     this.state = { ...this.state, platform, received, messages: list };
     if (!this.channel) return;
     if (this.sentIds === null || platform !== this.sentPlatform) { this.snapshot(); return; }

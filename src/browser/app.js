@@ -183,9 +183,9 @@ function render() {
   renderStageChat();
 }
 
-function add(platform, user, text, createdAt, login = user, readAutomatically = true) {
+function add(platform, user, text, createdAt, login = user, readAutomatically = true, identity = {}) {
   const state = states[platform];
-  const message = addMessage(state, user, text, ++session, createdAt, login);
+  const message = addMessage(state, user, text, ++session, createdAt, login, identity);
   if (!message) return;
   message.receivedAt = Date.now();
   if (platform === active) {
@@ -703,7 +703,7 @@ for (const platform of enabledPlatforms) {
       states[platform].channel = channel;
       renderConnection();
     },
-    onMessage(message) { add(platform, message.user, message.text, message.createdAt, message.login); },
+    onMessage(message) { add(platform, message.user, message.text, message.createdAt, message.login, true, platform === 'twitch' ? message : {}); },
     onConnected(channel) {
       savedConnections[platform] = channel;
       saveSetting('connections', savedConnections);

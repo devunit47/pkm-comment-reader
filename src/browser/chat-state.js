@@ -1,3 +1,4 @@
+import { normalizeCommentContent } from '../shared/comment-model.js';
 import { normalizeSpeechOptions, createSpeechHistory } from './speech-options.js';
 
 export function createChatState() {
@@ -10,11 +11,11 @@ export function createChatState() {
   };
 }
 
-export function addMessage(state, user, text, id, createdAt = Date.now(), login = user) {
+export function addMessage(state, user, text, id, createdAt = Date.now(), login = user, identity = {}) {
   if (typeof user !== 'string' || typeof text !== 'string' || !text) return null;
   const date = new Date(createdAt);
   const message = {
-    id, user, login, text: text.slice(0, 2000), first: !state.seen.has(user),
+    id, user, login, ...normalizeCommentContent({ ...identity, text }), first: !state.seen.has(user),
     time: (Number.isNaN(date.getTime()) ? new Date() : date)
       .toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
   };

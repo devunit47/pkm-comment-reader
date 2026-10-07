@@ -35,7 +35,7 @@ test('receipt time expires at the boundary; zero hold and preview do not expire'
 });
 test('resync and controller snapshots preserve receipt time, speech and credit despite expiry', () => {
   const view=createOutputView();
-  const snapshot=(controllerId,receivedAt)=>normalizeOutputMessage({v:1,type:'snapshot',controllerId,seq:1,platform:'twitch',received:1,messages:[{id:'x',user:'u',text:'t',receivedAt}],speech:{user:'speaker',text:'keep',speaking:true},credit:'credit'});
+  const snapshot=(controllerId,receivedAt)=>normalizeOutputMessage({v:2,type:'snapshot',controllerId,seq:1,platform:'twitch',received:1,messages:[{id:'x',user:'u',text:'t',receivedAt}],speech:{user:'speaker',text:'keep',speaking:true},credit:'credit'});
   applyOutputMessage(view,snapshot('a',1000),1000);
   const saved=structuredClone(view);
   assert.equal(selectOutputComments(view.messages,{holdSeconds:5},6000).length,0);
