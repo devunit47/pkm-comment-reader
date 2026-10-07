@@ -67,6 +67,9 @@ test('design page orders final entries, shows the applied design and keeps prese
   await presets.locator('#preset-load').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
   for (const selector of ['#canvas-snap', '#copy-ratio', '#draft-reset', '#local-css', '#local-actor', '#local-speech', '#local-overlay', '.side']) assert.equal(await editor.locator(selector).first().isVisible(), false, selector);
   assert.equal(await editor.locator('.view select:visible').count(), 2);
+  // The covered-area toggle exists only for portrait, which has the only guide.
+  assert.equal(await editor.locator('.view input:visible').count(), 0);
+  await editor.locator('#preview-ratio').selectOption('9:16');
   assert.equal(await editor.locator('.view input:visible').count(), 1);
   assert.equal(await editor.locator('#cancel-design').textContent(), 'キャンセル');
   await editor.locator('#cancel-design').click();

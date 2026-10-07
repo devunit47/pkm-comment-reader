@@ -143,7 +143,7 @@ test('references become same-origin URLs only through the validated pattern', ()
 });
 
 // --- P1-B2: per-ratio layouts ---
-import { nearestRatio, PREVIEW_SIZES, defaultTalkLayout, talkLayout, talkOverlays, withTalk, SAFE_AREAS } from '../src/shared/design-model.js';
+import { nearestRatio, PREVIEW_SIZES, defaultTalkLayout, talkLayout, talkOverlays, withTalk, PORTRAIT_COVERED } from '../src/shared/design-model.js';
 import { PANEL_IDS, normalizeLayout } from '../src/shared/workspace-model.js';
 import { OUTPUT_SIZES } from '../src/shared/output-protocol.js';
 
@@ -201,10 +201,8 @@ test('saving a ratio keeps the others, and returning to its default empties the 
   assert.throws(() => withTalk(defaultDesign(), '1:1', {}));
 });
 
-test('safe-area guides are defined once per ratio', () => {
-  assert.deepEqual(SAFE_AREAS['9:16'], { top: 6, bottom: 10, left: 0, right: 0, shade: true });
-  assert.deepEqual(SAFE_AREAS['16:9'], { top: 5, bottom: 5, left: 5, right: 5, shade: false });
-  assert.deepEqual(SAFE_AREAS['4:3'], SAFE_AREAS['16:9']);
+test('only portrait has an edge guide, for app overlays that cover its top and bottom', () => {
+  assert.deepEqual(PORTRAIT_COVERED, { top: 6, bottom: 10 });
 });
 
 test('actor image normalization bounds finite numbers and preserves fractional offsets', () => {
