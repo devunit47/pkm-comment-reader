@@ -5,16 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, readSettings, saveSetting, waitForSettings } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
 after(() => Promise.all(folders.map(folder => rm(folder, { recursive: true, force: true }))));
 const scratch = async () => { const folder = await mkdtemp(join(tmpdir(), 'pokome-workspace-')); folders.push(folder); return folder; };
 
-test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !browserAvailable }, async () => {
+test('workspace edits, persistence, protected recovery and design roundtrip', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
@@ -157,16 +157,15 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
 });
 
 
-test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async () => {
+test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-      localStorage.setItem('pokome-connections', JSON.stringify({ twitch: 'saved_channel', kick: 'saved-kick' }));
       window.testSockets = [];
       window.WebSocket = class {
         constructor(url) { this.url = url; window.testSockets.push(this); }
@@ -174,6 +173,8 @@ test('platform buttons toggle saved connections independently and open settings 
         close() { this.closed = true; }
       };
     });
+    const base = 'http://127.0.0.1:' + server.address().port;
+    await saveSetting(base, 'connections', { twitch: 'saved_channel', kick: 'saved-kick' });
     await page.route('**/api/kick/channel/*', route => route.fulfill({ json: { chatroomId: 123 } }));
     await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
     await page.locator('#twitch-channel').evaluate(input => { input.value = 'unsaved_edit'; });
@@ -194,9 +195,9 @@ test('platform buttons toggle saved connections independently and open settings 
     assert.equal(await page.locator('#twitch-tab-status').textContent(), '接続済み');
     await page.evaluate(() => window.testSockets[1].onerror());
     assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続');
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-connections')).twitch), 'saved_channel');
-    await page.evaluate(() => localStorage.removeItem('pokome-connections'));
-    // Use a fresh page without the saved-connection initialization script.
+    await waitForSettings(base, settings => settings.connections.twitch === 'saved_channel');
+    await saveSetting(base, 'connections', { twitch: '', kick: '' });
+    // The cleared server setting sends a fresh page to the connection form.
     const freshPage = await browser.newPage(); await blockExternalFonts(freshPage);
     await freshPage.goto('http://127.0.0.1:' + server.address().port); await appReady(freshPage);
     await freshPage.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
@@ -210,10 +211,10 @@ test('platform buttons toggle saved connections independently and open settings 
 });
 
 
-test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !browserAvailable }, async () => {
+test('local engines select voices, play synchronized previews, stop and persist per platform', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
   const uuid = '3c37646f-3881-5374-2a83-149267990abc';
-  const server = createServer({ customizationDirectory: await scratch(), fetchImpl: async url => {
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch(), fetchImpl: async url => {
     if (url.endsWith('/speakers') && url.includes(':50021')) return Response.json([{ name: 'ボイステスト', styles: [{ id: 3, name: 'ノーマル' }] }]);
     if (url.endsWith('/v1/speakers')) return Response.json([{ speakerName: '声色テスト', speakerUuid: uuid, styles: [{ styleId: 0, styleName: 'れいせい' }] }]);
     if (url.includes('/audio_query?')) return Response.json({ accent_phrases: [] });
@@ -252,6 +253,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
     await page.locator('[data-platform="twitch"]').click();
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#speech-status').textContent(), '待機中');
+    await waitForSettings(new URL(page.url()).origin, settings => settings.speechEngines.twitch.voicevox === '3' && settings.speechEngines.kick.coeiroink === uuid + ':0');
     await page.reload(); await appReady(page); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#voice').inputValue(), '3');
@@ -266,9 +268,9 @@ test('local engines select voices, play synchronized previews, stop and persist 
 });
 
 
-test('standard home keeps operating controls reachable despite obsolete saved layout', { skip: !browserAvailable }, async () => {
+test('standard home keeps operating controls reachable despite obsolete saved layout', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
     await page.addInitScript(() => {
@@ -293,7 +295,7 @@ test('standard home keeps operating controls reachable despite obsolete saved la
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#user-actions').isVisible(), false);
     await author.click(); await page.locator('#mute-user').click();
-    const rules = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-users-v2')));
+    const { users: rules } = await waitForSettings(new URL(page.url()).origin, settings => Object.values(settings.users.twitch).some(rule => rule.muted));
     assert.equal(Object.values(rules.twitch).some(rule => rule.muted), true);
     assert.equal(Object.values(rules.kick).some(rule => rule.muted), false);
     await author.click(); await page.locator('#hide-user').click();
@@ -317,9 +319,9 @@ test('standard home keeps operating controls reachable despite obsolete saved la
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
 });
 
-test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async () => {
+test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -333,13 +335,23 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#setup-welcome').isVisible(), false);
     const base = 'http://127.0.0.1:' + server.address().port;
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await page.locator('[data-page="studio"]').click();
+    await page.locator('#output-background').selectOption('key'); await page.locator('#output-key').selectOption('ff00ff');
+    await waitForSettings(base, settings => settings.historyLimit === 42 && settings.setupComplete && settings.output.background === 'key' && settings.output.key === 'ff00ff');
     await page.locator('[data-page="settings"]').click();
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
     const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
+    const exported = JSON.parse(backup.toString());
+    assert.equal(exported.format, 'pokome-settings'); assert.equal(exported.version, 2);
+    assert.equal(exported.settings.setupComplete, true);
+    assert.deepEqual(exported.settings.output, { background: 'key', key: 'ff00ff' });
     // Backups hold operating settings only: no appearance, images or home layout.
     assert.doesNotMatch(backup.toString(), /pokome-studio|pokome-theme|pokome-overlays|pokome-workspace|data:image/);
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await saveSetting(base, 'setupComplete', false);
+    await saveSetting(base, 'output', { background: 'theme', key: '0000ff' });
+    await page.waitForFunction(() => !document.querySelector('#setup-welcome').hidden && document.querySelector('#output-background').value === 'theme' && document.querySelector('#output-key').value === '0000ff');
     await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
     await waitForDesign(base, design => design.studio.theme === 'rose');
     await page.locator('[data-page="settings"]').click();
@@ -353,17 +365,27 @@ test('first setup guide and full settings backup restore work through the UI', {
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
+    assert.equal(await page.locator('#setup-welcome').evaluate(element => element.hidden), true);
+    assert.equal(await page.locator('#output-background').inputValue(), 'key');
+    assert.equal(await page.locator('#output-key').inputValue(), 'ff00ff');
     assert.equal((await readDesign(base)).studio.theme, 'rose', 'restoring settings leaves the folder design alone');
     // A browser-only backup restores operating settings and ignores its obsolete appearance.
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
-    const legacy = JSON.parse(backup.toString());
+    const legacy = { format: 'pokome-settings', version: 1, settings: {
+      'pokome-connections': JSON.stringify({ twitch: 'legacy_channel', kick: 'legacy-kick' }),
+      'pokome-auto-speech': JSON.stringify({ twitch: false, kick: true }),
+      'pokome-voices': JSON.stringify({ twitch: '', kick: '' }),
+      'pokome-speech-engines': JSON.stringify({ twitch: { engine: 'browser' }, kick: { engine: 'browser' } }),
+      'pokome-speech-options': JSON.stringify({ twitch: { maxLength: 160 }, kick: { maxLength: 220 } }),
+      'pokome-users-v2': JSON.stringify({ twitch: { '旧設定ユーザー': { hidden: true, muted: true } }, kick: {} }),
+      'pokome-history-limit': '7',
+    } };
     Object.assign(legacy.settings, {
       'pokome-studio': JSON.stringify({ theme: 'violet', title: '旧版のタイトル', image: png, source: 'image', listCount: 7 }),
       'pokome-theme-v1': '.pokome-workspace { invalid: ',
       'pokome-workspace-v1': 'malformed obsolete layout',
       'pokome-overlays-v1': JSON.stringify({ version: 1, items: [{ id: 'item-1', type: 'image', assetId: 'asset-1' }], assets: { 'asset-1': png } }),
     });
-    delete legacy.settings['pokome-history-limit'];
     await page.locator('[data-page="settings"]').click();
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
     await page.locator('#backup-status').filter({ hasText: '古い見た目・画像・配置は復元しません' }).waitFor();
@@ -375,6 +397,12 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal((await readDesign(base)).ratios['16:9'], null);
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
+    assert.equal(await page.locator('#twitch-channel').inputValue(), 'legacy_channel');
+    assert.equal(await page.locator('#max-length').inputValue(), '160');
+    assert.equal(await page.locator('#setup-welcome').evaluate(element => element.hidden), false);
+    assert.equal(await page.locator('#output-background').inputValue(), 'theme');
+    assert.equal(await page.locator('#output-key').inputValue(), '00ff00');
+    assert.deepEqual((await readSettings(base)).users.twitch['旧設定ユーザー'], { hidden: true, muted: true });
     assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
     assert.deepEqual(errors, []);
@@ -383,9 +411,9 @@ test('first setup guide and full settings backup restore work through the UI', {
 
 // Regression: after a reload in talk mode, leaving talk mode went back to the
 // stale talk history entry and immediately re-entered talk mode.
-test('leaving talk mode after a reload in talk mode returns to the operating screen', { skip: !browserAvailable }, async () => {
+test('leaving talk mode after a reload in talk mode returns to the operating screen', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
@@ -403,9 +431,9 @@ test('leaving talk mode after a reload in talk mode returns to the operating scr
 });
 
 
-test('home ignores obsolete layout without clearing the saved value', { skip: !browserAvailable }, async () => {
+test('home ignores obsolete layout without clearing the saved value', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
-  const server = createServer({ customizationDirectory: await scratch() });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
     const page = await browser.newPage(); await blockExternalFonts(page);

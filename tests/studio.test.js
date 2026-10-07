@@ -4,7 +4,7 @@ test('comment styles persist and unknown styles use the default', () => {
   for (const commentStyle of ['stacked', 'anonymous', 'inline', 'compact']) assert.equal(normalizeStudio({ commentStyle }).commentStyle, commentStyle);
   assert.equal(normalizeStudio({ commentStyle: 'unknown' }).commentStyle, 'stacked');
 });
-import { DEFAULT_STUDIO, normalizeStudio, readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit, COMMENT_PRESETS, applyCommentPreset, matchCommentPreset } from '../src/shared/studio.js';
+import { DEFAULT_STUDIO, normalizeStudio, readSavedVoices, readHistoryLimit, normalizeHistoryLimit, COMMENT_PRESETS, applyCommentPreset, matchCommentPreset } from '../src/shared/studio.js';
 
 test('studio settings validate styles, bounds and raster data without accepting arbitrary sources', () => {
   assert.deepEqual(normalizeStudio(null), DEFAULT_STUDIO);
@@ -18,9 +18,9 @@ test('studio settings validate styles, bounds and raster data without accepting 
   assert.deepEqual(normalizeStudio('{broken'), DEFAULT_STUDIO);
 });
 
-test('voice preferences restore separately and tolerate invalid storage', () => {
-  assert.deepEqual(readSavedVoices({ getItem: () => JSON.stringify({ twitch: 'Japanese voice', kick: 'Other voice' }) }), { twitch: 'Japanese voice', kick: 'Other voice' });
-  assert.deepEqual(readSavedVoices({ getItem: () => JSON.stringify({ twitch: null, kick: false }) }), { twitch: '', kick: '' });
+test('voice preferences restore separately and tolerate invalid settings', () => {
+  assert.deepEqual(readSavedVoices({ voices: { twitch: 'Japanese voice', kick: 'Other voice' } }), { twitch: 'Japanese voice', kick: 'Other voice' });
+  assert.deepEqual(readSavedVoices({ voices: { twitch: null, kick: false } }), { twitch: '', kick: '' });
   assert.deepEqual(readSavedVoices(undefined), { twitch: '', kick: '' });
 });
 
@@ -48,9 +48,9 @@ test('speech bubble appearance restores and rejects invalid styles and colors', 
 });
 
 test('the history limit is kept apart from the design and accepts 1–300', () => {
-  for (const limit of [1, 3, 300]) assert.equal(readHistoryLimit({ getItem: key => key === HISTORY_LIMIT_KEY ? JSON.stringify(limit) : null }), limit);
+  for (const limit of [1, 3, 300]) assert.equal(readHistoryLimit({ historyLimit: limit }), limit);
   for (const limit of [0, -1, 301, 2.5, '3', null]) assert.equal(normalizeHistoryLimit(limit), 300);
-  assert.equal(readHistoryLimit({ getItem: () => '{broken' }), 300);
+  assert.equal(readHistoryLimit({ historyLimit: 'broken' }), 300);
   assert.equal(readHistoryLimit(), 300);
   assert.equal(Object.hasOwn(normalizeStudio({ listCount: 12 }), 'listCount'), false);
 });

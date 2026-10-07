@@ -7,7 +7,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { defaultDesign } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS, temporaryDataDirectory, readSettings, saveSetting } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const hidingCSS = '.pokome-workspace { display: none !important; }';
@@ -48,7 +48,8 @@ async function serve(t, server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-async function openBrowser(t, url, initialStorage = {}) {
+async function openBrowser(t, url, initialSettings = {}) {
+  for (const [field, value] of Object.entries(initialSettings)) await saveSetting(url, field, value);
   const browser = await chromium.launch({ headless: true, executablePath });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
@@ -56,12 +57,6 @@ async function openBrowser(t, url, initialStorage = {}) {
   const errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => requests.push(request.url()));
-  await page.addInitScript(values => {
-    if (!sessionStorage.getItem('customization-test-initialized')) {
-      for (const [key, value] of Object.entries(values)) localStorage.setItem(key, JSON.stringify(value));
-      sessionStorage.setItem('customization-test-initialized', 'true');
-    }
-  }, initialStorage);
   await page.goto(url);
   await page.locator('#appearance-recovery #open-reset').waitFor();
   return { page, errors, requests };
@@ -106,16 +101,15 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   const originalFiles = {};
   for (const kind of ['styles', 'images']) for (const name of await readdir(join(directory, kind))) originalFiles[`${kind}/${name}`] = await readFile(join(directory, kind, name));
   const preserved = {
-    'pokome-connections': { twitch: 'keep_channel', kick: 'keep-kick' },
-    'pokome-voices': { twitch: 'keep_voice', kick: '' },
-    'pokome-users-v2': { twitch: { keep_user: { muted: true } }, kick: {} },
-    'pokome-speech-options': { twitch: { volume: 0.3 }, kick: {} },
-    'pokome-setup-complete': true,
-    'pokome-workspace-v1': { version: 1, home: { panels: { comments: { hidden: true } } } },
-    'pokome-theme-v1': { obsolete: true },
+    connections: { twitch: 'keep_channel', kick: 'keep-kick' },
+    voices: { twitch: 'keep_voice', kick: '' },
+    users: { twitch: { keep_user: { muted: true } }, kick: {} },
+    speechOptions: { twitch: { maxLength: 140 }, kick: {} },
+    setupComplete: true,
   };
-  const base = await serve(t, createServer({ customizationDirectory: directory }));
+  const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }));
   const { page, errors, requests } = await openBrowser(t, base, preserved);
+  const savedSettings = await readSettings(base);
   await studio(page); await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
   await applyCSS(page, 'first.css'); await applyImage(page, 'actor.png');
   const beforeCancel = await savedStudio(page), beforeCSS = await currentCSS(page);
@@ -143,8 +137,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
   assert.match(await page.locator('#talk-stage').getAttribute('style'), /\.\/speech-background\.svg/);
   assert.deepEqual(await readDesign(base), defaultDesign());
   assert.equal(await page.locator('#workspace-editor,#layout-session').count(), 0);
-  for (const key of ['pokome-studio', 'pokome-overlays-v1']) assert.equal(await page.evaluate(key => localStorage.getItem(key), key), null, key);
-  for (const [key, value] of Object.entries(preserved)) assert.deepEqual(await page.evaluate(key => JSON.parse(localStorage.getItem(key)), key), value, key);
+  assert.deepEqual(await readSettings(base), savedSettings);
   await resetAppearance(page); await resetAppearance(page);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
   assert.equal(await page.locator('#appearance-recovery #open-reset').evaluate(button => button.matches(':focus')), true);
@@ -165,7 +158,7 @@ test('protected recovery resets all appearance, supports cancel and repeat, pres
 
 test('appearance recovery keeps an open draft stale until it is restarted', { skip: !browserAvailable }, async t => {
   const directory = await fixture(t);
-  const base = await serve(t, createServer({ customizationDirectory: directory }));
+  const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }));
   const { page } = await openBrowser(t, base);
   await studio(page);
   const editor = page.locator('#design-preview-editor');

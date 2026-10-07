@@ -1,18 +1,5 @@
-export const DEFAULT_SPEECH_OPTIONS = Object.freeze({
-  maxLength: 100, skipUrls: true, skipDuplicates: true, skipCommands: false, userInterval: 0,
-  skipNightbot: true, skipBroadcaster: true,
-});
-
-export function normalizeSpeechOptions(value = {}) {
-  const options = { ...DEFAULT_SPEECH_OPTIONS };
-  if (!value || typeof value !== 'object') return options;
-  for (const key of ['skipUrls', 'skipDuplicates', 'skipCommands', 'skipNightbot', 'skipBroadcaster']) {
-    if (typeof value[key] === 'boolean') options[key] = value[key];
-  }
-  if (Number.isInteger(value.maxLength) && value.maxLength >= 10 && value.maxLength <= 500) options.maxLength = value.maxLength;
-  if (Number.isInteger(value.userInterval) && value.userInterval >= 0 && value.userInterval <= 60) options.userInterval = value.userInterval;
-  return options;
-}
+import { normalizeAutoSpeech } from '../shared/speech-options.js';
+export { DEFAULT_SPEECH_OPTIONS, normalizeSpeechOptions } from '../shared/speech-options.js';
 
 export function isSpeechUserExcluded(message, channel, options) {
   const login = (message.login || message.user).toLowerCase();
@@ -20,15 +7,8 @@ export function isSpeechUserExcluded(message, channel, options) {
     (options.skipBroadcaster && !!channel && login === channel.toLowerCase());
 }
 
-export function readSavedAutoSpeech(storage) {
-  const result = { twitch: true, kick: true };
-  try {
-    const saved = JSON.parse(storage?.getItem('pokome-auto-speech') || '{}');
-    for (const platform of Object.keys(result)) {
-      if (typeof saved?.[platform] === 'boolean') result[platform] = saved[platform];
-    }
-  } catch { /* Missing or invalid settings retain the enabled default. */ }
-  return result;
+export function readSavedAutoSpeech(settings) {
+  return normalizeAutoSpeech(settings?.autoSpeech);
 }
 
 const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });

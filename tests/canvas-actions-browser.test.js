@@ -6,13 +6,13 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultTalkLayout, withTalk } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, saveDesign, editorTarget } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, saveDesign, editorTarget, temporaryDataDirectory } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 const ROOT = '#design-preview-editor';
 async function fixture(t, seed) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-canvas-actions-'));
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true, executablePath });
   t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });

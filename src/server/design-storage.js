@@ -2,7 +2,9 @@ import { constants } from 'node:fs';
 import { lstat, open, readdir, rename, rmdir, unlink } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { failure, changed, directoryChanged, guardDirectory, readStable, atomicWrite, readBody, readAllowed, writeAllowed, retryTransient, renameWithRetry, createEventStream } from './storage-utils.js';
+export { retryTransient, renameWithRetry } from './storage-utils.js';
 import { safeDirectory, imageSignatureMatches, ensureCustomizationDirectories } from './local-customization.js';
 import { rasterDimensions } from '../shared/overlay-model.js';
 import { MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, MAX_THEME_CSS_BYTES, IMAGE_TYPES, RATIOS, imageExtension, normalizeDesign, defaultDesign, designImageRefs, normalizePresetName, validPresetId, validImageRef } from '../shared/design-model.js';
@@ -15,36 +17,6 @@ export const MAX_DESIGN_JSON_BYTES = 4 * 1024 * 1024;
 // older unreferenced images are removed, so another tab's save cannot delete them.
 export const UNREFERENCED_IMAGE_GRACE_MS = 24 * 60 * 60 * 1000;
 const IMAGE_NAME = /^([0-9a-f]{64})\.(png|jpg|webp|gif)$/;
-const HEARTBEAT_MS = 25000;
-
-const failure = (status, message) => Object.assign(new Error(message), { status });
-// The file was replaced between checks (a save renamed a new one into place).
-const changed = () => Object.assign(failure(422, 'ファイルを読み込めません。'), { code: 'ECHANGED' });
-const directoryChanged = () => Object.assign(failure(422, '操作中にフォルダーが変更されました。通常のフォルダーか確認して一覧を更新してください。'), { code: 'EDIRECTORYCHANGED' });
-
-// Checking just the leaf can miss a replaced ancestor: its ordinary child
-// files would then belong to another directory tree. Keep the whole chain's
-// identity and recheck it before each path-based mutation and retry.
-async function guardDirectory(root, directory) {
-  root = resolve(root); directory = resolve(directory);
-  const remainder = relative(root, directory);
-  if (remainder === '..' || remainder.startsWith(`..${sep}`) || isAbsolute(remainder)) throw directoryChanged();
-  const paths = [root];
-  for (const part of remainder.split(sep).filter(Boolean)) paths.push(join(paths.at(-1), part));
-  const snapshots = [];
-  for (const path of paths) snapshots.push(await safeDirectory(path));
-  const check = async () => {
-    for (let index = 0; index < paths.length; index++) {
-      let actual;
-      try { actual = await safeDirectory(paths[index]); } catch { throw directoryChanged(); }
-      const before = snapshots[index];
-      if (before.real !== actual.real || before.info.dev !== actual.info.dev || before.info.ino !== actual.info.ino) throw directoryChanged();
-    }
-  };
-  await check();
-  return check;
-}
-
 async function touchRegularFile(path, expected, date, check) {
   return retryTransient(async () => {
     await check();
@@ -59,28 +31,6 @@ async function touchRegularFile(path, expected, date, check) {
   });
 }
 
-async function readRegularFile(path, maxBytes) {
-  const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink() || before.size > maxBytes) throw failure(422, 'ファイルを読み込めません。');
-  const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
-  try {
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.size > maxBytes) throw failure(422, 'ファイルを読み込めません。');
-    if (opened.dev !== before.dev || opened.ino !== before.ino) throw changed();
-    const buffer = Buffer.alloc(opened.size + 1);
-    let size = 0;
-    while (size < buffer.length) {
-      const { bytesRead } = await handle.read(buffer, size, buffer.length - size, size);
-      if (!bytesRead) break;
-      size += bytesRead;
-    }
-    if (size !== opened.size) throw changed();
-    const after = await lstat(path);
-    if (!after.isFile() || after.isSymbolicLink() || after.dev !== opened.dev || after.ino !== opened.ino) throw changed();
-    return { bytes: buffer.subarray(0, size), mtimeMs: opened.mtimeMs };
-  } finally { await handle.close(); }
-}
-
 // Validates bytes for a given extension: signature, header pixels and size.
 export function inspectImageBytes(bytes, extension) {
   const type = IMAGE_TYPES[extension];
@@ -91,42 +41,6 @@ export function inspectImageBytes(bytes, extension) {
   const [width, height] = dimensions;
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1 || width * height > MAX_IMAGE_PIXELS) return null;
   return { type, bytes: bytes.length, width, height };
-}
-
-// Windows refuses to replace a file while another request reads it, and to
-// open one while it is being replaced (EPERM/EBUSY/EACCES). Those clear within
-// milliseconds, so both sides retry briefly instead of failing the request.
-export async function retryTransient(task, { attempts = 20, codes = ['EPERM', 'EBUSY', 'EACCES'], delay = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
-  for (let attempt = 1; ; attempt++) {
-    try { return await task(); }
-    catch (error) {
-      if (attempt >= attempts || !codes.includes(error.code)) throw error;
-      await delay(Math.min(100, attempt * 10));
-    }
-  }
-}
-export const renameWithRetry = (from, to, { renameFile = rename, ...options } = {}) => retryTransient(() => renameFile(from, to), options);
-// A read that saw the file being replaced simply reads the new file.
-const readStable = (path, maxBytes) => retryTransient(() => readRegularFile(path, maxBytes), { codes: ['EPERM', 'EBUSY', 'EACCES', 'ECHANGED'] });
-
-async function atomicWrite(path, content, root = dirname(path), checkAncestor = async () => {}) {
-  await checkAncestor();
-  const checkLocal = await guardDirectory(root, dirname(path));
-  const check = async () => { await checkAncestor(); await checkLocal(); };
-  const temporary = `${path}.${randomUUID()}.tmp`;
-  let handle;
-  try {
-    await check();
-    handle = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW || 0));
-    await check();
-    await handle.writeFile(content);
-    await handle.close(); handle = null;
-    await renameWithRetry(temporary, path, { renameFile: async (from, to) => { await check(); return rename(from, to); } });
-  } catch (error) {
-    if (handle) await handle.close().catch(() => {});
-    await check().then(() => unlink(temporary)).catch(() => {});
-    throw error;
-  }
 }
 
 // Generated transaction folders are removed only after checking every entry;
@@ -173,37 +87,11 @@ export async function replacePresetDirectory(target, staged, backup, { renameDir
   await removeDirectory(backup, root).catch(() => {});
 }
 
-async function readBody(req, maxBytes) {
-  const declared = Number(req.headers['content-length']);
-  if (Number.isFinite(declared) && declared > maxBytes) throw failure(413, '送られたデータが大きすぎます。');
-  const chunks = [];
-  let total = 0;
-  for await (const chunk of req) {
-    total += chunk.length;
-    if (total > maxBytes) throw failure(413, '送られたデータが大きすぎます。');
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
-}
-
-const localHost = host => /^(?:localhost|127\.0\.0\.1)(?::\d+)?$/.test(host);
-// Reads may come from an address bar or an OBS source; writes must come from
-// a page of this app. JSON and image bodies also force a CORS preflight.
-function readAllowed(req) {
-  const host = req.headers.host || '', site = req.headers['sec-fetch-site'];
-  return localHost(host) && (!req.headers.origin || req.headers.origin === `http://${host}`) && (!site || site === 'same-origin' || site === 'none');
-}
-function writeAllowed(req) {
-  const host = req.headers.host || '', site = req.headers['sec-fetch-site'];
-  return localHost(host) && req.headers.origin === `http://${host}` && site === 'same-origin';
-}
-
 export function createDesignStorage(root) {
   const current = join(root, 'current'), images = join(current, 'images'), designPath = join(current, 'design.json');
   const presets = join(root, 'presets');
   const catalogCache = new Map();
-  const clients = new Set();
-  let stopping = false;
+  const { events, broadcast, closeEvents } = createEventStream();
   let queue = Promise.resolve();
   // Saves and cleanup run one at a time so If-Match checks cannot interleave.
   const exclusive = task => { const run = queue.then(task, task); queue = run.catch(() => {}); return run; };
@@ -300,10 +188,6 @@ export function createDesignStorage(root) {
       await check();
       if (info?.isFile() && !info.isSymbolicLink()) await touchRegularFile(path, info, now, check);
     }
-  }
-
-  function broadcast(revision) {
-    for (const client of clients) client.write(`event: change\ndata: ${JSON.stringify({ revision })}\n\n`);
   }
 
   async function save(value, expected) {
@@ -660,22 +544,6 @@ export function createDesignStorage(root) {
     res.end(bytes);
   }
 
-  function events(req, res) {
-    // Active keep-alive connections can still deliver requests after close().
-    if (stopping) {
-      res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close' });
-      res.end('サーバーを停止しています。');
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', Connection: 'keep-alive' });
-    res.write('retry: 2000\n\n');
-    clients.add(res);
-    const heartbeat = setInterval(() => res.write(': ping\n\n'), HEARTBEAT_MS);
-    const close = () => { clearInterval(heartbeat); clients.delete(res); };
-    req.on('close', close);
-    res.on('close', close);
-  }
-
   async function handle(req, res, url) {
     const json = (status, data) => {
       if (res.headersSent) return;
@@ -760,13 +628,6 @@ export function createDesignStorage(root) {
       if (error.status) json(error.status, { error: error.message, ...(error.revision ? { revision: error.revision } : {}), ...(error.readOnly ? { readOnly: true } : {}) });
       else json(503, { error: 'customizationフォルダーを利用できません。通常のフォルダーか、アクセス権を確認してください。' });
     }
-  }
-
-  // Event streams never finish on their own; end them so server.close() can.
-  function closeEvents() {
-    stopping = true;
-    for (const client of clients) client.end();
-    clients.clear();
   }
 
   return { handle, load, save, addImage, listPresets, getPreset, newPreset, updatePreset, deletePreset, applyPreset, closeEvents };

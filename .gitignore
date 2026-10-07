@@ -5,6 +5,7 @@ node_modules/
 
 dist-local/
 customization/
+data/
 
 # Private notes repository.
 /notes/

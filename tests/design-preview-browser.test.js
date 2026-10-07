@@ -9,7 +9,7 @@ import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -41,8 +41,8 @@ const servedImage = bytes => `/api/design/current/images/${createHash('sha256').
 const overlays = items => ({ version: 1, items, assets: {} });
 
 // `design` seeds customization/current through the API before the page opens;
-// `storage` seeds this browser's operating settings.
-async function fixture(t, { design, storage = {} } = {}) {
+// `settings` seeds the server's private operating settings.
+async function fixture(t, { design, settings = {} } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   let server, directory;
   t.after(async () => {
@@ -51,22 +51,19 @@ async function fixture(t, { design, storage = {} } = {}) {
     if (directory) await rm(directory, { recursive: true, force: true });
   });
   directory = await mkdtemp(join(tmpdir(), 'pokome-preview-browser-'));
-  server = createServer({ customizationDirectory: directory });
+  server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   if (design) await saveDesign(url, design);
+  for (const [field, value] of Object.entries(settings)) await saveSetting(url, field, value);
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   // External font availability is irrelevant to these deterministic UI checks.
   await page.route('https://fonts.googleapis.com/**', route => route.abort());
   await page.route('https://fonts.gstatic.com/**', route => route.abort());
-  await page.addInitScript(values => {
+  await page.addInitScript(() => {
     if (window !== window.top) return;
-    if (!sessionStorage.getItem('preview-fixture-seeded')) {
-      for (const [key, value] of Object.entries(values)) localStorage.setItem(key, value);
-      sessionStorage.setItem('preview-fixture-seeded', 'true');
-    }
     const probe = window.__previewProbe = { writes: [], speech: 0, sockets: 0 };
     for (const method of ['setItem', 'removeItem', 'clear']) {
       const original = Storage.prototype[method];
@@ -83,7 +80,7 @@ async function fixture(t, { design, storage = {} } = {}) {
     window.WebSocket = class extends NativeWebSocket {
       constructor(...args) { super(...args); probe.sockets++; }
     };
-  }, storage);
+  });
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.goto(url); await appReady(page);
@@ -119,8 +116,8 @@ async function applyDesign(editor) {
 }
 async function appearance(page) {
   const design = await readDesign(new URL(page.url()).origin);
-  return { design, ...await page.evaluate(() => ({
-    storage: Object.fromEntries(Object.keys(localStorage).sort().map(key => [key, localStorage.getItem(key)])),
+  const settings = await readSettings(new URL(page.url()).origin);
+  return { design, settings, ...await page.evaluate(() => ({
     stage: document.getElementById('talk-stage').outerHTML,
     comments: document.getElementById('comment-list').innerHTML,
     theme: document.getElementById('pokome-user-theme').textContent,
@@ -339,7 +336,7 @@ browserTest('overlay UI enforces the item limit and stores images as files that 
 });
 
 browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape and history discard drafts', async t => {
-  const { page, editor, errors } = await fixture(t, { storage: { 'pokome-history-limit': '3' } });
+  const { page, editor, errors } = await fixture(t, { settings: { historyLimit: 3 } });
   const before = await appearance(page), previewRequests = [];
   page.on('request', request => { if (request.frame() !== page.mainFrame()) previewRequests.push(request.url()); });
   let frame = await openPreview(page);
@@ -418,7 +415,7 @@ browserTest('invalid CSS and quota failure preserve the live design and leave an
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('書き込めません'), ROOT);
   const after = await appearance(page);
   assert.deepEqual(after.design, before.design);
-  assert.deepEqual(after.storage, before.storage);
+  assert.deepEqual(after.settings, before.settings);
   assert.equal(after.stage, before.stage); assert.equal(after.theme, before.theme); assert.equal(after.comments, before.comments);
   assert.equal(await editor.locator('#design-dialog').isVisible(), true);
   await countItems(page, 1);

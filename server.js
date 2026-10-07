@@ -3,6 +3,7 @@ import { enabledPlatforms } from './src/shared/app-config.js';
 import { handleLocalSpeech } from './src/server/local-speech.js';
 import { createLocalCustomizationHandler, DEFAULT_CUSTOMIZATION_DIRECTORY } from './src/server/local-customization.js';
 import { createDesignStorage } from './src/server/design-storage.js';
+import { createSettingsStorage, DEFAULT_DATA_DIRECTORY } from './src/server/settings-storage.js';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
@@ -12,15 +13,17 @@ import { validChannel } from './src/shared/connections.js';
 const files = Object.fromEntries(DEVELOPMENT_ASSETS.map(file => [file === 'index.html' ? '/' : '/' + file, file]));
 const types = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 
-export function createServer({ fetchImpl = globalThis.fetch, customizationDirectory = DEFAULT_CUSTOMIZATION_DIRECTORY } = {}) {
+export function createServer({ fetchImpl = globalThis.fetch, customizationDirectory = DEFAULT_CUSTOMIZATION_DIRECTORY, dataDirectory = DEFAULT_DATA_DIRECTORY } = {}) {
   const handleLocalCustomization = createLocalCustomizationHandler(customizationDirectory);
   const design = createDesignStorage(resolve(customizationDirectory instanceof URL ? fileURLToPath(customizationDirectory) : customizationDirectory));
+  const settings = createSettingsStorage(dataDirectory);
   const server = http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end('Bad request'); return; }
     if (url.pathname === '/api/customizations' || url.pathname.startsWith('/api/customizations/')) { await handleLocalCustomization(req, res, url); return; }
     if (url.pathname.startsWith('/api/design/')) { await design.handle(req, res, url); return; }
+    if (url.pathname === '/api/settings' || url.pathname.startsWith('/api/settings/')) { await settings.handle(req, res, url); return; }
     if (!enabledPlatforms.includes('kick') && (url.pathname === '/src/browser/kick.js' || url.pathname.startsWith('/api/kick/'))) { res.writeHead(404); res.end('Not found'); return; }
     if (url.pathname.startsWith('/api/speech/')) { await handleLocalSpeech(req, res, url, fetchImpl); return; }
     if (req.method !== 'GET') { res.writeHead(405, { Allow: 'GET' }); res.end(); return; }
@@ -77,6 +80,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   const close = server.close.bind(server);
   server.close = callback => {
     design.closeEvents();
+    settings.closeEvents();
     const result = close(callback);
     server.closeIdleConnections();
     return result;

@@ -7,7 +7,7 @@ import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessag
 // The stream output only renders. It has no chat connection, no audio and no
 // controls: the control page publishes live state over a BroadcastChannel and
 // appearance comes from the local server, which announces every change. That
-// also reaches an OBS browser source, whose browser storage is separate.
+// also reaches an OBS browser source.
 const options = parseOutputOptions(location.search, typeof window.obsstudio === 'object' && window.obsstudio !== null);
 document.body.dataset.background = options.background;
 document.body.style.setProperty('--output-key', options.key);

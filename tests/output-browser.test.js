@@ -4,14 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
 async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [], maxVisible = 30 } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath, args });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-output-browser-'));
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
     await browser.close();
     if (server.listening) await new Promise(resolve => server.close(resolve));

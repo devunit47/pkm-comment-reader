@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from '../server.js';
+import { temporaryDataDirectory } from './browser-support.js';
 
 async function serve(t, fetchImpl) {
-  const server = createServer({ fetchImpl });
+  const server = createServer({ fetchImpl, dataDirectory: await temporaryDataDirectory(t) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise(resolve => server.close(resolve)));

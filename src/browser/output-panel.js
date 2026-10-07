@@ -1,16 +1,13 @@
-import { OUTPUT_PREFERENCES_KEY, OUTPUT_SIZES, normalizeOutputPreferences, outputUrl } from '../shared/output-protocol.js';
+import { OUTPUT_SIZES, normalizeOutputPreferences, outputUrl } from '../shared/output-protocol.js';
 
 const SIZE_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）', '1440x1080': '1440 × 1080（4:3）' };
 
 // Controls for opening the stream output. The output itself has no controls,
 // so everything a streamer needs to set up OBS lives on this page.
 // The output size belongs to the design (saved in the customization folder);
-// the background mode and key color depend on this PC's OBS setup and stay here.
-export function initializeOutputPanel({ storage, designStore, publisher, getStudio = () => null, openEditor = () => {} }) {
-  let preferences;
-  try { preferences = normalizeOutputPreferences(JSON.parse(storage?.getItem(OUTPUT_PREFERENCES_KEY) || 'null')); }
-  catch { preferences = normalizeOutputPreferences(); }
-  preferences.size = designStore.design.outputSize;
+// the background mode and key color are personal settings in data/settings.json.
+export function initializeOutputPanel({ settingsStore, designStore, publisher, getStudio = () => null, openEditor = () => {} }) {
+  let preferences = normalizeOutputPreferences({ ...settingsStore.settings.output, size: designStore.design.outputSize });
   const section = document.createElement('section');
   section.className = 'panel studio-form';
   section.id = 'stream-output-panel';
@@ -28,8 +25,8 @@ export function initializeOutputPanel({ storage, designStore, publisher, getStud
     <ul class="muted output-notes"><li>OBSのキャプチャ方式は「Windows 10（1903以降）」を選んでください。</li><li>上端のアドレス表示は、OBSでソースをAltキーを押しながらドラッグして切り取ります。</li><li>出力ウィンドウを最小化したり、ほかのウィンドウで完全に隠したりすると、表示が止まることがあります。</li><li>画面より大きいサイズは、ブラウザが画面に収まる大きさに縮めます。実際の大きさは上の状態表示で確認できます。</li></ul>
     </fieldset>
     <fieldset class="studio-category"><legend>② OBSのブラウザソースで取り込む（背景を透明にする）</legend>
-    <p class="muted">OBSは普段のブラウザと保存先が別のため、この操作画面もOBSの中で開きます。</p>
-    <ol class="muted output-notes"><li>OBSの「ドック」→「カスタムブラウザドック」に、操作画面のURLを追加します。チャンネルの接続や見た目の設定は、そのドックで行います。</li><li>シーンに「ブラウザ」ソースを追加し、出力のURLと大きさ（例：1920 × 1080）を入力します。</li><li>読み上げの音はドックから鳴ります。配信に音が入っているか、OBSの音声ミキサーで確認してください。</li></ol>
+    <p class="muted">設定は普段のブラウザと共通です。コメントの接続と読み上げをOBSで行うため、この操作画面をOBSのドックで開きます。</p>
+    <ol class="muted output-notes"><li>OBSの「ドック」→「カスタムブラウザドック」に、操作画面のURLを追加します。チャンネルへの接続は、そのドックで行います。接続先・音声・ユーザー管理・見た目の設定は普段のブラウザと共有します。</li><li>シーンに「ブラウザ」ソースを追加し、出力のURLと大きさ（例：1920 × 1080）を入力します。</li><li>読み上げの音はドックから鳴ります。配信に音が入っているか、OBSの音声ミキサーで確認してください。</li></ol>
     <label>操作画面のURL（ドック用）<input id="output-control-url" readonly></label><div><button id="copy-control-url" class="button" type="button">操作画面のURLをコピー</button></div>
     <label>出力のURL（ブラウザソース用）<input id="output-source-url" readonly></label><div><button id="copy-source-url" class="button" type="button">出力のURLをコピー</button></div>
     <p class="muted">OBS以外のブラウザで出力のURLを開くと、透明の部分は白く見えます。</p>
@@ -48,8 +45,13 @@ export function initializeOutputPanel({ storage, designStore, publisher, getStud
     $('output-size-value').textContent = SIZE_LABELS[preferences.size];
   }
   function update() {
+    message = '';
     preferences = normalizeOutputPreferences({ background: $('output-background').value, key: $('output-key').value, size: designStore.design.outputSize });
-    try { storage?.setItem(OUTPUT_PREFERENCES_KEY, JSON.stringify({ background: preferences.background, key: preferences.key })); } catch { /* Preferences are a convenience. */ }
+    settingsStore.set('output', { background: preferences.background, key: preferences.key }).catch(error => {
+      preferences = normalizeOutputPreferences({ ...settingsStore.settings.output, size: designStore.design.outputSize });
+      message = '設定を保存できませんでした。' + error.message;
+      render(); setStatus(publisher.status());
+    });
     render();
     setStatus(publisher.status());
   }
@@ -94,6 +96,12 @@ export function initializeOutputPanel({ storage, designStore, publisher, getStud
     if (message) parts.push(message);
     status.textContent = parts.join(' ');
   }
+  settingsStore.subscribe(detail => {
+    if (!detail.fields.includes('output')) return;
+    if (!detail.failed) message = '';
+    preferences = normalizeOutputPreferences({ ...settingsStore.settings.output, size: designStore.design.outputSize });
+    render(); setStatus(publisher.status());
+  });
   render();
   setStatus(publisher.status());
   return { setStatus, refresh: () => setStatus(publisher.status()), reload() { preferences.size = designStore.design.outputSize; render(); setStatus(publisher.status()); } };

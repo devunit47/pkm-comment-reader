@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultDesign } from '../src/shared/design-model.js';
 import { fixtureDesign, fixtureFiles, actorRef } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, saveDesign, readDesign, uploadDesignImage, waitForDesign, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, readDesign, uploadDesignImage, waitForDesign, appReady, blockExternalFonts, temporaryDataDirectory, readSettings } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 const panel = '#design-presets', preview = '#design-preview-editor';
@@ -15,7 +15,7 @@ async function fixture(t) {
   let server, directory;
   t.after(async () => { await browser.close(); if (server?.listening) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
   directory = await mkdtemp(join(tmpdir(), 'pokome-presets-browser-'));
-  server = createServer({ customizationDirectory: directory }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   for (const bytes of Object.values(fixtureFiles)) await uploadDesignImage(url, bytes);
   await saveDesign(url, fixtureDesign());
@@ -45,7 +45,7 @@ browserTest('presets save complete scenes, readonly ratios never leak, cancel pr
   await ui.locator('#preset-reset').click(); await confirmation(ui); await waitForDesign(url, design => design.studio.image === '');
   assert.deepEqual(await readDesign(url), defaultDesign());
   await output.locator('#stage-title').filter({ hasText: defaultDesign().studio.title }).waitFor();
-  const before = await current(url), beforeStorage = await page.evaluate(() => JSON.stringify(localStorage));
+  const before = await current(url), beforeSettings = await readSettings(url);
   await openRead(ui, editor);
   assert.equal(await editor.locator('.side').first().isVisible(), false);
   assert.equal(await editor.locator('#discard-design').isVisible(), false);
@@ -69,7 +69,7 @@ browserTest('presets save complete scenes, readonly ratios never leak, cancel pr
   await output.locator('#stage-title').filter({ hasText: '画面例の確認' }).waitFor();
   await output.waitForFunction(() => document.getElementById('actor-image').src.includes('/api/design/current/images/'));
   assert.match(await output.locator('#pokome-user-theme').textContent(), /border-radius/);
-  assert.equal(await page.evaluate(() => JSON.stringify(localStorage)), beforeStorage);
+  assert.deepEqual(await readSettings(url), beforeSettings);
   assert.deepEqual(errors, []);
 });
 
