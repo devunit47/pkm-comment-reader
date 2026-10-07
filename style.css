@@ -255,3 +255,6 @@ body.talk-mode:has(#talk-stage[data-frame-ratio]),body.talk-mode:has(#talk-stage
 }
 
 #settings-warning{padding:12px 16px;overflow-wrap:anywhere}
+
+/* Fixed emote boxes keep async loading from changing line height or wrapping. */
+@layer pokome-settings{#talk-stage .pokome-comment__emote{display:inline-block !important;width:1em !important;height:1em !important;max-width:100% !important;object-fit:contain !important;vertical-align:-.15em !important}}

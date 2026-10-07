@@ -122,7 +122,7 @@ function renderSelection() {
   const message = state.selected;
   $('preview-user').textContent = message?.user || 'ぽこめ Reader';
   $('preview-text').textContent = message
-    ? (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions, active)) || 'このコメントは読み上げ対象外です。'
+    ? (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions, active, message.parts)) || 'このコメントは読み上げ対象外です。'
     : `${names[active]}のコメントを待っています。`;
   $('selected-user').textContent = message?.user || 'コメントを選択してください';
   $('hide-user').disabled = !message;
@@ -204,8 +204,8 @@ function speak(message, automatic = false) {
     if (!automatic) notify('このユーザーは設定により読み上げ対象外です。');
     return;
   }
-  const text = prepareSpeechText(message.text, state.speechOptions, active);
-  if (!text) { if (!automatic) notify('URLのみ・コマンドなど、設定により読み上げ対象外です。'); return; }
+  const text = prepareSpeechText(message.text, state.speechOptions, active, message.parts);
+  if (!text) { if (!automatic) notify('エモートのみ・URLのみ・コマンドなど、読み上げ対象外です。'); return; }
   if (automatic && !shouldAutoRead(state.speechHistory, message.user, text, state.speechOptions)) return;
   const platform = active;
   // Capture provenance now, before queued synthesis or a later metadata refresh.
@@ -547,7 +547,7 @@ function renderStageChat() {
   const messages = state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden);
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
-  renderStageComments(list, messages);
+  renderStageComments(list, messages, studio);
   if (!messages.length) list.append(make('p', 'stage-empty', 'あなたの声を、待っています。'));
   if (bottom) list.scrollTop = list.scrollHeight;
   updateStageCommentVisibility();

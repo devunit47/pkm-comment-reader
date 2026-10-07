@@ -58,7 +58,7 @@ function renderChat() {
   clearTimeout(expiryTimer);
   const now = Date.now();
   const selected = selectOutputComments(view.messages, studio, now);
-  renderStageComments(list, selected);
+  renderStageComments(list, selected, studio);
   alignNewest();
   if (studio.holdSeconds && selected.length) {
     const next = Math.min(...selected.map(message => message.receivedAt + studio.holdSeconds * 1000));

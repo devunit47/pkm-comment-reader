@@ -9,7 +9,7 @@ import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -60,8 +60,7 @@ async function fixture(t, { design, settings = {} } = {}) {
   const page = await context.newPage();
   page.setDefaultTimeout(8000);
   // External font availability is irrelevant to these deterministic UI checks.
-  await page.route('https://fonts.googleapis.com/**', route => route.abort());
-  await page.route('https://fonts.gstatic.com/**', route => route.abort());
+  await blockExternalFonts(page);
   await page.addInitScript(() => {
     if (window !== window.top) return;
     const probe = window.__previewProbe = { writes: [], speech: 0, sockets: 0 };
@@ -355,7 +354,8 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   assert.match(await frame.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'), /connect-src 'none'/);
   await editor.locator('#add-text').click();
   assert.deepEqual(await appearance(page), before);
-  assert.deepEqual(previewRequests, [], 'the script-free iframe issues no external requests');
+  assert.ok(previewRequests.length > 0, 'image samples request their emotes');
+  assert.ok(previewRequests.every(url => /^https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[A-Za-z0-9_]+\/default\/dark\/2\.0$/.test(url)), 'the script-free iframe requests only allowed emote images');
   await closeEditor(editor);
   assert.deepEqual(await appearance(page), before);
   frame = await openPreview(page); await countItems(page, 0);

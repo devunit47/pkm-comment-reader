@@ -10,7 +10,7 @@ export const DEFAULT_STUDIO = Object.freeze({
   commentPanel: 'theme', commentPanelOpacity: 90, commentTextColor: '', commentAuthorColor: '',
   commentItemBackground: 'theme', commentItemOpacity: 92, commentMaxLines: null,
   commentOutline: 'none', commentOutlineColor: '#000000', commentLineHeight: null, commentGap: null,
-  commentDivider: true, commentLabel: true,
+  commentDivider: true, commentLabel: true, commentEmotes: 'image',
 });
 
 export const COMMENT_PANELS = Object.freeze(['theme', 'none', 'light', 'dark']);
@@ -81,6 +81,8 @@ export function normalizeStudio(value = {}, { image = dataImage } = {}) {
   for (const key of ['commentTextColor', 'commentAuthorColor', 'commentOutlineColor']) {
     if (typeof value[key] === 'string' && /^#[\da-f]{6}$/i.test(value[key])) options[key] = value[key].toLowerCase();
   }
+  if (value.commentAuthorColor === 'service') options.commentAuthorColor = 'service';
+  if (['image', 'text'].includes(value.commentEmotes)) options.commentEmotes = value.commentEmotes;
   if (COMMENT_LINE_HEIGHTS.includes(value.commentLineHeight)) options.commentLineHeight = value.commentLineHeight;
   if (COMMENT_GAPS.includes(value.commentGap)) options.commentGap = value.commentGap;
   for (const key of ['commentDivider', 'commentLabel']) if (typeof value[key] === 'boolean') options[key] = value[key];
