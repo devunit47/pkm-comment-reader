@@ -28,8 +28,8 @@ test('bad IRC metadata keeps the complete body as text', () => {
 test('at most 100 emotes are kept without losing excess text', () => {
   const body = Array(101).fill('Kappa').join(' ');
   const ranges = Array.from({ length: 101 }, (_, i) => `${i * 6}-${i * 6 + 4}`).join(',');
-  const message = parse(body, `emotes=emotesv2_safe:0-4/25:${ranges}`);
-  assert.ok(message.parts.filter(part => part.type === 'emote').length <= 100);
+  const message = parse(body, `emotes=emotesv2_safe:${ranges}`);
+  assert.equal(message.parts.filter(part => part.type === 'emote').length, 100);
   assert.equal(message.parts.map(part => part.text ?? part.name).join(''), body);
 });
 

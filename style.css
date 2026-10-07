@@ -258,3 +258,5 @@ body.talk-mode:has(#talk-stage[data-frame-ratio]),body.talk-mode:has(#talk-stage
 
 /* Fixed emote boxes keep async loading from changing line height or wrapping. */
 @layer pokome-settings{#talk-stage .pokome-comment__emote{display:inline-block !important;width:1em !important;height:1em !important;max-width:100% !important;object-fit:contain !important;vertical-align:-.15em !important}}
+
+.pokome-comment__badge{display:inline-block;font-size:.8em;margin-inline-end:.25em;vertical-align:baseline}

@@ -110,6 +110,8 @@ export function selectOutputComments(messages, { maxVisible = 0, holdSeconds = 0
 }
 
 // The live stage and stream output share cards so themes apply identically.
+const ROLE_SYMBOLS = Object.freeze({ broadcaster: ['♛', '配信者'], moderator: ['⚑', 'モデレーター'], vip: ['◆', 'VIP'], subscriber: ['★', 'サブスク'] });
+
 function serviceNameColor(color, studio) {
   const background = ['light', 'dark'].includes(studio.commentItemBackground) ? studio.commentItemBackground : studio.commentPanel;
   if (!color || !['light', 'dark'].includes(background)) return color;
@@ -134,6 +136,16 @@ export function renderStageComments(list, messages, studio = {}) {
     card.className = 'stage-comment pokome-comment';
     card.title = `${message.user}: ${content.text}`;
     const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = message.user;
+    if (studio.commentBadges && content.badges.length) {
+      author.textContent = '';
+      for (const role of content.badges) {
+        const [symbol, label] = ROLE_SYMBOLS[role];
+        const badge = doc.createElement('span'); badge.className = 'pokome-comment__badge'; badge.textContent = symbol;
+        badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); badge.setAttribute('title', label);
+        author.append(badge);
+      }
+      const name = doc.createElement('span'); name.textContent = message.user; author.append(name);
+    }
     if (studio.commentAuthorColor === 'service' && content.color) author.style.setProperty('color', serviceNameColor(content.color, studio), 'important');
     const body = doc.createElement('p'); body.className = 'pokome-comment__body';
     if (studio.commentEmotes === 'text') body.textContent = content.text;

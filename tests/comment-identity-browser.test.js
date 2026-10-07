@@ -81,3 +81,68 @@ browserTest('Twitch emotes and service colors reach live, preview and output; fa
   assert.equal(requests.length, count, 'text mode never requests the CDN, including preview and new comments');
   assert.deepEqual(errors, []);
 });
+
+browserTest('identity rendering preserves line limits and clipping across six presets, four themes, two schemes and three ratios', async t => {
+  const { normalizeStudio, applyCommentPreset, COMMENT_PRESETS } = await import('../src/shared/studio.js');
+  const { saveDesign } = await import('./browser-support.js');
+  const { context, page, base, errors } = await fixture(t, { commentBadges: true, commentAuthorColor: 'service' });
+  await receive(page, '😀 Kappa hello', 'color=#ffffff;badges=broadcaster/1,moderator/1,vip/1,subscriber/12;emotes=25:2-6');
+  await receive(page, 'Kappa', 'color=#000000;badges=vip/1;emotes=25:0-4');
+  await receive(page, 'Broken', 'emotes=broken:0-5');
+  await receive(page, '😀 Kappa ' + '長めの文章を折り返して確認します。'.repeat(35));
+  const output = await context.newPage(); await output.goto(`${base}/output.html`);
+  await output.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
+  await page.locator('#enter-talk').click();
+  const inspect = (list, maxLines) => list.evaluate((element, maxLines) => {
+    const bounds = element.getBoundingClientRect();
+    const cards = [...element.querySelectorAll('.stage-comment')];
+    return {
+      viewportHeight: bounds.height,
+      overflow: cards.flatMap((card, index) => {
+        const body = card.querySelector('p'), style = getComputedStyle(body);
+        return body.scrollWidth > body.clientWidth + 1 || (maxLines > 0 && body.clientHeight > parseFloat(style.lineHeight) * maxLines + 1) ? [index] : [];
+      }),
+      clipping: cards.flatMap((card, index) => {
+        const rect = card.getBoundingClientRect();
+        const expected = rect.height <= bounds.height && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1);
+        return expected !== card.classList.contains('stage-comment-clipped') ? [index] : [];
+      }),
+      badges: cards[0]?.querySelectorAll('.pokome-comment__badge').length,
+      color: getComputedStyle(cards[0].querySelector('strong')).color,
+      emoteHeight: getComputedStyle(element.querySelector('img.pokome-comment__emote')).height,
+      fontSize: getComputedStyle(cards[0].querySelector('p')).fontSize,
+    };
+  }, maxLines);
+  let combinations = 0;
+  for (const scheme of ['light', 'dark']) for (const theme of ['mint', 'rose', 'violet', 'paper']) for (const preset of Object.keys(COMMENT_PRESETS)) {
+    await page.emulateMedia({ colorScheme: scheme }); await output.emulateMedia({ colorScheme: scheme });
+    const studio = { ...applyCommentPreset(normalizeStudio({ theme }), preset), commentAuthorColor: 'service', commentBadges: true, commentEmotes: 'image' };
+    for (const [ratio, size, width, height] of [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]]) {
+      const label = `${scheme}/${theme}/${preset}/${ratio}`;      await output.setViewportSize({ width, height });
+      await saveDesign(base, design => ({ ...design, outputSize: size, studio }));
+      for (const target of [page, output]) await target.waitForFunction(({ theme, ratio, style, panel }) => {
+        const stage = document.querySelector('#talk-stage');
+        return stage.dataset.theme === theme && (stage.dataset.frameRatio || document.body.dataset.ratio) === ratio && document.querySelector('#stage-chat-list').dataset.commentStyle === style && (stage.dataset.commentPanel || 'theme') === panel;
+      }, { theme, ratio, style: studio.commentStyle, panel: studio.commentPanel });
+      await page.bringToFront();
+      await page.locator('#stage-design-edit').click(); await editorTarget(page, 'chat');
+      await page.locator('#preview-ratio').selectOption(ratio);
+      const preview = page.frameLocator('#design-preview-frame');
+      await preview.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
+      const results = [];
+      for (const [owner, list] of [[page, page.locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {        await owner.bringToFront();        await owner.waitForTimeout(50);        results.push(await inspect(list, studio.commentMaxLines));      }      for (const result of results) {
+        assert.ok(result.viewportHeight > 0, `${label}: visible viewport`);
+        assert.deepEqual(result.overflow, [], `${label}: overflow/line clamp`);
+        assert.deepEqual(result.clipping, [], `${label}: clipping`);
+        assert.equal(result.badges, 4, `${label}: role symbols`);
+        assert.equal(result.emoteHeight, result.fontSize, `${label}: emote height`);
+      }
+      assert.ok(results.every(result => result.color === results[0].color), `${label}: same name color`);
+      await page.bringToFront();
+      await closeEditor(page);
+      combinations++;    }
+  }
+  assert.equal(combinations, 144);
+  t.diagnostic('Edge: 144 preset/theme/scheme/ratio combinations, each compared across live, preview and output');
+  assert.deepEqual(errors, []);
+});

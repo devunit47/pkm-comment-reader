@@ -22,7 +22,7 @@ const SAMPLE_COMMENTS = Object.freeze([
   if (index === 0) text += ' 😀 Kappa';
   const start = Array.from(text).length - 5;
   return { id: `sample-${index + 1}`, user: `サンプル${String(index + 1).padStart(2, '0')}`, receivedAt: index + 1,
-    ...normalizeCommentContent({ text, color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, index === 0 ? `25:${start}-${start + 4}` : '') }) };
+    ...normalizeCommentContent({ text, badges: index === 0 ? ['broadcaster', 'moderator', 'vip', 'subscriber'] : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, index === 0 ? `25:${start}-${start + 4}` : '') }) };
 }));
 const size = value => value.split('x').map(Number);
 // Panels and additions share the same canvas controls.
@@ -34,7 +34,7 @@ const TYPED_KEYS = ['title', 'subtitle', 'footer', 'speechTitle', 'accent', 'spe
 const NUMBER_KEYS = ['fontSize', 'speechFontSize', 'maxVisible', 'holdSeconds', 'commentItemOpacity', 'commentPanelOpacity'], NULLABLE_KEYS = ['commentMaxLines', 'commentGap', 'commentLineHeight'];
 // '' keeps the theme's color; the mode select chooses between it and the color input.
 const COLOR_MODE_KEYS = ['commentTextColor', 'commentAuthorColor'];
-const FIELD_KEYS = ['theme', 'accentMode', 'accent', 'decoration', 'title', 'subtitle', 'footer', 'speechTitle', 'fontSize', 'speechFontSize', 'speechStyle', 'speechBackground', 'speechTextColor', 'commentStyle', 'maxVisible', 'holdSeconds', 'newestPosition', 'source', 'actorAppearance', 'commentPanel', 'commentPanelOpacity', 'commentItemBackground', 'commentItemOpacity', 'commentOutline', 'commentOutlineColor', 'commentLineHeight', 'commentMaxLines', 'commentGap', 'commentDivider', 'commentLabel', 'commentEmotes'];
+const FIELD_KEYS = ['theme', 'accentMode', 'accent', 'decoration', 'title', 'subtitle', 'footer', 'speechTitle', 'fontSize', 'speechFontSize', 'speechStyle', 'speechBackground', 'speechTextColor', 'commentStyle', 'maxVisible', 'holdSeconds', 'newestPosition', 'source', 'actorAppearance', 'commentPanel', 'commentPanelOpacity', 'commentItemBackground', 'commentItemOpacity', 'commentOutline', 'commentOutlineColor', 'commentLineHeight', 'commentMaxLines', 'commentGap', 'commentDivider', 'commentLabel', 'commentEmotes', 'commentBadges'];
 const OUTPUT_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）', '1440x1080': '1440 × 1080（4:3）' };
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 const ACTOR_KEYS = ['mode', 'scale', 'alignX', 'alignY', 'offsetX', 'offsetY', 'overflow'];
@@ -78,6 +78,7 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 <label>投稿ごとの背景<select id="draft-commentItemBackground">${options([['theme', 'テーマのまま'], ['none', 'なし'], ['light', '白い丸い背景'], ['dark', '黒い丸い背景']])}</select></label><label>投稿背景の不透明度（%）<input id="draft-commentItemOpacity" type="number" min="0" max="100" step="1"></label><label>本文の最大行数<select id="draft-commentMaxLines">${options([['', 'テーマのまま'], ['0', '制限なし'], ...[1, 2, 3, 4, 5].map(lines => [String(lines), `${lines}行`])])}</select></label><p><small>本文だけを省略して表示します。保存した本文と読み上げには影響しません。「1行コンパクト」にも優先します。</small></p><label>コメント同士の間隔<select id="draft-commentGap">${options([['', 'テーマのまま'], ...[0, 4, 8, 12, 14, 16, 24].map(gap => [String(gap), `${gap}px`])])}</select></label>
 <label>パネルの背景<select id="draft-commentPanel">${options([['theme', 'テーマのまま'], ['none', 'なし（枠も消す）'], ['light', '白'], ['dark', '黒']])}</select></label><label>パネルの不透明度（%）<input id="draft-commentPanelOpacity" type="number" min="0" max="100" step="5"></label>
 ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本文の色' : '名前の色'; return `<label>${label}<select id="draft-${key}Mode">${options([['theme', 'テーマのまま'], ...(key === 'commentAuthorColor' ? [['service', 'サービスの色']] : []), ['custom', '色を指定']])}</select></label><label>${label}（指定色）<input id="draft-${key}" type="color"></label>`; }).join('')}
+<label class="check"><input id="draft-commentBadges" type="checkbox">Twitchの役割バッジを表示</label><p class="muted">配信者・モデレーター・VIP・サブスクの記号だけを表示します。チャンネル独自の画像や月数は表示しません。</p>
 <label>Twitchエモート<select id="draft-commentEmotes">${options([['image', '画像で表示'], ['text', '文字のまま']])}</select></label><p class="muted">エモートは読み上げません。画像表示ではTwitchのCDNへ通信します。</p>
 <label>文字の縁取り<select id="draft-commentOutline">${options([['none', 'なし'], ['thin', '細い'], ['thick', '太い']])}</select></label><label>縁取りの色<input id="draft-commentOutlineColor" type="color"></label><label>行間<select id="draft-commentLineHeight">${options([['', 'テーマのまま'], ['1.2', '1.2（詰める）'], ['1.35', '1.35'], ['1.5', '1.5'], ['1.75', '1.75'], ['2', '2.0（広い）']])}</select></label>
 <label class="check"><input id="draft-commentDivider" type="checkbox">コメントの区切り線を表示</label><label class="check"><input id="draft-commentLabel" type="checkbox">見出し（「みんなのコメント」と件数）を表示</label><p><small>「テーマのまま」以外を選んだ項目は、テーマCSSより優先します。</small></p></div>
