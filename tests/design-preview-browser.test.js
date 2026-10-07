@@ -9,7 +9,7 @@ import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting, talkStage } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -117,7 +117,7 @@ async function appearance(page) {
   const design = await readDesign(new URL(page.url()).origin);
   const settings = await readSettings(new URL(page.url()).origin);
   return { design, settings, ...await page.evaluate(() => ({
-    stage: document.getElementById('talk-stage').outerHTML,
+    stage: document.getElementById('talk-frame').contentDocument.getElementById('talk-stage').outerHTML,
     comments: document.getElementById('comment-list').innerHTML,
     theme: document.getElementById('pokome-user-theme').textContent,
     writes: window.__previewProbe.writes.length,
@@ -201,13 +201,13 @@ browserTest('design preview edits multiple text/image items independently, appli
   const saved = await savedOverlays(page);
   assert.deepEqual(saved.items.map(item => item.id), [first, red]);
   assert.equal(Object.keys(saved.assets).length, 1, 'deleting an image drops its unreferenced reference');
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay img').getAttribute('src'), servedImage(redPNG));
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 2);
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay img').getAttribute('src'), servedImage(redPNG));
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').count(), 2);
   await page.reload(); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
   assert.deepEqual(await savedOverlays(page), saved);
-  assert.equal(await page.locator(`#talk-stage .pokome-overlay[data-overlay-id="${first}"]`).textContent(), text);
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').first().evaluate(element => getComputedStyle(element).pointerEvents), 'none');
+  assert.equal(await talkStage(page).locator(`#talk-stage .pokome-overlay[data-overlay-id="${first}"]`).textContent(), text);
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').first().evaluate(element => getComputedStyle(element).pointerEvents), 'none');
   assert.deepEqual(errors, []);
 });
 
@@ -288,18 +288,18 @@ browserTest('reordered equal-z overlays saved elsewhere keep live, preview and r
   const second = createOverlay('text', { id: 'second', text: 'Second', z: 3 });
   const { page, editor, url, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: overlays([first, second]) } } }) });
   const order = root => root.locator('.pokome-overlay').evaluateAll(nodes => nodes.map(node => node.dataset.overlayId));
-  assert.deepEqual(await order(page.locator('#talk-stage')), ['first', 'second']);
+  assert.deepEqual(await order(talkStage(page).locator('#talk-stage')), ['first', 'second']);
   await saveTalk(url, { overlays: overlays([second, first]) });
-  await page.waitForFunction(() => document.querySelector('#talk-stage > .pokome-overlay')?.dataset.overlayId === 'second');
-  assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
+  await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('#talk-stage > .pokome-overlay')?.dataset.overlayId === 'second');
+  assert.deepEqual(await order(talkStage(page).locator('#talk-stage')), ['second', 'first']);
   const frame = await openPreview(page);
   assert.deepEqual(await order(frame), ['second', 'first']);
   await applyDesign(editor);
-  assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
+  assert.deepEqual(await order(talkStage(page).locator('#talk-stage')), ['second', 'first']);
   await page.reload(); await appReady(page);
   // The design arrives from the server after the page script starts.
-  await page.locator('#talk-stage > .pokome-overlay').nth(1).waitFor({ state: 'attached' });
-  assert.deepEqual(await order(page.locator('#talk-stage')), ['second', 'first']);
+  await talkStage(page).locator('#talk-stage > .pokome-overlay').nth(1).waitFor({ state: 'attached' });
+  assert.deepEqual(await order(talkStage(page).locator('#talk-stage')), ['second', 'first']);
   assert.deepEqual(errors, []);
 });
 
@@ -322,10 +322,10 @@ browserTest('overlay UI enforces the item limit and stores images as files that 
   assert.deepEqual(Object.values(saved.assets), [`images/${createHash('sha256').update(redPNG).digest('hex')}.png`]);
   await page.reload(); await appReady(page);
   // The design arrives from the server after the page script starts.
-  await page.locator('#talk-stage > .pokome-overlay').nth(19).waitFor({ state: 'attached' });
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 20);
-  await page.waitForFunction(() => document.querySelector('#talk-stage > .pokome-overlay img')?.complete);
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay img').evaluate(image => image.naturalWidth), 1);
+  await talkStage(page).locator('#talk-stage > .pokome-overlay').nth(19).waitFor({ state: 'attached' });
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').count(), 20);
+  await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('#talk-stage > .pokome-overlay img')?.complete);
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay img').evaluate(image => image.naturalWidth), 1);
   await page.locator('[data-page="settings"]').click();
   const backupEvent = page.waitForEvent('download');
   await page.locator('#backup-settings').click();
@@ -387,14 +387,14 @@ browserTest('a draft whose save failed and was cancelled is never saved by a lat
   await page.waitForFunction(root => document.querySelector(root).shadowRoot.getElementById('design-status').textContent.includes('書き込めません'), ROOT);
   assert.doesNotMatch(await editor.locator('#design-status').textContent(), /別の画面/, 'a failed save is not reported as an external change');
   await closeEditor(editor);
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').count(), 0);
   // A later editor session stores only its own changes.
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1920x1080'));
   const saved = await waitForDesign(url, design => design.outputSize === '1920x1080');
   assert.equal(saved.ratios['16:9'], null, 'the cancelled text was not saved');
   await page.reload(); await appReady(page);
   await page.locator(`${ROOT} #open-design-preview`).waitFor({ state: 'attached' });
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0);
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').count(), 0);
   assert.deepEqual(errors, []);
 });
 

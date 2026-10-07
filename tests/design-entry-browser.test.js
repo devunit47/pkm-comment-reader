@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget, closeEditor, temporaryDataDirectory } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget, closeEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-entry-'));
@@ -34,11 +34,11 @@ test('talk editing opens the unified draft and returns focus after Apply or disc
   await page.locator('#stage-design-edit').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
   await editorTarget(editor, 'header'); await editor.locator('#draft-title').fill('エディタからの題名');
   await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
-  assert.equal(await page.locator('#stage-title').textContent(), 'エディタからの題名');
-  assert.equal(await page.locator('#talk-stage').isVisible(), true);
+  assert.equal(await talkStage(page).locator('#stage-title').textContent(), 'エディタからの題名');
+  assert.equal(await talkStage(page).locator('#talk-stage').isVisible(), true);
   assert.equal(await page.locator('#stage-design-edit').evaluate(button => button === document.activeElement), true);
-  await page.locator('#talk-stage').focus(); await page.mouse.move(1, 1);
-  assert.equal(await page.locator('#stage-design-edit').evaluate(button => getComputedStyle(button.closest('.stage-controls')).opacity), '0');
+  await talkStage(page).locator('#stage-chat-list').focus(); await page.mouse.move(1, 1);
+  assert.equal(await page.locator('#talk-controls').evaluate(controls => getComputedStyle(controls).opacity), '0');
 });
 
 test('output size is applied text and its editor changes the size only on Apply', { skip: !browserAvailable }, async t => {

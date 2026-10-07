@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultDesign } from '../src/shared/design-model.js';
 import { fixtureDesign, fixtureFiles, actorRef } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, saveDesign, readDesign, uploadDesignImage, waitForDesign, appReady, blockExternalFonts, temporaryDataDirectory, readSettings } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, readDesign, uploadDesignImage, waitForDesign, appReady, blockExternalFonts, temporaryDataDirectory, readSettings, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 const panel = '#design-presets', preview = '#design-preview-editor';
@@ -87,7 +87,7 @@ browserTest('names keep whole emoji, permit duplicates and render markup as text
   await ui.locator('#preset-status').filter({ hasText: '名前を変更しました' }).waitFor();
   assert.match(await ui.locator('#preset-select option:checked').textContent(), /<b>名前<\/b>/); assert.equal(await ui.locator('b').count(), 0);
   await saveDesign(url, design => ({ ...design, studio: { ...design.studio, title: '上書き後の画面' } }));
-  await page.locator('#stage-title').filter({ hasText: '上書き後の画面' }).waitFor({ state: 'attached' });
+  await talkStage(page).locator('#stage-title').filter({ hasText: '上書き後の画面' }).waitFor({ state: 'attached' });
   await ui.locator('#preset-overwrite').click(); await confirmation(ui, false);
   const old = await (await fetch(`${url}/api/design/presets/${second}`)).json(); assert.equal(old.design.studio.title, '画面例の確認');
   await ui.locator('#preset-overwrite').click(); await confirmation(ui);

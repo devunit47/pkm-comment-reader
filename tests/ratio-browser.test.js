@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
@@ -46,8 +46,8 @@ async function applyCanvas(editor) {
   await editor.locator('#apply-design').click();
   await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
 }
-const panelStyle = (page, selector) => page.locator(`#talk-stage ${selector}`).evaluate(element => ({ left: element.style.left, top: element.style.top, width: element.style.width, height: element.style.height }));
-const stageBox = page => page.locator('#talk-stage').evaluate(stage => { const box = stage.getBoundingClientRect(); return { width: box.width, height: box.height, ratio: stage.dataset.frameRatio, editing: 'frameEditing' in stage.dataset }; });
+const panelStyle = (page, selector) => talkStage(page).locator(`#talk-stage ${selector}`).evaluate(element => ({ left: element.style.left, top: element.style.top, width: element.style.width, height: element.style.height }));
+const stageBox = page => talkStage(page).locator('#talk-stage').evaluate(stage => { const box = stage.getBoundingClientRect(); return { width: box.width, height: box.height, ratio: stage.ownerDocument.body.dataset.ratio, editing: 'frameEditing' in stage.dataset }; });
 
 browserTest('the chosen ratio is edited inside its own frame and saved only to that ratio', async t => {
   const { page, url, errors } = await fixture(t);
@@ -66,7 +66,7 @@ browserTest('the chosen ratio is edited inside its own frame and saved only to t
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   const landscape = await stageBox(page);
   assert.equal(landscape.ratio, '16:9'); assert.equal(landscape.editing, false);
-  assert.equal(await page.locator('#talk-stage .stage-chat').evaluate(element => element.style.position), '');
+  assert.equal(await talkStage(page).locator('#talk-stage .stage-chat').evaluate(element => element.style.position), '');
   assert.deepEqual(errors, []);
 });
 
@@ -83,7 +83,7 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   assert.equal(box.ratio, '9:16');
   assert.ok(Math.abs(box.width / box.height - 9 / 16) < .01);
   assert.equal((await panelStyle(page, '.stage-chat')).top, '50%');
-  assert.deepEqual(await page.locator('#talk-stage > .pokome-overlay').allTextContents(), ['縦だけ']);
+  assert.deepEqual(await talkStage(page).locator('#talk-stage > .pokome-overlay').allTextContents(), ['縦だけ']);
   await page.reload(); await appReady(page);
   await page.locator('#enter-talk').click();
   assert.equal((await stageBox(page)).ratio, '9:16');
@@ -93,7 +93,7 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1280x720'));
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
   assert.equal((await stageBox(page)).ratio, '16:9');
-  assert.equal(await page.locator('#talk-stage > .pokome-overlay').count(), 0, 'portrait additions stay in 9:16');
+  assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').count(), 0, 'portrait additions stay in 9:16');
   assert.deepEqual(errors, []);
 });
 
@@ -103,7 +103,7 @@ browserTest('the portrait default keeps the speech minimum off the comments on a
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await waitForDesign(url, design => design.outputSize === '1080x1920');
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
-  const boxes = await page.locator('#talk-stage').evaluate(stage => Object.fromEntries(['.stage-speech', '.stage-chat', '.stage-footer'].map(selector => {
+  const boxes = await talkStage(page).locator('#talk-stage').evaluate(stage => Object.fromEntries(['.stage-speech', '.stage-chat', '.stage-footer'].map(selector => {
     const box = stage.querySelector(selector).getBoundingClientRect(); return [selector, { top: box.top, bottom: box.bottom, height: box.height }];
   })));
   assert.ok(boxes['.stage-speech'].height >= 220, 'the speech minimum still applies');
@@ -271,7 +271,7 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   assert.equal(design.ratios['9:16'].layout, null, 'the portrait layout stays at its default');
   assert.equal(design.ratios['4:3'], null);
   // The live talk screen (16:9 output) shows only its own additions and no guides.
-  assert.deepEqual(await page.locator('#talk-stage > .pokome-overlay').allTextContents(), ['横の文字']);
+  assert.deepEqual(await talkStage(page).locator('#talk-stage > .pokome-overlay').allTextContents(), ['横の文字']);
   assert.equal(await page.locator('#safe-guides').count(), 0);
   assert.deepEqual(errors, []);
 });

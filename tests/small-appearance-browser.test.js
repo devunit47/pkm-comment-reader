@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveDesign, saveStudio, waitForDesign, appReady, editorTarget, closeEditor, applyInEditor, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, saveDesign, saveStudio, waitForDesign, appReady, editorTarget, closeEditor, applyInEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t) {
@@ -56,7 +56,7 @@ browserTest('small appearance controls persist, mirror to output and preview, an
     await editorTarget(editor, 'actor'); await editor.locator('#draft-actorAppearance').selectOption('none');
   });
   await waitForDesign(url, design => design.studio.fontSize === 56 && design.studio.actorAppearance === 'none' && design.studio.commentMaxLines === 2);
-  const live = await look(page);
+  const live = await look(talkStage(page).locator('html'));
   assert.deepEqual([live.font, live.background, live.radius, live.padding, live.margin, live.lines], ['56px', 'rgba(255, 255, 255, 0.92)', '44px', '12px 24px', '14px', '2']);
   assert.equal(live.text, 'rgb(31, 42, 36)');
   assert.deepEqual([live.actorBackground, live.actorBorder, live.caption], ['none', '0px', 'none']);
@@ -67,17 +67,17 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   await page.locator('#open-design-preview').click();
   const frame = page.frameLocator('#design-preview-frame');
   await frame.locator('.stage-comment').first().waitFor({ state: 'attached' });
-  assert.deepEqual(await look(page.frames().find(value => value !== page.mainFrame())), live);
+  assert.deepEqual(await look(frame.locator('html')), live);
   await editorTarget(page, 'chat');
   await page.locator('#draft-commentMaxLines').selectOption('3');
   await editorTarget(page, 'actor');
   await page.locator('#draft-actorAppearance').selectOption('theme');
   assert.equal(await frame.locator('p.pokome-comment__body').first().evaluate(element => getComputedStyle(element).webkitLineClamp), '3');
   await closeEditor(page);
-  assert.deepEqual(await look(page), live);
+  assert.deepEqual(await look(talkStage(page).locator('html')), live);
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
-  assert.deepEqual(await look(page), live);
+  assert.deepEqual(await look(talkStage(page).locator('html')), live);
   await edit(page, 'chat', editor => change(editor, '#draft-fontSize', '64'));
   assert.equal(await page.locator('#stage-font-plus').count(), 0);
   assert.equal(await page.locator('#draft-speechFontSize option[value="32"]').count(), 1);
@@ -98,7 +98,7 @@ browserTest('small appearance controls persist, mirror to output and preview, an
   await page.locator('#apply-design').click();
   await waitForDesign(url, design => design.studio.commentItemBackground === 'dark' && design.studio.commentItemOpacity === 40 && design.studio.commentMaxLines === 3);
   await page.locator('#design-dialog').waitFor({ state: 'hidden' });
-  assert.deepEqual([(await look(page)).background, (await look(page)).lines], ['rgba(0, 0, 0, 0.4)', '3']);
+  assert.deepEqual([(await look(talkStage(page).locator('html'))).background, (await look(talkStage(page).locator('html'))).lines], ['rgba(0, 0, 0, 0.4)', '3']);
   assert.deepEqual(errors, []);
 });
 
@@ -110,16 +110,16 @@ browserTest('chips preset follows item background colors after application', asy
     assert.equal(await editor.locator('#draft-commentTextColorMode').inputValue(), 'theme');
   });
   await waitForDesign(url, design => design.studio.commentItemBackground === 'dark' && design.studio.commentTextColor === '');
-  const dark = await look(page);
+  const dark = await look(talkStage(page).locator('html'));
   assert.equal(dark.text, 'rgb(255, 255, 255)');
-  assert.deepEqual(await page.locator('#talk-stage').evaluate(element => [element.hasAttribute('data-comment-text'), element.style.getPropertyValue('--stage-comment-text')]), [false, '']);
+  assert.deepEqual(await talkStage(page).locator('#talk-stage').evaluate(element => [element.hasAttribute('data-comment-text'), element.style.getPropertyValue('--stage-comment-text')]), [false, '']);
   const output = await context.newPage();
   await output.goto(`${url}/output.html?background=transparent`);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
   assert.deepEqual(await look(output), dark);
   await page.bringToFront();
   await edit(page, 'chat', editor => editor.locator('#draft-commentItemBackground').selectOption('light'));
-  const light = await look(page);
+  const light = await look(talkStage(page).locator('html'));
   assert.equal(light.text, 'rgb(31, 42, 36)');
   const geometry = appearance => [appearance.font, appearance.radius, appearance.padding, appearance.margin, appearance.lines];
   assert.deepEqual(geometry(light), geometry(dark));
@@ -138,18 +138,18 @@ browserTest('explicit actor and chip settings beat important themes and theme va
   ].join('\n') });
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
-  const original = await look(page);
+  const original = await look(talkStage(page).locator('html'));
   await applyInEditor(page, async editor => {
     await editorTarget(editor, 'actor'); await editor.locator('#draft-actorAppearance').selectOption('none');
     await editorTarget(editor, 'chat');
     await editor.locator('#draft-commentItemBackground').selectOption('light');
     await editor.locator('#draft-commentGap').selectOption('14');
   });
-  let current = await look(page);
+  let current = await look(talkStage(page).locator('html'));
   assert.deepEqual([current.background, current.radius, current.padding, current.margin, current.text], ['rgba(255, 255, 255, 0.92)', '44px', '12px 24px', '14px', 'rgb(31, 42, 36)']);
-  assert.deepEqual(await page.locator('.stage-actor').evaluate(element => [getComputedStyle(element).boxShadow, getComputedStyle(element, '::before').display]), ['none', 'none']);
+  assert.deepEqual(await talkStage(page).locator('.stage-actor').evaluate(element => [getComputedStyle(element).boxShadow, getComputedStyle(element, '::before').display]), ['none', 'none']);
   await edit(page, 'chat', editor => editor.locator('#draft-commentItemBackground').selectOption('dark'));
-  current = await look(page);
+  current = await look(talkStage(page).locator('html'));
   assert.deepEqual([current.background, current.text], ['rgba(0, 0, 0, 0.92)', 'rgb(255, 255, 255)']);
   await edit(page, 'chat', async editor => {
     await editor.locator('#draft-commentPanel').selectOption('light');
@@ -158,15 +158,15 @@ browserTest('explicit actor and chip settings beat important themes and theme va
       assert.equal(await editor.locator('#draft-commentItemOpacity').inputValue(), expected);
     }
   });
-  assert.equal((await look(page)).text, 'rgb(255, 255, 255)');
+  assert.equal((await look(talkStage(page).locator('html'))).text, 'rgb(255, 255, 255)');
   for (const theme of ['mint', 'rose', 'violet', 'paper']) {
     await applyInEditor(page, async editor => {
       await editorTarget(editor, 'screen'); await editor.locator('#draft-theme').selectOption(theme);
       await editorTarget(editor, 'chat'); await editor.locator('#draft-commentItemBackground').selectOption('dark');
     });
-    assert.equal((await look(page)).text, 'rgb(255, 255, 255)');
+    assert.equal((await look(talkStage(page).locator('html'))).text, 'rgb(255, 255, 255)');
     await edit(page, 'chat', editor => editor.locator('#draft-commentItemBackground').selectOption('light'));
-    assert.equal((await look(page)).text, 'rgb(31, 42, 36)');
+    assert.equal((await look(talkStage(page).locator('html'))).text, 'rgb(31, 42, 36)');
   }
   await applyInEditor(page, async editor => {
     await editorTarget(editor, 'screen'); await editor.locator('#draft-theme').selectOption('mint');
@@ -174,18 +174,18 @@ browserTest('explicit actor and chip settings beat important themes and theme va
     await editor.locator('#draft-commentTextColorMode').selectOption('custom');
     await change(editor, '#draft-commentTextColor', '#ff8800');
   });
-  assert.equal((await look(page)).text, 'rgb(255, 136, 0)');
+  assert.equal((await look(talkStage(page).locator('html'))).text, 'rgb(255, 136, 0)');
   await edit(page, 'chat', async editor => {
     await editor.locator('#draft-commentItemBackground').selectOption('none');
     assert.equal(await editor.locator('#draft-commentItemOpacity').isDisabled(), true);
   });
-  assert.equal((await look(page)).background, 'rgba(0, 0, 0, 0)');
+  assert.equal((await look(talkStage(page).locator('html'))).background, 'rgba(0, 0, 0, 0)');
   await applyInEditor(page, async editor => {
     await editorTarget(editor, 'chat'); await editor.locator('#draft-commentPreset').selectOption('theme');
     await editorTarget(editor, 'actor'); await editor.locator('#draft-actorAppearance').selectOption('theme');
   });
-  assert.deepEqual(await look(page), original);
-  assert.deepEqual(await page.locator('#talk-stage').evaluate(element => [element.hasAttribute('data-actor-appearance'), element.hasAttribute('data-comment-item-background'), element.style.getPropertyValue('--stage-comment-item-opacity')]), [false, false, '']);
+  assert.deepEqual(await look(talkStage(page).locator('html')), original);
+  assert.deepEqual(await talkStage(page).locator('#talk-stage').evaluate(element => [element.hasAttribute('data-actor-appearance'), element.hasAttribute('data-comment-item-background'), element.style.getPropertyValue('--stage-comment-item-opacity')]), [false, false, '']);
   assert.deepEqual(errors, []);
 });
 
@@ -199,7 +199,7 @@ browserTest('body line limits override compact and important themes without trun
   const message = { id: 'long', user: '長い名前'.repeat(20), text: ('長い日本語の本文 https://example.com/abc 👨‍👩‍👧‍👦\n').repeat(30) };
   await page.evaluate(async message => {
     const { renderStageComments } = await import('./src/browser/stage-appearance.js');
-    const list = document.querySelector('#stage-chat-list');
+    const list = document.getElementById('talk-frame').contentDocument.querySelector('#stage-chat-list');
     list.parentElement.style.cssText = 'height:300px;flex:none';
     renderStageComments(list, [message]); list.scrollTop = 0;
   }, message);
@@ -210,7 +210,7 @@ browserTest('body line limits override compact and important themes without trun
   });
   const render = lines => page.evaluate(lines => {
     const { normalizeStudio, renderStageAppearance, markClippedComments } = window.smallLook;
-    const stage = document.querySelector('#talk-stage'), list = stage.querySelector('#stage-chat-list');
+    const stage = document.getElementById('talk-frame').contentDocument.querySelector('#talk-stage'), list = stage.querySelector('#stage-chat-list');
     renderStageAppearance(stage, normalizeStudio({ fontSize: 20, commentStyle: 'compact', commentItemBackground: 'light', commentGap: 14, commentLineHeight: 1.35, commentLabel: false, commentMaxLines: lines }));
     list.scrollTop = 0; markClippedComments(list);
     const card = list.firstElementChild, body = card.querySelector('p'), css = getComputedStyle(body);
@@ -228,8 +228,9 @@ browserTest('body line limits override compact and important themes without trun
   await render(2);
   const edges = await page.evaluate(async message => {
     const { renderStageComments, markClippedComments } = await import('./src/browser/stage-appearance.js');
-    const list = document.querySelector('#stage-chat-list');
+    const list = document.getElementById('talk-frame').contentDocument.querySelector('#stage-chat-list');
     renderStageComments(list, [message, message, message]);
+    list.style.flex = 'none'; list.style.height = `${list.scrollHeight - list.firstElementChild.getBoundingClientRect().height / 2}px`;
     list.scrollTop = 0; markClippedComments(list);
     const before = [...list.children].map(card => card.classList.contains('stage-comment-clipped'));
     list.scrollTop = list.scrollHeight; markClippedComments(list);
@@ -243,10 +244,10 @@ browserTest('comment font size keeps legacy theme overrides while 56px works wit
   const { page, url } = await fixture(t);
   await saveStudio(url, { fontSize: 56 });
   await page.reload(); await appReady(page);
-  assert.equal((await look(page)).font, '56px');
+  assert.equal((await look(talkStage(page).locator('html'))).font, '56px');
   await saveDesign(url, { theme: '.pokome-workspace #stage-chat-list { font-size: 60px; }' });
   await page.reload(); await appReady(page);
-  assert.equal((await look(page)).font, '60px');
+  assert.equal((await look(talkStage(page).locator('html'))).font, '60px');
   await edit(page, 'chat', editor => change(editor, '#draft-fontSize', '64'));
-  assert.equal((await look(page)).font, '60px');
+  assert.equal((await look(talkStage(page).locator('html'))).font, '60px');
 });

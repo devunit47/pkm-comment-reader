@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, saveDesign, readDesign, waitForDesign, appReady, blockExternalFonts, closeEditor, editorTarget, uploadDesignImage, temporaryDataDirectory } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, saveDesign, readDesign, waitForDesign, appReady, blockExternalFonts, closeEditor, editorTarget, uploadDesignImage, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const ids = ['header', 'chat', 'speech', 'actor', 'footer'];
 // Hit testing reports the actual browser paint order, including ancestor
@@ -73,7 +73,7 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
     assert.deepEqual(await paintOrder(previewStage), expected, `${name}: canvas`);
     await closeEditor(editor);
     await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
-    assert.deepEqual(await paintOrder(page.locator('#talk-stage')), expected, `${name}: talk`);
+    assert.deepEqual(await paintOrder(talkStage(page).locator('#talk-stage')), expected, `${name}: talk`);
     await output.goto(`${url}/output.html`);
     await output.locator('[data-overlay-id="second"]').waitFor({ state: 'attached' });
     await output.reload();
@@ -101,7 +101,7 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
   assert.equal((await readDesign(url)).ratios['16:9'].layout, null, 'reading leaves the saved layout unchanged');
   await closeEditor(editor);
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
-  assert.deepEqual(await legacyOrder(page.locator('#talk-stage')), expectedDefault, 'default layout retains master paint order: talk');
+  assert.deepEqual(await legacyOrder(talkStage(page).locator('#talk-stage')), expectedDefault, 'default layout retains master paint order: talk');
   await output.goto(`${url}/output.html`); await output.reload();
   await output.locator('[data-overlay-id="one"]').waitFor({ state: 'attached' });
   assert.deepEqual(await legacyOrder(output.locator('#talk-stage')), expectedDefault, 'default layout retains master paint order: reloaded output');
@@ -115,7 +115,7 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
   assert.deepEqual(ids.map(id => saved.ratios['16:9'].layout.panels[id].z), [0, 0, 0, 0, 0]);
   await page.reload(); await appReady(page);
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
-  assert.deepEqual(await legacyOrder(page.locator('#talk-stage')), expectedDefault, 'saved materialized layout: reloaded talk');
+  assert.deepEqual(await legacyOrder(talkStage(page).locator('#talk-stage')), expectedDefault, 'saved materialized layout: reloaded talk');
   await output.reload(); await output.locator('[data-overlay-id="one"]').waitFor({ state: 'attached' });
   assert.deepEqual(await legacyOrder(output.locator('#talk-stage')), expectedDefault, 'saved materialized layout: reloaded output');
   await page.locator('#leave-talk').click(); await page.locator('[data-page="studio"]').click();

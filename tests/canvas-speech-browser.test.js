@@ -65,7 +65,7 @@ test('one-axis resize preserves untouched saved dimensions and desktop intent', 
     // Restore the saved layout from outside; the page follows the folder's change.
     await saveTalk(base, { layout: { panels } });
     await page.waitForFunction(() => {
-      const style = document.querySelector('.stage-speech').style;
+      const style = document.getElementById('talk-frame').contentDocument.querySelector('.stage-speech').style;
       return style.width === '50%' && style.height === '25%' && style.left === '40%';
     });
     const canvas = await openSpeechCanvas(page);

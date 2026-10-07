@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, readSettings, saveSetting, waitForSettings } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, readSettings, saveSetting, waitForSettings, talkStage } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -26,7 +26,8 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
       await page.waitForFunction(style => document.querySelector('.speech-bubble').dataset.style === style, style);
       const appearance = await page.evaluate(style => {
         const preview = getComputedStyle(document.querySelector('.speech-bubble'));
-        const stage = getComputedStyle(document.querySelector(style === 'image' ? '.stage-speech-content' : '.stage-speech'));
+        const element = document.getElementById('talk-frame').contentDocument.querySelector(style === 'image' ? '.stage-speech-content' : '.stage-speech');
+        const stage = element.ownerDocument.defaultView.getComputedStyle(element);
         return [style === 'image' ? preview.backgroundImage : preview.backgroundColor, style === 'image' ? stage.backgroundImage : stage.backgroundColor];
       }, style);
       assert.equal(appearance[0], appearance[1]);
@@ -34,21 +35,21 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
     await page.locator('#stage-connection').click();
-    assert.equal(await page.locator('#talk-stage').isVisible(), true);
+    assert.equal(await talkStage(page).locator('#talk-stage').isVisible(), true);
     assert.equal(await page.locator('#stage-connection-dialog').isVisible(), true);
     assert.equal(await page.locator('#twitch-channel').evaluate(element => element === document.activeElement), true);
     await page.locator('#close-stage-connection').click();
-    const titleBox = await page.locator('#stage-title').boundingBox();
-    const subtitleBox = await page.locator('#stage-subtitle').boundingBox();
+    const titleBox = await talkStage(page).locator('#stage-title').boundingBox();
+    const subtitleBox = await talkStage(page).locator('#stage-subtitle').boundingBox();
     assert.ok(subtitleBox.y >= titleBox.y + titleBox.height, 'subtitle stays below the title');
     const exitBox = await page.locator('#leave-talk').boundingBox();
-    assert.ok(Math.abs(titleBox.y - exitBox.y) < 2, 'title and exit button have aligned top edges');
+    assert.ok(exitBox.x >= 0 && exitBox.y >= 0 && exitBox.height >= 44, 'exit control remains reachable above the scaled stage');
     const hintBox = await page.locator('.stage-exit-hint').boundingBox();
     assert.ok(hintBox.y >= exitBox.y + exitBox.height, 'Escape hint is below the exit button');
     const statusBox = await page.locator('#stage-connection').boundingBox();
     const switchBox = await page.locator('.stage-switch').boundingBox();
     assert.ok(Math.abs(statusBox.y + statusBox.height / 2 - switchBox.y - switchBox.height / 2) < 2, 'connection status and service switches share a row');
-    const wavePosition = await page.locator('.stage-wave').boundingBox();
+    const wavePosition = await talkStage(page).locator('.stage-wave').boundingBox();
     assert.equal(await page.locator('#stage-volume').isVisible(), false);
     await page.getByRole('button', { name: '読み上げの音量設定', exact: true }).click();
     await page.locator('#stage-volume').fill('0.4');
@@ -57,22 +58,22 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('#volume').inputValue(), '0.4');
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), false);
-    await page.locator('#stage-title').hover();
+    await talkStage(page).locator('#stage-title').hover();
     await page.locator('#stage-volume-settings').hover();
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), true);
     assert.equal(await page.locator('#stage-volume').evaluate(element => getComputedStyle(element).writingMode), 'vertical-lr');
     await page.locator('#stage-volume').hover();
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), true);
-    await page.locator('#stage-title').hover();
+    await talkStage(page).locator('#stage-title').hover();
     await page.locator('#stage-volume-dialog').waitFor({ state: 'hidden' });
     await page.locator('#stage-volume-settings').hover();
-    await page.locator('#stage-title').click();
+    await talkStage(page).locator('#stage-title').click();
     assert.equal(await page.locator('#stage-volume-dialog').isVisible(), false);
-    assert.equal(await page.locator('#talk-stage').isVisible(), true);
-    await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '読み上げ中'; });
-    assert.deepEqual(await page.locator('.stage-wave').boundingBox(), wavePosition);
-    await page.locator('#stage-speech-status').evaluate(element => { element.textContent = '待機中'; });
-    const initialCount = await page.locator('.stage-comment').count();
+    assert.equal(await talkStage(page).locator('#talk-stage').isVisible(), true);
+    await talkStage(page).locator('#stage-speech-status').evaluate(element => { element.textContent = '読み上げ中'; });
+    assert.deepEqual(await talkStage(page).locator('.stage-wave').boundingBox(), wavePosition);
+    await talkStage(page).locator('#stage-speech-status').evaluate(element => { element.textContent = '待機中'; });
+    const initialCount = await talkStage(page).locator('.stage-comment').count();
     const canvas = page.locator('#design-preview-editor');
     async function editTalk(steps) {
       await page.locator('#stage-design-edit').click(); await canvas.locator('#apply-design:not(:disabled)').waitFor();
@@ -83,51 +84,51 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
       await editTalk(async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-commentStyle').selectOption(style); });
       assert.equal((await readDesign(new URL(page.url()).origin)).studio.commentStyle, style);
       if (style === 'anonymous') {
-        assert.equal(await page.locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
-        assert.equal(await page.locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
+        assert.equal(await talkStage(page).locator('#stage-speech-user').evaluate(element => getComputedStyle(element).display), 'none');
+        assert.equal(await talkStage(page).locator('.stage-comment strong').first().evaluate(element => getComputedStyle(element).display), 'none');
       }
-      if (style === 'inline') assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
-      if (style === 'compact') assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
-      assert.equal(await page.locator('.stage-comment').count(), initialCount);
+      if (style === 'inline') assert.equal(await talkStage(page).locator('.stage-comment').first().evaluate(element => getComputedStyle(element).display), 'flex');
+      if (style === 'compact') assert.equal(await talkStage(page).locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).whiteSpace), 'nowrap');
+      assert.equal(await talkStage(page).locator('.stage-comment').count(), initialCount);
     }
-    const initialSize = await page.locator('.stage-comment p').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
+    const initialSize = await talkStage(page).locator('.stage-comment p').first().evaluate(element => parseFloat(getComputedStyle(element).fontSize));
     await editTalk(async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-fontSize').fill(String(initialSize + 2)); });
-    assert.equal(await page.locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize), (initialSize + 2) + 'px');
+    assert.equal(await talkStage(page).locator('.stage-comment p').first().evaluate(element => getComputedStyle(element).fontSize), (initialSize + 2) + 'px');
     await editTalk(async editor => { await editorTarget(editor, 'chat'); await editor.locator('#draft-fontSize').fill(String(initialSize)); });
-    await page.locator('#stage-chat-list').evaluate(list => {
+    await talkStage(page).locator('#stage-chat-list').evaluate(list => {
       list.style.flex = 'none';
       list.style.height = `${list.firstElementChild.getBoundingClientRect().height + 20}px`;
       list.scrollTop = 10;
       list.dispatchEvent(new Event('scroll'));
     });
-    assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'hidden');
-    await page.locator('#stage-chat-list').evaluate(list => { list.scrollTop = 0; list.dispatchEvent(new Event('scroll')); });
-    assert.equal(await page.locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'visible');
-    await page.locator('#stage-chat-list').evaluate(list => { list.style.removeProperty('flex'); list.style.removeProperty('height'); });
+    assert.equal(await talkStage(page).locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'hidden');
+    await talkStage(page).locator('#stage-chat-list').evaluate(list => { list.scrollTop = 0; list.dispatchEvent(new Event('scroll')); });
+    assert.equal(await talkStage(page).locator('.stage-comment').first().evaluate(element => getComputedStyle(element).visibility), 'visible');
+    await talkStage(page).locator('#stage-chat-list').evaluate(list => { list.style.removeProperty('flex'); list.style.removeProperty('height'); });
     for (const [id, target, key] of [['stage-title', 'header', 'title'], ['stage-subtitle', 'header', 'subtitle'], ['stage-footer-text', 'footer', 'footer'], ['stage-speech-title', 'speech', 'speechTitle']]) {
       await editTalk(async editor => { await editorTarget(editor, target); await editor.locator('#draft-' + key).fill('<新しい' + key + '>'); });
-      assert.equal(await page.locator('#' + id).textContent(), '<新しい' + key + '>');
+      assert.equal(await talkStage(page).locator('#' + id).textContent(), '<新しい' + key + '>');
       assert.equal((await readDesign(new URL(page.url()).origin)).studio[key], '<新しい' + key + '>');
     }
     await page.locator('#stage-design-edit').click(); await canvas.locator('#apply-design:not(:disabled)').waitFor();
     await page.keyboard.press('Escape'); await canvas.locator('#design-dialog').waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#talk-stage').isVisible(), true);
+    assert.equal(await talkStage(page).locator('#talk-stage').isVisible(), true);
     await page.keyboard.press('Escape');
     await page.reload(); await appReady(page);
-    assert.equal(await page.locator('#stage-title').textContent(), '<新しいtitle>');
+    assert.equal(await talkStage(page).locator('#stage-title').textContent(), '<新しいtitle>');
     await page.locator('[data-page="settings"]').click();
     await page.locator('#studio-list-count').fill('3');
     await page.locator('#studio-list-count').dispatchEvent('change');
     await page.locator('[data-page="home"]').click();
     await page.locator('#enter-talk').click();
-    assert.equal(await page.locator('.stage-comment').count(), 3);
+    assert.equal(await talkStage(page).locator('.stage-comment').count(), 3);
     await page.keyboard.press('Escape');
     await page.locator('[data-page="home"]').click();
     assert.equal(await page.locator('#workspace-editor,#layout-session,[data-layout-handle]').count(), 0);
     await page.locator('[data-page="studio"]').click();
     await applyInEditor(page, async canvas => { await editorTarget(canvas, 'header'); await canvas.locator('#panel-hidden').check(); });
     await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();
-    await page.locator('.stage-header').waitFor({ state: 'hidden' });
+    await talkStage(page).locator('.stage-header').waitFor({ state: 'hidden' });
     await page.keyboard.press('Escape');
     await page.locator('[data-page="studio"]').click();
     await applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill('.pokome-workspace .pokome-panel { border-radius: 3px; }'); });
@@ -146,7 +147,7 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.equal(await page.locator('#design-export').count(), 0, 'the old design file export is gone');
     await page.reload(); await appReady(page);
     assert.match(await page.locator('#pokome-user-theme').textContent(), /rgb\(1, 2, 3\)/);
-    assert.equal(await page.locator('.stage-header').evaluate(element => element.style.display), 'none');
+    assert.equal(await talkStage(page).locator('.stage-header').evaluate(element => element.style.display), 'none');
     assert.equal(await page.locator('.comments').evaluate(element => element.style.left), '');
     assert.deepEqual((await waitForDesign(base, () => true)).ratios['16:9'].layout, saved.ratios['16:9'].layout);
     assert.deepEqual(errors, []);
@@ -239,7 +240,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
     assert.equal(await page.locator('#voice').inputValue(), '3');
     await page.locator('#test-voice').click();
     await page.waitForFunction(() => document.querySelector('#speech-status').textContent === '読み上げ中');
-    assert.equal(await page.locator('#stage-speech-text').textContent(), 'こんにちは。読み上げ音声のテストです。');
+    assert.equal(await talkStage(page).locator('#stage-speech-text').textContent(), 'こんにちは。読み上げ音声のテストです。');
     await page.locator('#stop-speech').click();
     assert.equal(await page.locator('#speech-status').textContent(), '待機中');
     assert.equal(await page.evaluate(() => window.testAudio[0].paused), true);
@@ -403,7 +404,7 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#output-background').inputValue(), 'theme');
     assert.equal(await page.locator('#output-key').inputValue(), '00ff00');
     assert.deepEqual((await readSettings(base)).users.twitch['旧設定ユーザー'], { hidden: true, muted: true });
-    assert.equal(await page.locator('#actor-image').getAttribute('src'), null);
+    assert.equal(await talkStage(page).locator('#actor-image').getAttribute('src'), null);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
     assert.deepEqual(errors, []);
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }

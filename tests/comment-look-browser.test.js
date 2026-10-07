@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady, applyInEditor, editorTarget, closeEditor, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady, applyInEditor, editorTarget, closeEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -51,19 +51,19 @@ const look = target => target.evaluate(() => {
 
 browserTest('comment presets restyle the live stage and output, then return exactly to the theme', async t => {
   const { context, page, errors, url } = await fixture(t);
-  const original = await look(page);
+  const original = await look(talkStage(page).locator('html'));
   assert.equal(original.shadow, 'none');
 
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('outline'));
-  const outline = await look(page);
+  const outline = await look(talkStage(page).locator('html'));
   assert.equal(outline.panel, 'rgba(0, 0, 0, 0)');
   assert.equal(outline.panelBorder, 'rgba(0, 0, 0, 0)');
   assert.equal(outline.text, 'rgb(255, 255, 255)');
   assert.equal(outline.author, 'rgb(255, 255, 255)');
   assert.match(outline.shadow, /rgb\(0, 0, 0\) 1px 0px 0px/);
   assert.equal(outline.divider, '0px');
-  // The live stage keeps its label row for live status; only the text hides.
-  assert.deepEqual([outline.heading, outline.label], ['hidden', 'flex']);
+  // Hidden headings leave the same space in live, preview and output.
+  assert.deepEqual([outline.heading, outline.label], ['hidden', 'none']);
 
   // The output removes the label row entirely.
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
@@ -74,8 +74,8 @@ browserTest('comment presets restyle the live stage and output, then return exac
 
   await page.bringToFront();
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('dense'));
-  assert.equal(await page.locator('#stage-chat-list').getAttribute('data-comment-style'), 'anonymous');
-  const dense = await look(page);
+  assert.equal(await talkStage(page).locator('#stage-chat-list').getAttribute('data-comment-style'), 'anonymous');
+  const dense = await look(talkStage(page).locator('html'));
   assert.deepEqual([dense.lineHeight, dense.paddingTop], [`${20 * 1.35}px`, '2px']);
   await output.waitForFunction(() => document.querySelector('#stage-chat-list').dataset.commentStyle === 'anonymous');
 
@@ -87,7 +87,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
     await editor.locator('#draft-commentTextColorMode').selectOption('theme');
     await editor.locator('#draft-commentAuthorColorMode').selectOption('theme');
   });
-  assert.deepEqual(await page.evaluate(() => [getComputedStyle(document.querySelector('#stage-chat-list .stage-comment p')).color, getComputedStyle(document.querySelector('.stage-chat .stage-panel-label h2')).color]), ['rgb(31, 42, 36)', 'rgb(31, 42, 36)']);
+  assert.deepEqual(await page.evaluate(() => [getComputedStyle(document.getElementById('talk-frame').contentDocument.querySelector('#stage-chat-list .stage-comment p')).color, getComputedStyle(document.getElementById('talk-frame').contentDocument.querySelector('.stage-chat .stage-panel-label h2')).color]), ['rgb(31, 42, 36)', 'rgb(31, 42, 36)']);
   await chat(page, async editor => {
     const opacity = editor.locator('#draft-commentPanelOpacity');
     await opacity.fill('60'); await opacity.dispatchEvent('change');
@@ -98,7 +98,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
       assert.equal(await opacity.inputValue(), expected);
     }
   });
-  assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
+  assert.equal((await look(talkStage(page).locator('html'))).panel, 'rgba(255, 255, 255, 0.6)');
 
   // The design preview collapses a hidden label exactly like the output.
   await page.locator('#open-design-preview').click();
@@ -111,12 +111,12 @@ browserTest('comment presets restyle the live stage and output, then return exac
   // Reload keeps the settings; returning to the theme restores every value.
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
-  assert.equal((await look(page)).panel, 'rgba(255, 255, 255, 0.6)');
+  assert.equal((await look(talkStage(page).locator('html'))).panel, 'rgba(255, 255, 255, 0.6)');
   // Returning to the theme preset restores every value, names included.
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
-  assert.equal(await page.locator('#stage-chat-list').getAttribute('data-comment-style'), 'stacked');
-  assert.equal(await page.locator('#stage-speech-user').evaluate(element => element.hidden), false);
-  assert.deepEqual(await look(page), original);
+  assert.equal(await talkStage(page).locator('#stage-chat-list').getAttribute('data-comment-style'), 'stacked');
+  assert.equal(await talkStage(page).locator('#stage-speech-user').evaluate(element => element.hidden), false);
+  assert.deepEqual(await look(talkStage(page).locator('html')), original);
   assert.deepEqual(errors, []);
 });
 
@@ -125,15 +125,15 @@ browserTest('theme CSS applies at theme values and an explicit setting takes pre
   await saveDesign(url, { theme: '.pokome-workspace .pokome-comment__author { color: rgb(1, 2, 3); }' });
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
-  assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
+  assert.equal((await look(talkStage(page).locator('html'))).author, 'rgb(1, 2, 3)');
   await chat(page, async editor => {
     await editor.locator('#draft-commentAuthorColorMode').selectOption('custom');
     await editor.locator('#draft-commentAuthorColor').fill('#ff8800');
     await editor.locator('#draft-commentAuthorColor').dispatchEvent('change');
   });
-  assert.equal((await look(page)).author, 'rgb(255, 136, 0)');
+  assert.equal((await look(talkStage(page).locator('html'))).author, 'rgb(255, 136, 0)');
   await chat(page, editor => editor.locator('#draft-commentAuthorColorMode').selectOption('theme'));
-  assert.equal((await look(page)).author, 'rgb(1, 2, 3)');
+  assert.equal((await look(talkStage(page).locator('html'))).author, 'rgb(1, 2, 3)');
   assert.deepEqual(errors, []);
 });
 
@@ -146,13 +146,13 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
     const comment = document.querySelector('#stage-chat-list .stage-comment');
     return [comment.querySelector('.pokome-comment__author'), comment.querySelector('.pokome-comment__body')].map(element => getComputedStyle(element).textShadow);
   });
-  assert.deepEqual(await shadows(page), ['none', 'none']);
+  assert.deepEqual(await shadows(talkStage(page).locator('html')), ['none', 'none']);
   for (const [preset, width] of [['outline', '1px'], ['dark', '1px']]) {
     await chat(page, editor => editor.locator('#draft-commentPreset').selectOption(preset));
-    for (const shadow of await shadows(page)) assert.ok(shadow.startsWith(`rgb(0, 0, 0) ${width} 0px 0px`), `${preset}: ${shadow}`);
+    for (const shadow of await shadows(talkStage(page).locator('html'))) assert.ok(shadow.startsWith(`rgb(0, 0, 0) ${width} 0px 0px`), `${preset}: ${shadow}`);
   }
   await chat(page, editor => editor.locator('#draft-commentOutline').selectOption('thick'));
-  for (const shadow of await shadows(page)) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
+  for (const shadow of await shadows(talkStage(page).locator('html'))) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
   // The output applies the same outline to both elements.
   await waitForDesign(url, design => design.studio.commentOutline === 'thick');
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
@@ -162,7 +162,7 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
   // Back at the theme value, the theme's own text-shadow applies again.
   await page.bringToFront();
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
-  assert.deepEqual(await shadows(page), ['none', 'none']);
+  assert.deepEqual(await shadows(talkStage(page).locator('html')), ['none', 'none']);
   assert.deepEqual(errors, []);
 });
 
@@ -185,41 +185,41 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
     return { bodyShadow: body.textShadow, bodyColor: body.color, lineHeight: body.lineHeight, authorShadow: author.textShadow, authorColor: author.color, panel: getComputedStyle(document.querySelector('.stage-chat')).backgroundColor };
   });
   const themed = { bodyShadow: 'none', bodyColor: 'rgb(1, 2, 3)', lineHeight: '60px', authorShadow: 'none', authorColor: 'rgb(4, 5, 6)', panel: 'rgb(7, 8, 9)' };
-  assert.deepEqual(await read(page), themed);
+  assert.deepEqual(await read(talkStage(page).locator('html')), themed);
 
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('outline'));
-  const outlined = await read(page);
+  const outlined = await read(talkStage(page).locator('html'));
   for (const shadow of [outlined.bodyShadow, outlined.authorShadow]) assert.ok(shadow.startsWith('rgb(0, 0, 0) 1px 0px 0px'), shadow);
   assert.deepEqual([outlined.bodyColor, outlined.authorColor, outlined.panel], ['rgb(255, 255, 255)', 'rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)']);
   await chat(page, editor => editor.locator('#draft-commentLineHeight').selectOption('1.5'));
-  assert.equal((await read(page)).lineHeight, '30px');
+  assert.equal((await read(talkStage(page).locator('html'))).lineHeight, '30px');
   await chat(page, async editor => {
     await editor.locator('#draft-commentPanel').selectOption('light');
     await editor.locator('#draft-commentTextColorMode').selectOption('theme');
   });
   // A light panel's readable default also beats the theme's important color.
-  assert.deepEqual([(await read(page)).panel, (await read(page)).bodyColor], ['rgba(255, 255, 255, 0.9)', 'rgb(31, 42, 36)']);
+  assert.deepEqual([(await read(talkStage(page).locator('html'))).panel, (await read(talkStage(page).locator('html'))).bodyColor], ['rgba(255, 255, 255, 0.9)', 'rgb(31, 42, 36)']);
   await chat(page, editor => editor.locator('#draft-commentAuthorColorMode').selectOption('theme'));
-  assert.equal((await read(page)).authorColor, 'rgb(59, 110, 88)');
-  assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(31, 42, 36)');
+  assert.equal((await read(talkStage(page).locator('html'))).authorColor, 'rgb(59, 110, 88)');
+  assert.equal(await talkStage(page).locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(31, 42, 36)');
   // A color chosen on a light panel still wins over its readable default.
   await chat(page, async editor => {
     await editor.locator('#draft-commentTextColorMode').selectOption('custom');
     await editor.locator('#draft-commentTextColor').fill('#aa0000');
     await editor.locator('#draft-commentTextColor').dispatchEvent('change');
   });
-  assert.equal((await read(page)).bodyColor, 'rgb(170, 0, 0)');
-  assert.equal(await page.locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(170, 0, 0)');
+  assert.equal((await read(talkStage(page).locator('html'))).bodyColor, 'rgb(170, 0, 0)');
+  assert.equal(await talkStage(page).locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(170, 0, 0)');
 
   await waitForDesign(url, design => design.studio.commentTextColor === '#aa0000');
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
-  assert.deepEqual(await read(output), await read(page));
+  assert.deepEqual(await read(output), await read(talkStage(page).locator('html')));
 
   await page.bringToFront();
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('theme'));
-  assert.deepEqual(await read(page), themed);
+  assert.deepEqual(await read(talkStage(page).locator('html')), themed);
   assert.deepEqual(errors, []);
 });
 
