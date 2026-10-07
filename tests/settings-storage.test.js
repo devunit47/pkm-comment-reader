@@ -101,15 +101,44 @@ test('separate server processes retain concurrent fields and send external file 
   assert.match(text, /event: change/); controller.abort();
 });
 
-test('a crashed lock owner is recovered before saving and leaves no temporary files', async t => {
+test('a crashed lock owner is recovered before saving and leaves no participant files', async t => {
   const { directory, save } = await serve(t); await mkdir(directory);
-  const script = `import { writeFile } from 'node:fs/promises';
-    await writeFile(process.argv[1], JSON.stringify({ pid: process.pid, token: 'abandoned-owner' }));
-    console.log('ready'); setInterval(() => {}, 1000);`;
-  const owner = await startChild(t, script, [join(directory, '.settings.lock')]);
-  owner.child.kill(); await owner.exited;
+  const owner = gatedChild(directory, 'holder');
+  t.after(async () => { if (owner.process.exitCode === null) owner.process.kill(); await owner.exited; });
+  const held = await owner.next(); assert.equal(held.event, 'saving');
+  owner.process.kill(); await owner.exited;
   assert.equal((await save('historyLimit', 200)).status, 200);
-  assert.deepEqual(await readdir(directory), ['settings.json']);
+  assert.equal(JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8')).settings.setupComplete, false);
+  assert.deepEqual((await readdir(directory)).filter(name => !name.endsWith('.tmp')), ['settings.json']);
+});
+
+test('a live choosing participant times out safely and is reclaimed after it stops', { timeout: 10000 }, async t => {
+  const { directory, save } = await serve(t); await mkdir(directory);
+  const owner = gatedChild(directory, 'choosing');
+  t.after(async () => { if (owner.process.exitCode === null) owner.process.kill(); await owner.exited; });
+  const held = await owner.next(); assert.equal(held.event, 'choosing-held');
+  assert.equal(JSON.parse(await readFile(held.lockPath, 'utf8')).choosing, true);
+  const blocked = await save('historyLimit', 200);
+  assert.equal(blocked.status, 409); assert.match((await blocked.json()).error, /保存中/);
+  await assert.rejects(readFile(join(directory, 'settings.json')), { code: 'ENOENT' });
+  assert.deepEqual((await readdir(directory)).filter(name => name.endsWith('.ticket.json')), [held.lockPath.split(/[/\\]/).at(-1)]);
+  owner.process.kill(); await owner.exited;
+  assert.equal((await save('historyLimit', 200)).status, 200);
+  assert.deepEqual((await readdir(directory)).filter(name => !name.endsWith('.tmp')), ['settings.json']);
+});
+
+test('an unrecognized participant file is protected and prevents a save without changing settings', async t => {
+  const { directory, save } = await serve(t);
+  await save('historyLimit', 200);
+  const path = join(directory, '.settings-00000000-0000-0000-0000-000000000000.ticket.json');
+  const original = await readFile(join(directory, 'settings.json'), 'utf8');
+  for (const raw of ['{broken', JSON.stringify({ pid: process.pid, token: '00000000-0000-0000-0000-000000000000', choosing: false, ticket: 0 })]) {
+    await writeFile(path, raw);
+    assert.equal((await save('historyLimit', 300)).status, 409);
+    assert.equal(await readFile(path, 'utf8'), raw);
+    assert.equal(await readFile(join(directory, 'settings.json'), 'utf8'), original);
+    assert.deepEqual((await readdir(directory)).sort(), [path.split(/[/\\]/).at(-1), 'settings.json'].sort());
+  }
 });
 
 test('malformed, unsupported and oversized files are read-only and never replaced', async t => {
@@ -174,4 +203,135 @@ test('symlinked settings files and data directories never modify their targets',
   assert.equal((await current()).writable, false);
   assert.equal((await save('historyLimit', 300)).status, 422);
   assert.equal(await readFile(join(outside, 'settings.json'), 'utf8'), raw);
+});
+
+const storageModule = new URL('../src/server/settings-storage.js', import.meta.url).href;
+const childSource = `
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
+import { join } from 'node:path';
+const [directory, role, abandonedPath, firstPid, moduleURL] = process.argv.slice(1);
+const settingsPath = join(directory, 'settings.json');
+const original = { unlink: fs.unlink, rename: fs.rename, open: fs.open, readFile: fs.readFile, timeout: globalThis.setTimeout };
+const releases = new Map(), pending = new Map();
+process.on('message', ({ release }) => {
+  if (pending.has(release)) { pending.get(release)(); pending.delete(release); }
+  else releases.set(release, true);
+});
+const wait = name => releases.delete(name) ? Promise.resolve() : new Promise(resolve => pending.set(name, resolve));
+const report = message => process.send(message);
+let deleteHeld = false, afterDelete = false, sawFirst = false, waitingReported = false;
+fs.unlink = async path => {
+  if (role !== 'holder' && String(path) === abandonedPath && !deleteHeld) {
+    deleteHeld = true; report({ event: 'delete-held' });
+    await wait('delete'); afterDelete = true;
+  }
+  return original.unlink(path);
+};
+fs.open = async (...args) => {
+  const handle = await original.open(...args);
+  if (role === 'second' && afterDelete && String(args[0]) !== settingsPath && !String(args[0]).endsWith('.tmp')) {
+    try {
+      const owner = JSON.parse(await original.readFile(args[0], 'utf8'));
+      if (owner.pid === Number(firstPid)) sawFirst = true;
+    } catch {}
+  }
+  return handle;
+};
+globalThis.setTimeout = (callback, delay, ...args) => {
+  if (role === 'second' && afterDelete && sawFirst && delay === 50 && !waitingReported) {
+    waitingReported = true; report({ event: 'waiting-for-first' });
+  }
+  return original.timeout(callback, delay, ...args);
+};
+fs.rename = async (from, to) => {
+  if (role === 'choosing' && String(to).endsWith('.ticket.json')) {
+    const ticket = JSON.parse(await original.readFile(from, 'utf8'));
+    if (ticket.choosing === false) {
+      report({ event: 'choosing-held', lockPath: String(to) });
+      await wait('ticket');
+    }
+  }
+  if (String(to) === settingsPath) {
+    let lockPath;
+    if (role !== 'second') {
+      for (const name of await fs.readdir(directory)) {
+        if (name === 'settings.json' || name.endsWith('.tmp')) continue;
+        try {
+          const value = JSON.parse(await original.readFile(join(directory, name), 'utf8'));
+          if (value.pid === process.pid && typeof value.token === 'string') lockPath = join(directory, name);
+        } catch {}
+      }
+    }
+    report({ event: 'saving', lockPath });
+    if (role !== 'second') await wait('save');
+  }
+  return original.rename(from, to);
+};
+syncBuiltinESMExports();
+const { createSettingsStorage } = await import(moduleURL);
+const storage = createSettingsStorage(directory);
+try {
+  const result = await storage.save(role === 'first' ? 'connections' : 'setupComplete', role === 'first' ? { twitch: 'retained_first' } : true);
+  report({ event: 'saved', settings: result.settings });
+} catch (error) { report({ event: 'error', message: error.message }); }
+finally { storage.closeEvents(); process.disconnect(); }
+`;
+
+function gatedChild(directory, role, abandonedPath = '', firstPid = '') {
+  const process = spawn(globalThis.process.execPath, ['--input-type=module', '-e', childSource,
+    directory, role, abandonedPath, String(firstPid), storageModule], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  const messages = [], consumers = [];
+  let errors = '';
+  process.stderr.setEncoding('utf8'); process.stderr.on('data', value => { errors += value; });
+  process.on('message', message => {
+    if (consumers.length) consumers.shift().resolve(message);
+    else messages.push(message);
+  });
+  const exited = new Promise(resolve => process.once('exit', resolve));
+  const next = () => {
+    if (messages.length) return Promise.resolve(messages.shift());
+    return new Promise((resolve, reject) => {
+      const consumer = { resolve, reject }; consumers.push(consumer);
+      exited.then(() => {
+        const index = consumers.indexOf(consumer);
+        if (index >= 0) { consumers.splice(index, 1); reject(new Error('Child stopped before the expected event: ' + errors)); }
+      });
+    });
+  };
+  const release = name => { if (process.connected) process.send({ release: name }); };
+  return { process, next, release, exited };
+}
+
+test('concurrent recovery never removes a new owner or admits overlapping saves', { timeout: 15000 }, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'pokome-recovery-regression-'));
+  const children = [];
+  t.after(async () => {
+    for (const runner of children) if (runner.process.exitCode === null) runner.process.kill();
+    await Promise.all(children.map(runner => runner.exited));
+    await rm(directory, { recursive: true, force: true });
+  });
+  const start = (...args) => { const runner = gatedChild(directory, ...args); children.push(runner); return runner; };
+  // Stop a real owner before the settings rename, leaving its published lock.
+  const holder = start('holder'), held = await holder.next();
+  assert.equal(held.event, 'saving'); assert.ok(held.lockPath);
+  holder.process.kill(); await holder.exited;
+  // The first contender is already registered when the second starts, so its
+  // ticket must precede the second's even if both reclaim the dead owner's file.
+  const first = start('first', held.lockPath);
+  assert.equal((await first.next()).event, 'delete-held');
+  const second = start('second', held.lockPath, first.process.pid);
+  assert.equal((await second.next()).event, 'delete-held');
+  first.release('delete');
+  assert.equal((await first.next()).event, 'saving');
+  second.release('delete');
+  const observed = await second.next();
+  assert.equal(observed.event, 'waiting-for-first', 'the second save must wait while the new first owner holds the lock');
+  first.release('save');
+  assert.equal((await first.next()).event, 'saved');
+  assert.equal((await second.next()).event, 'saving');
+  assert.equal((await second.next()).event, 'saved');
+  const file = JSON.parse(await readFile(join(directory, 'settings.json'), 'utf8'));
+  assert.equal(file.settings.connections.twitch, 'retained_first');
+  assert.equal(file.settings.setupComplete, true);
 });
