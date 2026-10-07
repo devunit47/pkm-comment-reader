@@ -7,6 +7,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, utimes, writeFile
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
+import { temporaryDataDirectory } from './browser-support.js';
 import { MAX_IMAGE_BYTES, defaultDesign, defaultActorImage, normalizeDesign, withTalk, RATIOS } from '../src/shared/design-model.js';
 import { UNREFERENCED_IMAGE_GRACE_MS, inspectImageBytes } from '../src/server/design-storage.js';
 
@@ -22,7 +23,7 @@ const sizedPNG = (width, height, length = png.length) => {
 async function serve(t) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-design-'));
   const directory = join(folder, 'customization');
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(t) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(folder, { recursive: true, force: true }); });

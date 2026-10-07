@@ -50,9 +50,8 @@ export function normalizeSpeechEngines(saved) {
   return result;
 }
 
-export function readSpeechEngines(storage) {
-  try { return normalizeSpeechEngines(JSON.parse(storage?.getItem('pokome-speech-engines') || '{}')); }
-  catch { return normalizeSpeechEngines(); }
+export function readSpeechEngines(settings) {
+  return normalizeSpeechEngines(settings?.speechEngines);
 }
 
 export class LocalSpeechPlayer {

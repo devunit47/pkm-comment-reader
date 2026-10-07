@@ -122,10 +122,10 @@ test('failed lookup or subscription never overwrites a successful previous conne
 });
 
 test('previous connections restore separately and invalid saved values are ignored', () => {
-  const saved = JSON.stringify({ twitch: 'Previous_TW', kick: 'previous-kick' });
-  assert.deepEqual(readSavedConnections({ getItem: () => saved }), { twitch: 'previous_tw', kick: 'previous-kick' });
-  assert.deepEqual(readSavedConnections({ getItem: () => '{invalid' }), { twitch: '', kick: '' });
-  assert.deepEqual(readSavedConnections({ getItem: () => JSON.stringify({ twitch: 'https://twitch.tv/a', kick: 'safe-kick' }) }), { twitch: '', kick: 'safe-kick' });
+  const saved = { connections: { twitch: 'Previous_TW', kick: 'previous-kick' } };
+  assert.deepEqual(readSavedConnections(saved), { twitch: 'previous_tw', kick: 'previous-kick' });
+  assert.deepEqual(readSavedConnections({ connections: null }), { twitch: '', kick: '' });
+  assert.deepEqual(readSavedConnections({ connections: { twitch: 'https://twitch.tv/a', kick: 'safe-kick' } }), { twitch: '', kick: 'safe-kick' });
   assert.deepEqual(readSavedConnections(undefined), { twitch: '', kick: '' });
   assert.equal(validChannel('kick', '../private'), false);
   assert.equal(validChannel('twitch', 'has-hyphen'), false);

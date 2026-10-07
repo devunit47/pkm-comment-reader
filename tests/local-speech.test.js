@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import http from 'node:http';
 import { createServer } from '../server.js';
+import { temporaryDataDirectory } from './browser-support.js';
 import { readSpeechEngines, LocalSpeechPlayer } from '../src/shared/speech-engine.js';
 const wav = Buffer.from('RIFF0000WAVEdata');
 async function serve(t, fetchImpl) {
-  const server = createServer({ fetchImpl }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  const server = createServer({ fetchImpl, dataDirectory: await temporaryDataDirectory(t) }); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => new Promise(resolve => server.close(resolve)));
   return 'http://127.0.0.1:' + server.address().port;
 }
@@ -84,9 +85,9 @@ test('engine failures do not expose upstream errors or treat non-audio as WAV', 
   assert.equal(response.status, 502); assert.doesNotMatch(await response.text(), /secret/);
 });
 test('saved engines stay platform-specific', () => {
-  const storage = { getItem: () => JSON.stringify({ twitch: { engine: 'voicevox', voicevox: '4' }, kick: { engine: 'coeiroink', coeiroink: 'bad' } }) };
-  assert.equal(readSpeechEngines(storage).twitch.voicevox, '4'); assert.equal(readSpeechEngines(storage).kick.coeiroink, '');
-  assert.equal(readSpeechEngines({ getItem: () => '{' }).twitch.engine, 'browser');
+  const settings = { speechEngines: { twitch: { engine: 'voicevox', voicevox: '4' }, kick: { engine: 'coeiroink', coeiroink: 'bad' } } };
+  assert.equal(readSpeechEngines(settings).twitch.voicevox, '4'); assert.equal(readSpeechEngines(settings).kick.coeiroink, '');
+  assert.equal(readSpeechEngines({ speechEngines: null }).twitch.engine, 'browser');
 });
 test('local playback starts display only when playing, runs serially and revokes URLs', async () => {
   const audio = []; const revoked = []; const events = [];

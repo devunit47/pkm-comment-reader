@@ -6,10 +6,10 @@ import { createChatState, addMessage } from '../src/browser/chat-state.js';
 test('auto speech defaults on and restores explicit off separately for each service', () => {
   assert.equal(createChatState().autoSpeech, true);
   assert.deepEqual(readSavedAutoSpeech(undefined), { twitch: true, kick: true });
-  assert.deepEqual(readSavedAutoSpeech({ getItem: () => '{broken' }), { twitch: true, kick: true });
-  assert.deepEqual(readSavedAutoSpeech({ getItem: () => JSON.stringify({ twitch: false, kick: true }) }), { twitch: false, kick: true });
-  assert.deepEqual(readSavedAutoSpeech({ getItem: () => JSON.stringify({ kick: false }) }), { twitch: true, kick: false });
-  assert.deepEqual(readSavedAutoSpeech({ getItem: () => JSON.stringify({ twitch: 'false', kick: null }) }), { twitch: true, kick: true });
+  assert.deepEqual(readSavedAutoSpeech({ autoSpeech: null }), { twitch: true, kick: true });
+  assert.deepEqual(readSavedAutoSpeech({ autoSpeech: { twitch: false, kick: true } }), { twitch: false, kick: true });
+  assert.deepEqual(readSavedAutoSpeech({ autoSpeech: { kick: false } }), { twitch: true, kick: false });
+  assert.deepEqual(readSavedAutoSpeech({ autoSpeech: { twitch: 'false', kick: null } }), { twitch: true, kick: true });
 });
 
 test('URL omission retains surrounding Japanese and removes URL-only messages', () => {

@@ -5,6 +5,7 @@ import { mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { basename, join, resolve, sep } from 'node:path';
 import { createServer } from '../server.js';
+import { temporaryDataDirectory } from './browser-support.js';
 import { defaultDesign } from '../src/shared/design-model.js';
 import { UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles, fixtureImages } from './fixtures/preset-design.js';
@@ -17,7 +18,7 @@ const unreadable = {
 async function fixture(t) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-unreadable-'));
   const directory = join(folder, 'customization');
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(t) });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => {
     await new Promise(resolveClose => server.close(resolveClose));

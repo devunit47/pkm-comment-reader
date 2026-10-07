@@ -32,7 +32,7 @@ test('settings normalize untrusted values and preserve valid service-specific ru
   assert.equal(settings.speechOptions.twitch.skipNightbot, false);
   assert.equal(Object.hasOwn(settings.speechOptions.twitch, 'unknown'), false);
   assert.deepEqual(settings.users.twitch.viewer, { hidden: true, muted: false });
-  assert.equal(Object.hasOwn(settings.users.twitch, 'empty'), false);
+  assert.deepEqual(settings.users.twitch.empty, { hidden: false, muted: false });
   assert.equal(Object.hasOwn(settings.users.twitch, '__proto__'), true);
   assert.deepEqual(settings.users.kick, {});
   assert.equal({}.hidden, undefined);
@@ -50,4 +50,9 @@ test('malformed collections do not expose inherited preferences', () => {
   assert.deepEqual(result.users, { twitch: {}, kick: {} });
   assert.equal(result.historyLimit, 300);
   assert.equal(result.setupComplete, false);
+});
+
+test('released user rules keep the user available after reopening the app', () => {
+  const settings = normalizeSettings({ users: { twitch: { viewer: { hidden: false, muted: false } } } });
+  assert.deepEqual(settings.users.twitch.viewer, { hidden: false, muted: false });
 });

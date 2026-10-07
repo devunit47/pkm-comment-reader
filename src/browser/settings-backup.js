@@ -1,56 +1,50 @@
-import { HISTORY_LIMIT_KEY, normalizeHistoryLimit } from '../shared/studio.js';
+import { normalizeHistoryLimit } from '../shared/studio.js';
+import { MAX_SETTINGS_BYTES, normalizeSettings, SETTINGS_FIELDS } from '../shared/settings-model.js';
 
-// Backups hold operating settings only. The appearance lives in the
-// customization folder and is shared by copying that folder instead.
-export const SETTINGS_KEYS = Object.freeze(['pokome-connections', 'pokome-auto-speech', 'pokome-voices', 'pokome-speech-engines', 'pokome-speech-options', 'pokome-users-v2', HISTORY_LIMIT_KEY]);
-const OPTIONAL_KEYS = [HISTORY_LIMIT_KEY];
-// Accept obsolete fields without restoring or clearing their browser values.
+// Only backup import understands these obsolete names. Browser storage is never read.
+const LEGACY_FIELDS = Object.freeze({
+  'pokome-connections': 'connections', 'pokome-auto-speech': 'autoSpeech', 'pokome-voices': 'voices',
+  'pokome-speech-engines': 'speechEngines', 'pokome-speech-options': 'speechOptions',
+  'pokome-users-v2': 'users', 'pokome-history-limit': 'historyLimit',
+});
 export const LEGACY_APPEARANCE_KEYS = Object.freeze(['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1', 'pokome-workspace-v1']);
-export const MAX_SETTINGS_FILE_BYTES = 12 * 1024 * 1024;
-
-export function exportSettings(storage) {
-  if (!storage) throw new Error('ブラウザの保存機能を有効にしてください。');
-  return { format: 'pokome-settings', version: 1, settings: Object.fromEntries(SETTINGS_KEYS.map(key => [key, storage.getItem(key)])) };
+export const MAX_SETTINGS_FILE_BYTES = MAX_SETTINGS_BYTES;
+export function exportSettings(settings) {
+  const normalized = normalizeSettings(settings);
+  return { format: 'pokome-settings', version: 1,
+    settings: Object.fromEntries(Object.entries(LEGACY_FIELDS).map(([key, field]) => [key, JSON.stringify(normalized[field])])) };
 }
 
 export function parseSettings(text) {
-  if (text.length > MAX_SETTINGS_FILE_BYTES) throw new Error('設定ファイルは12MB以下にしてください。');
+  if (new TextEncoder().encode(text).length > MAX_SETTINGS_FILE_BYTES) throw new Error('設定ファイルは12MB以下にしてください。');
   const data = JSON.parse(text);
-  if (data?.format !== 'pokome-settings' || data.version !== 1 || !data.settings || Array.isArray(data.settings)) throw new Error('対応する設定バックアップではありません。');
-  const allowed = [...SETTINGS_KEYS, ...LEGACY_APPEARANCE_KEYS];
-  if (Object.keys(data.settings).some(key => !allowed.includes(key)) || SETTINGS_KEYS.filter(key => !OPTIONAL_KEYS.includes(key)).some(key => !Object.hasOwn(data.settings, key))) throw new Error('必要な設定が不足しています。');
-  const settings = Object.fromEntries(SETTINGS_KEYS.map(key => [key, Object.hasOwn(data.settings, key) ? data.settings[key] : null]));
-  for (const key of SETTINGS_KEYS) {
-    const value = settings[key];
-    if (value !== null && typeof value !== 'string') throw new Error('設定の形式が正しくありません。');
-    if (value !== null) {
-      const parsed = JSON.parse(value);
-      if (key === HISTORY_LIMIT_KEY ? !Number.isInteger(parsed) : !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('設定の形式が正しくありません。');
-    }
+  if (data?.format !== 'pokome-settings' || data.version !== 1 || !data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) throw new Error('対応する設定バックアップではありません。');
+  const allowed = [...Object.keys(LEGACY_FIELDS), ...LEGACY_APPEARANCE_KEYS];
+  if (Object.keys(data.settings).some(key => !allowed.includes(key)) || Object.keys(LEGACY_FIELDS).filter(key => key !== 'pokome-history-limit').some(key => !Object.hasOwn(data.settings, key))) throw new Error('必要な設定が不足しています。');
+  const settings = {};
+  for (const [key, field] of Object.entries(LEGACY_FIELDS)) {
+    const value = data.settings[key];
+    if (value === null || value === undefined) continue;
+    if (typeof value !== 'string') throw new Error('設定の形式が正しくありません。');
+    const parsed = JSON.parse(value);
+    if (field === 'historyLimit' ? !Number.isInteger(parsed) : !parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('設定の形式が正しくありません。');
+    settings[field] = parsed;
   }
-  // The old history count is an operating setting, independent of appearance.
-  if (settings[HISTORY_LIMIT_KEY] === null) {
+  if (!Object.hasOwn(settings, 'historyLimit')) {
     try {
       const count = JSON.parse(data.settings['pokome-studio'])?.listCount;
-      if (Number.isInteger(count)) settings[HISTORY_LIMIT_KEY] = JSON.stringify(normalizeHistoryLimit(count));
-    } catch { /* Ignored appearance must not prevent restoring operating settings. */ }
+      if (Number.isInteger(count)) settings.historyLimit = normalizeHistoryLimit(count);
+    } catch { /* Obsolete appearance must not prevent restoring operating settings. */ }
   }
-  return settings;
+  return normalizeSettings(settings);
 }
 
-export function restoreSettings(storage, settings) {
-  if (!storage) throw new Error('ブラウザの保存機能を有効にしてください。');
-  const previous = exportSettings(storage).settings;
-  const write = (key, value) => value === null ? storage.removeItem(key) : storage.setItem(key, value);
-  const clear = () => { for (const key of SETTINGS_KEYS) storage.removeItem(key); };
-  try { clear(); for (const key of SETTINGS_KEYS) write(key, settings[key]); }
-  catch (error) {
-    try {
-      clear();
-      for (const key of SETTINGS_KEYS) write(key, previous[key]);
-    } catch (rollbackError) {
-      throw new AggregateError([error, rollbackError], '設定の復元と元の設定への書き戻しに失敗しました。バックアップを保持して、ブラウザの保存設定を確認してください。', { cause: error });
-    }
-    throw error;
+export async function restoreSettings(store, settings) {
+  const normalized = normalizeSettings(settings);
+  try {
+    for (const field of SETTINGS_FIELDS) await store.set(field, normalized[field]);
+  } catch (error) {
+    // Rolling back here would overwrite another page's newer field values.
+    throw new Error(`設定の復元に失敗しました。一部の項目だけ復元されている可能性があります。バックアップを保持して、保存先を確認してからもう一度復元してください。${error.message}`, { cause: error });
   }
 }

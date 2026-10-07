@@ -27,7 +27,7 @@ async function serve(t, packaged) {
     await stageLocalFiles(pathToFileURL(folder + '/'));
     factory = (await import(pathToFileURL(join(folder, 'server.js')).href)).createServer;
   }
-  const server = factory({ customizationDirectory: join(folder, 'customization') });
+  const server = factory({ dataDirectory: join(folder, 'data'), customizationDirectory: join(folder, 'customization') });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(folder, { recursive: true, force: true, maxRetries: 5, retryDelay: 30 }); });

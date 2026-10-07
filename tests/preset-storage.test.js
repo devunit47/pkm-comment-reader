@@ -10,6 +10,7 @@ import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, symlink, utimes, w
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createServer } from '../server.js';
+import { temporaryDataDirectory } from './browser-support.js';
 import { defaultDesign, defaultActorImage, normalizeDesign, MAX_IMAGE_BYTES, RATIOS } from '../src/shared/design-model.js';
 import { replacePresetDirectory, UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles, fixtureImages, actorRef, backgroundRef } from './fixtures/preset-design.js';
@@ -21,7 +22,7 @@ const past = () => new Date(Date.now() - UNREFERENCED_IMAGE_GRACE_MS - 60000);
 async function serve(t) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-presets-'));
   const directory = join(folder, 'customization');
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(t) });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(folder, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${server.address().port}`;

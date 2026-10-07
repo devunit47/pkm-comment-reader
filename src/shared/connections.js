@@ -21,10 +21,8 @@ export function normalizeConnections(saved) {
   return result;
 }
 
-export function readSavedConnections(storage) {
-  try {
-    return normalizeConnections(JSON.parse(storage.getItem('pokome-connections') || '{}'));
-  } catch { return normalizeConnections(); }
+export function readSavedConnections(settings) {
+  return normalizeConnections(settings?.connections);
 }
 
 export function parseTwitchMessage(line, channel) {

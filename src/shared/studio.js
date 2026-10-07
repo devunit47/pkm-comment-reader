@@ -90,14 +90,12 @@ export function normalizeStudio(value = {}, { image = dataImage } = {}) {
 }
 
 // Comment history is an operating setting, not part of a shareable design.
-export const HISTORY_LIMIT_KEY = 'pokome-history-limit';
 export const DEFAULT_HISTORY_LIMIT = 300;
 export function normalizeHistoryLimit(value) {
   return Number.isInteger(value) && value >= 1 && value <= 300 ? value : DEFAULT_HISTORY_LIMIT;
 }
-export function readHistoryLimit(storage) {
-  try { return normalizeHistoryLimit(JSON.parse(storage?.getItem(HISTORY_LIMIT_KEY) ?? 'null')); }
-  catch { return DEFAULT_HISTORY_LIMIT; }
+export function readHistoryLimit(settings) {
+  return normalizeHistoryLimit(settings?.historyLimit);
 }
 
 export function normalizeVoices(saved) {
@@ -108,7 +106,6 @@ export function normalizeVoices(saved) {
   return result;
 }
 
-export function readSavedVoices(storage) {
-  try { return normalizeVoices(JSON.parse(storage?.getItem('pokome-voices') || '{}')); }
-  catch { return normalizeVoices(); }
+export function readSavedVoices(settings) {
+  return normalizeVoices(settings?.voices);
 }

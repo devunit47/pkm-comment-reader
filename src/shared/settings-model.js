@@ -14,7 +14,7 @@ function normalizeUsers(value) {
     Object.fromEntries(Object.entries(record(value?.[platform])).flatMap(([user, rule]) => {
       if (!user || user.length > 200) return [];
       const flags = { hidden: rule?.hidden === true, muted: rule?.muted === true };
-      return flags.hidden || flags.muted ? [[user, flags]] : [];
+      return [[user, flags]];
     }))]));
 }
 

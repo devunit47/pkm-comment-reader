@@ -17,7 +17,7 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
   const heading = document.createElement('h2'); heading.textContent = `この版でできること：${edition.title}`;
   const list = document.createElement('ul');
   for (const text of [edition.services, edition.speech, edition.files,
-    '配色・画像・CSS・配置の変更ができます。見た目はアプリのcustomizationフォルダーに保存され、接続先・音声などの設定はこのブラウザに保存されます',
+    '配色・画像・CSS・配置の変更ができます。見た目はアプリのcustomizationフォルダー、接続先・音声などの設定はdata/settings.jsonに保存されます。同じアプリのフォルダーなら、ブラウザ・ポート・OBSのドックで同じ設定を使えます',
     'コメントの送信・配信サービス側のBAN、カメラ／マイクの取得はできません。チャット接続にはインターネットが必要です']) {
     const item = document.createElement('li'); item.textContent = text; list.append(item);
   }

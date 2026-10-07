@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { after } from 'node:test';
 
 const require = createRequire(import.meta.url);
 // Optional browser checks work with an installed Playwright, a supplied runtime,
@@ -19,10 +20,13 @@ export const executablePath = [process.env.BROWSER_EXECUTABLE, chromium?.executa
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].filter(Boolean).find(existsSync);
 export const browserAvailable = process.env.SKIP_BROWSER_TESTS !== '1' && !!chromium && !!executablePath;
 
-// Browser tests must never read or write the app folder's private settings.
-export async function temporaryDataDirectory(t) {
+// Remove private fixtures after individual tests have closed their pages and
+// servers; deleting a watched file during a test could trigger another save.
+const settingsDirectories = [];
+after(() => Promise.all(settingsDirectories.map(directory => rm(directory, { recursive: true, force: true }))));
+export async function temporaryDataDirectory() {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-settings-browser-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  settingsDirectories.push(directory);
   return directory;
 }
 

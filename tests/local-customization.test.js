@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from '../server.js';
+import { temporaryDataDirectory } from './browser-support.js';
 import { DEFAULT_CUSTOMIZATION_DIRECTORY, MAX_CUSTOM_CSS_BYTES, MAX_CUSTOM_IMAGE_BYTES, ensureCustomizationDirectories } from '../src/server/local-customization.js';
 
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64');
@@ -19,7 +20,7 @@ async function serve(t, setup = async () => {}) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-customization-'));
   const directory = join(folder, 'customization');
   await setup({ folder, directory });
-  const server = createServer({ customizationDirectory: directory });
+  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(t) });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => {

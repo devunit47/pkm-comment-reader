@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings } from './browser-support.js';
 
 const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
 const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
@@ -65,7 +65,7 @@ async function local(t) {
   } }));
   return { base, state };
 }
-async function open(t, url, storage = {}) {
+async function open(t, url) {
   const browser = await chromium.launch({ headless: true, executablePath });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
@@ -73,11 +73,7 @@ async function open(t, url, storage = {}) {
   const errors = [], requests = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('request', request => requests.push(request.url()));
-  await page.addInitScript(values => {
-    if (!sessionStorage.getItem('credit-test-initialized')) {
-      for (const [key, value] of Object.entries(values)) localStorage.setItem(key, JSON.stringify(value));
-      sessionStorage.setItem('credit-test-initialized', 'true');
-    }
+  await page.addInitScript(() => {
     window.creditAudio = [];
     window.Audio = class {
       play() { window.creditAudio.push(this); this.onplaying?.(); return Promise.resolve(); }
@@ -87,7 +83,7 @@ async function open(t, url, storage = {}) {
     Object.defineProperty(window, 'speechSynthesis', { value: {
       getVoices: () => [], addEventListener() {}, cancel() {}, speak(utterance) { utterance.onstart?.(); },
     } });
-  }, storage);
+  });
   await page.goto(url);
   await page.locator('#appearance-recovery #open-reset').waitFor();
   return { page, errors, requests };
@@ -101,6 +97,10 @@ async function credits(page, expected) {
 async function choose(page, engine) {
   await page.locator('#speech-engine').selectOption(engine);
   if (engine !== 'browser') await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+  const platform = await page.locator('.platform-tab.active').getAttribute('data-platform');
+  const voice = await page.locator('#voice').inputValue();
+  await waitForSettings(new URL(page.url()).origin, settings => settings.speechEngines[platform].engine === engine &&
+    (engine === 'browser' || settings.speechEngines[platform][engine] === voice));
 }
 async function refresh(page) {
   const response = page.waitForResponse('**/api/speech/voicevox/voices');
@@ -116,6 +116,7 @@ test('credits follow voice, style, engine and platform, survive reload and appea
   await choose(page, 'voicevox'); await credits(page, 'VOICEVOX:ずんだもん');
   await page.locator('#voice').selectOption('1'); await credits(page, 'VOICEVOX:ずんだもん');
   await page.locator('#voice').selectOption('2'); await credits(page, 'VOICEVOX:四国めたん');
+  await waitForSettings(base, settings => settings.speechEngines.twitch.voicevox === '2');
   await page.reload(); await appReady(page); await credits(page, 'VOICEVOX:四国めたん');
   assert.equal(await page.locator('#voice').inputValue(), '2');
   for (const style of ['panel', 'bubble', 'image']) {

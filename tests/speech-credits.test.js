@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeLocalVoices, speechCredit, speechDisplayCredits, readSpeechEngines, validLocalVoiceId } from '../src/shared/speech-engine.js';
 import { exportSettings, parseSettings, restoreSettings } from '../src/browser/settings-backup.js';
+import { normalizeSettings } from '../src/shared/settings-model.js';
 
 const uuid = '3c37646f-3881-5374-2a83-149267990abc';
 const voices = [
@@ -47,16 +48,15 @@ test('played and queued credit snapshots survive refreshed metadata until the di
   assert.deepEqual(speechDisplayCredits({ engine: 'browser' }, voices), { preview: '', stage: '' });
 });
 
-test('platform selections and existing backups retain IDs but never persist cached credit metadata', () => {
-  const values = new Map([['pokome-speech-engines', JSON.stringify({ twitch: { engine: 'voicevox', voicevox: '3', speakerName: 'stale' }, kick: { engine: 'coeiroink', coeiroink: uuid + ':0' } })]]);
-  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) };
-  const normalized = readSpeechEngines(storage);
+test('platform selections and existing backups retain IDs but never persist cached credit metadata', async () => {
+  const settings = { speechEngines: { twitch: { engine: 'voicevox', voicevox: '3', speakerName: 'stale' }, kick: { engine: 'coeiroink', coeiroink: uuid + ':0' } } };
+  const normalized = readSpeechEngines(settings);
   assert.equal(Object.hasOwn(normalized.twitch, 'speakerName'), false);
-  storage.setItem('pokome-speech-engines', JSON.stringify(normalized));
-  const backup = JSON.stringify(exportSettings(storage));
+  const backup = JSON.stringify(exportSettings({ ...settings, speechEngines: normalized }));
   assert.doesNotMatch(backup, /speakerName|ずんだもん|credit/);
-  restoreSettings(storage, parseSettings(backup));
-  assert.deepEqual(readSpeechEngines(storage), normalized);
+  const store = { settings: normalizeSettings(), async set(field, value) { this.settings = normalizeSettings({ ...this.settings, [field]: value }); } };
+  await restoreSettings(store, parseSettings(backup));
+  assert.deepEqual(readSpeechEngines(store.settings), normalized);
   assert.equal(speechDisplayCredits(normalized.twitch, voices).stage, 'VOICEVOX:ずんだもん');
   assert.equal(speechDisplayCredits(normalized.kick, [{ id: uuid + ':0', speakerName: 'つくよみちゃん' }]).stage, 'COEIROINK:つくよみちゃん');
   assert.equal(speechDisplayCredits({ ...normalized.twitch, engine: 'browser' }, voices).stage, '');

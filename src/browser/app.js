@@ -6,12 +6,14 @@ import { initializeDesignPresets } from './design-presets.js';
 import { initializeCustomization } from './customization.js';
 import { exportSettings, parseSettings, restoreSettings, LEGACY_APPEARANCE_KEYS, MAX_SETTINGS_FILE_BYTES } from './settings-backup.js';
 import { createDesignStore } from './design-client.js';
+import { createSettingsStore } from './settings-client.js';
+import { SETTINGS_FIELDS } from '../shared/settings-model.js';
 import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
-import { readSavedVoices, HISTORY_LIMIT_KEY, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
+import { readSavedVoices, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
 import { enabledPlatforms } from '../shared/app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTheme } from '../shared/theme.js';
@@ -28,22 +30,26 @@ if (!enabledPlatforms.includes('kick')) {
   $('edition-label').textContent = 'ぽこめ Reader / Twitch版';
 }
 let session = 0;
-let storage;
-try { storage = window.localStorage; } catch { /* Storage may be disabled by the browser. */ }
-const savedConnections = readSavedConnections(storage);
-const savedAutoSpeech = readSavedAutoSpeech(storage);
-for (const platform of Object.keys(states)) states[platform].autoSpeech = savedAutoSpeech[platform];
-const enginePreferences = readSpeechEngines(storage);
+// Personal operating settings and the shareable appearance stay separate.
+const settingsStore = await createSettingsStore();
+const savedSettings = settingsStore.settings;
+const savedConnections = readSavedConnections(savedSettings);
+const savedAutoSpeech = readSavedAutoSpeech(savedSettings);
+const enginePreferences = readSpeechEngines(savedSettings);
 const engineVoices = { voicevox: null, coeiroink: null };
 let voiceLoadGeneration = 0;
 const localSpeech = new LocalSpeechPlayer({ onError: message => { $('engine-status').textContent = message + ' 音声ソフトを起動して「声を再取得」を押し、音声テストを試してください。'; notify(message); stop(); } });
-const savedVoices = readSavedVoices(storage);
-for (const platform of Object.keys(states)) states[platform].voice = savedVoices[platform];
-// The appearance lives in customization/current, served by the local server.
+const savedVoices = readSavedVoices(savedSettings);
+for (const platform of Object.keys(states)) {
+  states[platform].autoSpeech = savedAutoSpeech[platform];
+  states[platform].voice = savedVoices[platform];
+  states[platform].speechOptions = normalizeSpeechOptions(savedSettings.speechOptions[platform]);
+  states[platform].rules = Object.assign(Object.create(null), savedSettings.users[platform]);
+}
 const designStore = await createDesignStore();
 let studio = designStore.design.studio;
 let shownTalkRatio = nearestRatio(...(OUTPUT_SIZES[designStore.design.outputSize] ?? OUTPUT_SIZES['1280x720']));
-let historyLimit = readHistoryLimit(storage);
+let historyLimit = readHistoryLimit(savedSettings);
 for (const state of Object.values(states)) state.historyLimit = historyLimit;
 let currentSpeech = null;
 let stageCredit = '';
@@ -52,22 +58,6 @@ const outputPublisher = new OutputPublisher({ onStatus: status => outputPanel?.s
 // null means the preview shows a selection; a string snapshots played audio.
 let previewSpeechCredit = null;
 let speechDisplayTimer;
-try {
-  const saved = JSON.parse(storage?.getItem('pokome-speech-options') || '{}');
-  for (const platform of Object.keys(states)) states[platform].speechOptions = normalizeSpeechOptions(saved?.[platform]);
-} catch { /* Invalid stored options leave defaults intact. */ }
-try {
-  const savedRules = JSON.parse(storage?.getItem('pokome-users-v2') || 'null');
-  const legacyRules = JSON.parse(storage?.getItem('pokome-users') || '{}');
-  for (const platform of Object.keys(states)) {
-    const rules = savedRules?.[platform] || (platform === 'twitch' ? legacyRules : {});
-    if (rules && typeof rules === 'object' && !Array.isArray(rules)) {
-      for (const [user, rule] of Object.entries(rules)) {
-        states[platform].rules[user] = { hidden: rule?.hidden === true, muted: rule?.muted === true };
-      }
-    }
-  }
-} catch { /* Invalid stored settings are ignored. */ }
 
 const supported = 'speechSynthesis' in window;
 let voices = [];
@@ -81,11 +71,12 @@ function notify(text) {
   notify.timer = setTimeout(() => { $('notice').style.display = 'none'; }, 3500);
 }
 
-function save(key, value) {
-  try {
-    if (!storage) throw new Error('Storage unavailable');
-    storage.setItem(key, JSON.stringify(value));
-  } catch { notify('設定を保存できませんでした。ブラウザの保存設定を確認してください。'); }
+function saveSetting(field, value) {
+  settingsStore.set(field, value).catch(error => {
+    // Guards may reject before an optimistic update; undo the local control too.
+    reflectSettings({ fields: [field], failed: true });
+    notify('設定を保存できませんでした。' + error.message);
+  });
 }
 
 function make(tag, className, text) {
@@ -274,7 +265,7 @@ function stop() {
 function toggleRule(user, key) {
   const state = states[active];
   state.rules[user] = { ...userRule(state, user), [key]: !userRule(state, user)[key] };
-  save('pokome-users-v2', { twitch: states.twitch.rules, kick: states.kick.rules });
+  saveSetting('users', { twitch: states.twitch.rules, kick: states.kick.rules });
   stop();
   renderSelection();
   render();
@@ -371,7 +362,7 @@ $('stop-speech').onclick = stop;
 function setAutoSpeech(enabled) {
   states[active].autoSpeech = enabled;
   $('auto-speech').checked = enabled;
-  save('pokome-auto-speech', { twitch: states.twitch.autoSpeech, kick: states.kick.autoSpeech });
+  saveSetting('autoSpeech', { twitch: states.twitch.autoSpeech, kick: states.kick.autoSpeech });
   renderSpeechSettings();
   if (!states[active].autoSpeech) stop();
 }
@@ -383,14 +374,14 @@ $('voice').onchange = () => {
   const preference = enginePreferences[active];
   if (preference.engine === 'browser') {
     states[active].voice = $('voice').value;
-    save('pokome-voices', { twitch: states.twitch.voice, kick: states.kick.voice });
-  } else { preference[preference.engine] = $('voice').value; save('pokome-speech-engines', enginePreferences); }
+    saveSetting('voices', { twitch: states.twitch.voice, kick: states.kick.voice });
+  } else { preference[preference.engine] = $('voice').value; saveSetting('speechEngines', enginePreferences); }
   renderSpeechCredits();
 };
 $('speech-engine').onchange = () => {
   stop();
   enginePreferences[active].engine = $('speech-engine').value;
-  save('pokome-speech-engines', enginePreferences);
+  saveSetting('speechEngines', enginePreferences);
   loadVoices();
 };
 $('refresh-voices').onclick = () => loadVoices(true);
@@ -424,7 +415,7 @@ function updateSpeechOptions() {
   });
   stop();
   states[active].speechHistory = createSpeechHistory();
-  save('pokome-speech-options', { twitch: states.twitch.speechOptions, kick: states.kick.speechOptions });
+  saveSetting('speechOptions', { twitch: states.twitch.speechOptions, kick: states.kick.speechOptions });
   renderSpeechOptions();
   renderSelection();
 }
@@ -490,7 +481,7 @@ function loadBrowserVoices() {
   $('voice').value = states[active].voice;
   if (!$('voice').value) $('voice').value = '';
 }
-async function loadVoices(refresh = false) {
+async function loadVoices(refresh = false, chooseDefault = true) {
   const generation = ++voiceLoadGeneration;
   const platform = active;
   const preference = enginePreferences[platform];
@@ -516,10 +507,18 @@ async function loadVoices(refresh = false) {
     if (generation !== voiceLoadGeneration || active !== platform) return;
     const list = engineVoices[engine];
     $('voice').replaceChildren(...list.map(voice => { const option = make('option', '', voice.name); option.value = voice.id; return option; }));
-    if (!list.some(voice => voice.id === preference[engine])) preference[engine] = list[0].id;
+    if (!list.some(voice => voice.id === preference[engine])) {
+      if (chooseDefault) {
+        preference[engine] = list[0].id;
+        saveSetting('speechEngines', enginePreferences);
+      } else {
+        // A failed default save must not start another automatic write.
+        const option = make('option', '', '声を選んでください'); option.value = '';
+        $('voice').prepend(option);
+      }
+    }
     $('voice').value = preference[engine];
     $('voice').disabled = false;
-    save('pokome-speech-engines', enginePreferences);
     renderSpeechCredits();
     status.textContent = list.length + '種類の声を取得しました。' + (list.find(voice => voice.id === preference[engine])?.speakerName ? '' : ' 音声名を取得できないため、クレジットと各音声の利用規約を確認してください。');
   } catch (error) {
@@ -534,7 +533,6 @@ if (supported) {
   loadVoices();
   window.speechSynthesis.addEventListener('voiceschanged', () => { if (enginePreferences[active].engine === 'browser') loadVoices(); });
 } else {
-  for (const state of Object.values(states)) state.autoSpeech = false;
   loadVoices();
   $('speech-status').textContent = 'ブラウザ非対応';
 }
@@ -662,10 +660,10 @@ document.querySelectorAll('[data-stage-platform]').forEach(button => {
   button.onclick = () => switchPlatform(button.dataset.stagePlatform);
 });
 
-// The history limit is an operating setting kept in this browser, not in the design.
-function applyHistoryLimit(value) {
+// The history limit is personal and remains separate from the design.
+function applyHistoryLimit(value, persist = true) {
   historyLimit = normalizeHistoryLimit(value);
-  save(HISTORY_LIMIT_KEY, historyLimit);
+  if (persist) saveSetting('historyLimit', historyLimit);
   for (const state of Object.values(states)) {
     state.historyLimit = historyLimit;
     if (state.messages.length > historyLimit) state.messages.splice(0, state.messages.length - historyLimit);
@@ -707,7 +705,7 @@ for (const platform of enabledPlatforms) {
     onMessage(message) { add(platform, message.user, message.text, message.createdAt, message.login); },
     onConnected(channel) {
       savedConnections[platform] = channel;
-      save('pokome-connections', savedConnections);
+      saveSetting('connections', savedConnections);
       $(`${platform}-channel`).value = channel;
       renderConnection();
     },
@@ -765,8 +763,45 @@ initializeCustomization({ platforms: enabledPlatforms, designStore,
 });
 $('stage-design-edit').onclick = () => designPreview.openEditor();
 showLiveOverlays = designPreview.showLive;
-outputPanel = initializeOutputPanel({ storage, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });
+outputPanel = initializeOutputPanel({ settingsStore, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });
 initializeDesignPresets({ designStore, designPreview });
+function reflectSettings(detail) {
+  const value = settingsStore.settings;
+  const fields = detail.fields;
+  $('settings-warning').textContent = settingsStore.warning;
+  $('settings-warning').hidden = !settingsStore.warning;
+  if (!fields.length) return;
+  const activeState = states[active];
+  const voiceChanged = fields.includes('voices') && activeState.voice !== value.voices[active];
+  const engineChanged = fields.includes('speechEngines') && JSON.stringify(enginePreferences[active]) !== JSON.stringify(value.speechEngines[active]);
+  const optionsChanged = fields.includes('speechOptions') && JSON.stringify(activeState.speechOptions) !== JSON.stringify(value.speechOptions[active]);
+  const usersChanged = fields.includes('users') && JSON.stringify(activeState.rules) !== JSON.stringify(value.users[active]);
+  const speechDisabled = fields.includes('autoSpeech') && activeState.autoSpeech && !value.autoSpeech[active];
+  if (fields.includes('connections')) {
+    Object.assign(savedConnections, readSavedConnections(value));
+    for (const platform of Object.keys(states)) $(platform + '-channel').value = savedConnections[platform];
+  }
+  for (const platform of Object.keys(states)) {
+    const state = states[platform];
+    if (fields.includes('autoSpeech')) state.autoSpeech = value.autoSpeech[platform];
+    if (fields.includes('voices')) state.voice = value.voices[platform];
+    if (fields.includes('speechEngines')) enginePreferences[platform] = value.speechEngines[platform];
+    if (fields.includes('speechOptions')) {
+      if (JSON.stringify(state.speechOptions) !== JSON.stringify(value.speechOptions[platform])) state.speechHistory = createSpeechHistory();
+      state.speechOptions = value.speechOptions[platform];
+    }
+    if (fields.includes('users')) state.rules = Object.assign(Object.create(null), value.users[platform]);
+  }
+  if (voiceChanged || engineChanged || optionsChanged || usersChanged || speechDisabled) stop();
+  if (fields.includes('historyLimit')) applyHistoryLimit(value.historyLimit, false);
+  if (fields.includes('setupComplete')) $('setup-welcome').hidden = value.setupComplete;
+  $('auto-speech').checked = states[active].autoSpeech;
+  if (voiceChanged || engineChanged) loadVoices(false, !detail.failed);
+  renderSpeechSettings(); renderSpeechOptions(); render();
+}
+settingsStore.subscribe(reflectSettings);
+const bootSettings = settingsStore.settings;
+reflectSettings({ fields: SETTINGS_FIELDS.filter(field => JSON.stringify(savedSettings[field]) !== JSON.stringify(bootSettings[field])) });
 // Reflect only the confirmed design after a replacement or an external change.
 designStore.subscribe(detail => {
   studio = designStore.design.studio;
@@ -778,6 +813,7 @@ designStore.subscribe(detail => {
 });
 if (designStore.warning) notify(designStore.warning);
 window.addEventListener('beforeunload', () => {
+  settingsStore.close();
   outputPublisher.close();
   stop();
   for (const connection of Object.values(connections)) connection.disconnect(false);
@@ -794,12 +830,12 @@ $('setup-test-voice').onclick = () => {
   $('test-voice').click();
 };
 $('setup-voice').onclick = () => { $('setup-dialog').close(); page('home'); document.querySelector('.reading').scrollIntoView({ block: 'center' }); $('voice').focus(); };
-$('complete-setup').onclick = () => { save('pokome-setup-complete', true); $('setup-welcome').hidden = true; $('setup-dialog').close(); };
-$('setup-welcome').hidden = !!storage?.getItem('pokome-setup-complete') || !!storage?.getItem('pokome-connections');
+$('complete-setup').onclick = () => { saveSetting('setupComplete', true); $('setup-welcome').hidden = true; $('setup-dialog').close(); };
+$('setup-welcome').hidden = settingsStore.settings.setupComplete;
 $('start-setup').onclick = () => $('setup-dialog').showModal();
 $('backup-settings').onclick = () => {
   try {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(exportSettings(storage), null, 2)], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(exportSettings(settingsStore.settings), null, 2)], { type: 'application/json' }));
     const link = document.createElement('a'); link.href = url; link.download = 'pokome-settings.json'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) { $('backup-status').textContent = error.message; }
 };
@@ -825,7 +861,7 @@ $('confirm-restore').onclick = async () => {
   $('confirm-restore').disabled = true;
   try {
     stop();
-    restoreSettings(storage, settings); location.reload();
+    await restoreSettings(settingsStore, settings); location.reload();
   } catch (error) {
     $('confirm-restore').disabled = false;
     $('backup-status').textContent = error instanceof AggregateError ? error.message : `復元できませんでした。${error.message}`;

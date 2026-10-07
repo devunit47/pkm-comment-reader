@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, readSettings, saveSetting, waitForSettings } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -166,7 +166,6 @@ test('platform buttons toggle saved connections independently and open settings 
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-      localStorage.setItem('pokome-connections', JSON.stringify({ twitch: 'saved_channel', kick: 'saved-kick' }));
       window.testSockets = [];
       window.WebSocket = class {
         constructor(url) { this.url = url; window.testSockets.push(this); }
@@ -174,6 +173,8 @@ test('platform buttons toggle saved connections independently and open settings 
         close() { this.closed = true; }
       };
     });
+    const base = 'http://127.0.0.1:' + server.address().port;
+    await saveSetting(base, 'connections', { twitch: 'saved_channel', kick: 'saved-kick' });
     await page.route('**/api/kick/channel/*', route => route.fulfill({ json: { chatroomId: 123 } }));
     await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
     await page.locator('#twitch-channel').evaluate(input => { input.value = 'unsaved_edit'; });
@@ -194,9 +195,9 @@ test('platform buttons toggle saved connections independently and open settings 
     assert.equal(await page.locator('#twitch-tab-status').textContent(), '接続済み');
     await page.evaluate(() => window.testSockets[1].onerror());
     assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続');
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-connections')).twitch), 'saved_channel');
-    await page.evaluate(() => localStorage.removeItem('pokome-connections'));
-    // Use a fresh page without the saved-connection initialization script.
+    await waitForSettings(base, settings => settings.connections.twitch === 'saved_channel');
+    await saveSetting(base, 'connections', { twitch: '', kick: '' });
+    // The cleared server setting sends a fresh page to the connection form.
     const freshPage = await browser.newPage(); await blockExternalFonts(freshPage);
     await freshPage.goto('http://127.0.0.1:' + server.address().port); await appReady(freshPage);
     await freshPage.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
@@ -252,6 +253,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
     await page.locator('[data-platform="twitch"]').click();
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#speech-status').textContent(), '待機中');
+    await waitForSettings(new URL(page.url()).origin, settings => settings.speechEngines.twitch.voicevox === '3' && settings.speechEngines.kick.coeiroink === uuid + ':0');
     await page.reload(); await appReady(page); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#voice').inputValue(), '3');
@@ -293,7 +295,7 @@ test('standard home keeps operating controls reachable despite obsolete saved la
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#user-actions').isVisible(), false);
     await author.click(); await page.locator('#mute-user').click();
-    const rules = await page.evaluate(() => JSON.parse(localStorage.getItem('pokome-users-v2')));
+    const { users: rules } = await waitForSettings(new URL(page.url()).origin, settings => Object.values(settings.users.twitch).some(rule => rule.muted));
     assert.equal(Object.values(rules.twitch).some(rule => rule.muted), true);
     assert.equal(Object.values(rules.kick).some(rule => rule.muted), false);
     await author.click(); await page.locator('#hide-user').click();
@@ -333,6 +335,7 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#setup-welcome').isVisible(), false);
     const base = 'http://127.0.0.1:' + server.address().port;
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
+    await waitForSettings(base, settings => settings.historyLimit === 42 && settings.setupComplete);
     await page.locator('[data-page="settings"]').click();
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
