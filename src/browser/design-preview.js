@@ -518,8 +518,8 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
       frameDoc = frame.contentDocument;
       const css = frameDoc.createElement('style'); css.textContent = previewCSS;
       const theme = frameDoc.createElement('style'); theme.id = 'preview-theme';
-      const controls = frameDoc.createElement('style'); controls.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}.stage-controls,.stage-switch{visibility:hidden!important}#talk-stage button{pointer-events:none}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}`;
-      frameDoc.head.append(css, theme, controls);
+      const guides = frameDoc.createElement('style'); guides.textContent = `html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}#safe-guides{position:fixed;inset:0;pointer-events:none;z-index:900;font:12px system-ui}#safe-guides[hidden]{display:none}.guide-shade{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,#ff4f6d55 0 10px,#ff4f6d22 10px 20px);color:#fff;text-shadow:0 1px 2px #000;display:flex;align-items:center;justify-content:center}`;
+      frameDoc.head.append(css, theme, guides);
       previewStage = frameDoc.importNode(live, true); previewStage.hidden = false;
       // The copy starts with the preview ratio's own layout.
       applyTalkLayout(previewStage, talkLayout(design(), ratio));

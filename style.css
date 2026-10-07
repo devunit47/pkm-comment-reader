@@ -2,7 +2,6 @@
 @layer pokome-settings;
 button.primary:hover{background:#92cfb5}
 #stage-channel{width:100%;text-align:right;color:var(--stage-muted);font-size:12px}#stage-channel:empty{display:none}
-#talk-stage[data-theme=paper] [data-state=connected]{--connection-color:#3b6e48}#talk-stage[data-theme=paper] [data-state=connecting]{--connection-color:#82621e}#talk-stage[data-theme=paper] [data-state=disconnected]{--connection-color:#657066}#talk-stage[data-theme=paper] [data-state=error]{--connection-color:#9b3d49}
 #talk-stage[data-decorated=false] .stage-actor:before,#talk-stage[data-decorated=false] .stage-footer>span:last-child{display:none}
 .studio-fields{padding:20px;display:grid;gap:16px}.studio-fields>label{display:grid;gap:8px;font-size:12px;color:var(--text)}.studio-fields input:not([type=checkbox]),.studio-fields select{width:100%;min-height:40px;font-size:13px}.studio-fields input[type=color]{height:44px;padding:4px}.studio-fields .muted,.studio-fields p{margin:0;font-size:11px}
 body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mode main{margin:0;padding:0;max-width:none}body.talk-mode main>:not(#talk-stage):not(#talk-view):not(#talk-controls){display:none!important}
@@ -42,10 +41,8 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 #stage-volume-dialog input{writing-mode:vertical-lr;direction:rtl;width:24px;height:130px;min-width:0;padding:0;touch-action:none}
 #stage-volume-dialog output{text-align:center;min-width:0}
 #stage-volume-dialog::backdrop{background:transparent}
-.stage-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px;opacity:0}
+.stage-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:6px}
 .stage-controls #leave-talk,.stage-controls .stage-exit-hint{grid-column:1 / -1}
-.stage-actions:hover .stage-controls,.stage-actions:focus-within .stage-controls{opacity:1}
-@media(hover:none){.stage-controls{opacity:1}}
 .stage-actions .stage-service{display:flex;align-items:center;justify-content:flex-end;gap:8px;max-width:none}
 .stage-switch{width:auto;flex-shrink:0}
 .stage-actions .stage-service>#stage-channel{order:1;width:100%;text-align:right}
@@ -58,7 +55,7 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 @media(prefers-reduced-motion:reduce){.stage-speech[data-speaking=true] .stage-wave i{animation:none;transform:scaleY(.7)}}
 .stage-speech[data-style=bubble]{position:relative;height:clamp(160px,26dvh,210px);max-height:44%;background:var(--speech-background);color:var(--speech-ink);border-color:var(--speech-background);overflow:visible}
 .stage-speech[data-style=bubble]:after{content:'';position:absolute;right:36px;bottom:-12px;width:24px;height:14px;background:var(--speech-background);clip-path:polygon(0 0,100% 0,25% 100%);pointer-events:none}
-.stage-speech[data-style=bubble] .stage-panel-label,.stage-speech[data-style=bubble] .stage-panel-label h2,.stage-speech[data-style=bubble] .stage-speaker,.stage-speech[data-style=bubble] .stage-wave,.stage-speech[data-style=bubble] #stage-speech-user{color:var(--speech-ink)}
+.stage-speech[data-style=bubble] .stage-panel-label,.stage-speech[data-style=bubble] .stage-panel-label h2,.stage-speech[data-style=bubble] .stage-wave,.stage-speech[data-style=bubble] #stage-speech-user{color:var(--speech-ink)}
 .stage-speech[data-style=bubble] #stage-speech-text{max-height:none;overflow:visible}
 .stage-speech[data-style=bubble] .stage-panel-label{padding-top:14px;padding-bottom:12px}
 .stage-speech{display:flex;flex-direction:column;min-height:220px}
@@ -217,10 +214,8 @@ body:is(.pokome-output,.pokome-preview,.pokome-talk) #talk-stage{overflow:hidden
 #talk-stage[data-comment-label=false] .stage-chat .stage-panel-label h2,#talk-stage[data-comment-label=false] #stage-count{visibility:hidden !important}body:is(.pokome-output,.pokome-preview,.pokome-talk) #talk-stage[data-comment-label=false] .stage-chat .stage-panel-label{display:none !important}body:is(.pokome-output,.pokome-preview,.pokome-talk) #talk-stage[data-comment-label=false] #stage-chat-list{padding-top:20px !important}
 }
 #talk-stage:is([data-comment-item-background=light],[data-comment-item-background=dark]) #stage-chat-list .stage-comment{margin-bottom:14px}
-/* The talk stage previews the stream: it is framed to its ratio inside the window. */
 .history-settings{margin-top:16px}.history-settings label{display:grid;gap:6px;max-width:320px}
 
-/* Compact operating controls stay reachable outside the clipped stream frame. */
 @media(max-width:300px){
   main{padding:20px 8px;overflow-wrap:anywhere}
   .workspace,.workspace>* ,.right-column{min-width:0}
@@ -253,7 +248,7 @@ body.talk-mode:has(#talk-view) main{background:#05090a}
 body.pokome-talk{margin:0;width:100%;height:100%;overflow:hidden}
 #talk-controls{position:fixed;top:8px;right:8px;z-index:100;width:360px;max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow:auto;align-items:stretch;padding:12px;gap:10px;border-radius:8px;background:var(--panel);color:var(--text);opacity:0;--stage-muted:var(--muted);--stage-accent:var(--mint);--stage-surface:var(--panel);--stage-text:var(--text);--stage-border:var(--line)}
 #talk-controls:hover,#talk-controls:focus-within{opacity:1}
-#talk-controls .stage-controls{width:100%;opacity:1;grid-template-columns:repeat(2,minmax(0,1fr))}
+#talk-controls .stage-controls{width:100%;grid-template-columns:repeat(2,minmax(0,1fr))}
 #talk-controls :is(button,.connection-badge){min-height:44px;min-width:0;max-width:100%;font-size:12px;white-space:normal;overflow-wrap:anywhere}
 #talk-controls .stage-service,#talk-controls .stage-switch{max-width:100%;min-width:0;flex-wrap:wrap}
 #talk-controls .stage-exit-hint{white-space:normal}
