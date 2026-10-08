@@ -226,6 +226,37 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const gate = () => { let release; const promise = new Promise(resolve => { release = resolve; }); return { promise, release }; };
 const withStudio = (design, studio) => ({ ...design, studio: { ...design.studio, ...studio } });
 
+test('a reload begun before an own apply does not report its late identical response as external', async () => {
+  const server = fakeServer();
+  const started = gate(), held = gate();
+  let holdReload = false;
+  const fetchImpl = async (url, options = {}) => {
+    const response = await server.fetchImpl(url, options);
+    if (options.method === 'PUT') {
+      holdReload = true;
+      FakeEvents.last.emit('change', { revision: server.current.revision });
+      await started.promise;
+    } else if (holdReload) {
+      started.release();
+      await held.promise;
+    }
+    return response;
+  };
+  const store = await createDesignStore({ fetchImpl, EventSourceClass: FakeEvents });
+  const events = [];
+  store.subscribe(detail => events.push(detail));
+  await store.applyDraft({ ...store.design, name: 'own save' }, store.revision);
+  assert.deepEqual(events, [{ applied: true }]);
+  held.release(); await tick();
+  assert.deepEqual(events, [{ applied: true }], 'the next draft must not become stale after its own save');
+  assert.equal(store.revision, server.current.revision);
+  await server.fetchImpl('/api/design/current', { method: 'PUT', headers: { 'If-Match': server.current.revision }, body: JSON.stringify({ ...store.design, name: 'other page' }) });
+  FakeEvents.last.emit('change', { revision: server.current.revision });
+  await tick();
+  assert.deepEqual(events, [{ applied: true }, { external: true }], 'a distinct external revision still invalidates a draft');
+  assert.equal(store.design.name, 'other page');
+});
+
 test('a failed draft write never changes the design used for the next apply', async () => {
   const server = contentServer();
   const store = await createDesignStore({ fetchImpl: server.fetchImpl, watch: false });

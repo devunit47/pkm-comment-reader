@@ -263,6 +263,10 @@ browserTest('output expires without messages, preserves speech and restores reta
 
 browserTest('top output keeps a long newest card scrollable and preview applies or cancels display settings', async t => {
   const { context, page, url, errors } = await fixture(t, { maxVisible: 8 });
+  // UI work must not age the seeded comments past their 15-second lifetime.
+  const now = Date.UTC(2026, 0, 1);
+  await context.clock.install({ time: now });
+  await context.clock.setFixedTime(now);
   await page.reload(); await appReady(page);
   await page.locator('.nav[data-page="studio"]').click();
   const output = await context.newPage();
@@ -275,7 +279,8 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   const frame = page.frameLocator('#design-preview-frame');
   await frame.locator('.stage-comment').first().waitFor();
   assert.equal(await frame.locator('.stage-comment').count(), 1);
-  await page.waitForTimeout(5100);
+  await context.clock.setFixedTime(now + 5100);
+  await context.clock.runFor(5100);
   assert.equal(await frame.locator('.stage-comment').count(), 1);
   assert.equal((await comments(output)).length, 8);
   await closeEditor(page);

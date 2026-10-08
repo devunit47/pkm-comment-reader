@@ -75,6 +75,8 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   const portrait = defaultTalkLayout('9:16'); portrait.panels.chat.y = 50;
   await saveTalk(url, { layout: null });
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, '9:16': { layout: portrait, overlays: { version: 1, items: [createOverlay('text', { id: 'portrait-text', text: '縦だけ' })], assets: {} } } } }));
+  // Read seeded data before opening a draft that later SSE updates would invalidate.
+  await page.reload(); await appReady(page);
   await page.locator('[data-page="studio"]').click();
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await waitForDesign(url, design => design.outputSize === '1080x1920');
@@ -292,6 +294,26 @@ browserTest('numeric fields and reset work on the ratio chosen for editing', asy
   await editor.locator('#reset-ratio').click(); await editor.locator('#editor-confirm-accept').click();
   await applyCanvas(editor);
   design = await waitForDesign(url, value => value.ratios['9:16'] === null);
+  assert.equal(design.ratios['16:9'], null);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('preview relayout preserves a focused panel number until it is committed', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  await openCanvas(page); await editorTarget(editor, 'header');
+  const field = editor.locator('#panel-h');
+  const transform = await editor.locator('#design-preview-frame').evaluate(frame => frame.style.transform);
+  await field.fill('10');
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.waitForFunction(before => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').style.transform !== before, transform);
+  assert.equal(await field.evaluate(element => element.getRootNode().activeElement === element), true);
+  assert.equal(await field.inputValue(), '10', 'a background relayout must not discard uncommitted input');
+  await field.dispatchEvent('change');
+  await field.fill('200'); await field.dispatchEvent('change');
+  assert.equal(await field.inputValue(), '98', 'committing still clamps a focused field to the canvas');
+  await field.fill('10'); await field.dispatchEvent('change');
+  await applyCanvas(editor);
+  const design = await waitForDesign(url, value => value.ratios['9:16']?.layout?.panels.header.h === 10);
   assert.equal(design.ratios['16:9'], null);
   assert.deepEqual(errors, []);
 });

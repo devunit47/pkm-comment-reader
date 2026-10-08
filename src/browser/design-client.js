@@ -47,18 +47,19 @@ export async function createDesignStore({ fetchImpl = (...args) => globalThis.fe
     const response = await fetchImpl('/api/design/current', { cache: 'no-store' });
     if (!response.ok) throw new Error(await failureMessage(response, '見た目を読み込めません。'));
     const value = await response.json();
+    // An own save may already have applied this revision while the load waited.
+    const before = confirmed.revision;
     if (!accept(value, ticket)) return false;
     available = true;
-    return true;
+    return confirmed.revision !== before;
   }
   try { await load(); }
   catch (error) { warning = `${error.message} 標準の見た目を表示しています。ローカルサーバーから開いているか確認してください。`; }
 
   async function reloadExternal() {
-    const before = confirmed.revision;
     let changed;
     try { changed = await load(); } catch { return; /* The next change event retries. */ }
-    if (changed && confirmed.revision !== before) emit({ external: true });
+    if (changed) emit({ external: true });
   }
 
   async function put(design, expectedRevision) {

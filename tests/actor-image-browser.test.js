@@ -221,6 +221,8 @@ browserTest('allowing image overflow keeps the default decoration and caption cl
     const rect = stage.querySelector(selector).getBoundingClientRect(); return [selector, { x: rect.x, y: rect.y, w: rect.width, h: rect.height }];
   }));
   const output = await outputPage(context, url);
+  // The first snapshot must not add comments between the two screenshots.
+  await output.locator('#stage-count').filter({ hasText: '12 COMMENTS' }).waitFor();
   for (const theme of ['mint', 'rose', 'violet', 'paper']) for (const layout of [null, actorOnlyLayout({ x: 10, y: 30, w: 70, h: 14 }), actorOnlyLayout({ x: 10, y: 30, w: 70, h: 5 })]) {
     const settings = custom({ scale: 200, overflow: false });
     await saveDesign(url, design => withTalk({ ...design, studio: { ...design.studio, theme, source: 'image', image: ref } }, '16:9', { layout, actorImage: settings }));
