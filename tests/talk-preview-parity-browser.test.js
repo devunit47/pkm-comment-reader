@@ -79,6 +79,11 @@ for (const scene of ['talk', 'preview', 'output']) {
 }
 browserTest('talk renders at the output size and preserves preview geometry through window resizing', async t => {
   const { page, errors } = await fixture(t);
+  // Opening before the saved size arrives through SSE would make the draft stale.
+  await page.waitForFunction(() => {
+    const frame = document.getElementById('talk-frame');
+    return frame.contentWindow.innerWidth === 1080 && frame.contentWindow.innerHeight === 1920;
+  });
   const editor = page.locator('#design-preview-editor');
   await page.locator('#stage-design-edit').dispatchEvent('click');
   await editor.locator('#apply-design:not(:disabled)').waitFor();
