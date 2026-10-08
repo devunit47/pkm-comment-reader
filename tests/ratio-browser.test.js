@@ -75,6 +75,8 @@ browserTest('the talk screen follows the output size, framed to its ratio, and s
   const portrait = defaultTalkLayout('9:16'); portrait.panels.chat.y = 50;
   await saveTalk(url, { layout: null });
   await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, '9:16': { layout: portrait, overlays: { version: 1, items: [createOverlay('text', { id: 'portrait-text', text: '縦だけ' })], assets: {} } } } }));
+  // Read seeded data before opening a draft that later SSE updates would invalidate.
+  await page.reload(); await appReady(page);
   await page.locator('[data-page="studio"]').click();
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await waitForDesign(url, design => design.outputSize === '1080x1920');
