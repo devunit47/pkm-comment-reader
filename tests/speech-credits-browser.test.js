@@ -334,6 +334,7 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   await page.locator('#appearance-recovery #open-reset').click();
   await page.locator('#appearance-recovery #confirm-reset').click();
   await waitForDesign(base, design => design.ratios['16:9'] === null);
+  await page.locator('#appearance-recovery #result').filter({ hasText: '標準の見た目に戻しました。' }).waitFor();
   assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
   assert.equal(await page.locator('#pokome-user-theme').textContent(), '');
   await page.locator('#enter-talk').click();
