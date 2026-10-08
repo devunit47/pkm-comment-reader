@@ -85,7 +85,7 @@ async function open(t, url) {
     } });
   });
   await page.goto(url);
-  await page.locator('#appearance-recovery #open-reset').waitFor();
+  await appReady(page);
   return { page, errors, requests };
 }
 async function credits(page, expected) {
