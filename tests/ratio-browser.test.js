@@ -296,6 +296,26 @@ browserTest('numeric fields and reset work on the ratio chosen for editing', asy
   assert.deepEqual(errors, []);
 });
 
+browserTest('preview relayout preserves a focused panel number until it is committed', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  await openCanvas(page); await editorTarget(editor, 'header');
+  const field = editor.locator('#panel-h');
+  const transform = await editor.locator('#design-preview-frame').evaluate(frame => frame.style.transform);
+  await field.fill('10');
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.waitForFunction(before => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').style.transform !== before, transform);
+  assert.equal(await field.evaluate(element => element.getRootNode().activeElement === element), true);
+  assert.equal(await field.inputValue(), '10', 'a background relayout must not discard uncommitted input');
+  await field.dispatchEvent('change');
+  await field.fill('200'); await field.dispatchEvent('change');
+  assert.equal(await field.inputValue(), '98', 'committing still clamps a focused field to the canvas');
+  await field.fill('10'); await field.dispatchEvent('change');
+  await applyCanvas(editor);
+  const design = await waitForDesign(url, value => value.ratios['9:16']?.layout?.panels.header.h === 10);
+  assert.equal(design.ratios['16:9'], null);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('normal panel edits preserve actor placement and layout reset clears only that ratio placement', async t => {
   const { page, editor, url, errors } = await fixture(t);
   const portrait = defaultTalkLayout('9:16'); portrait.panels.header.h = 6;

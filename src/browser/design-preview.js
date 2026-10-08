@@ -311,11 +311,13 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
     return layoutFromRects(rect, Object.fromEntries(PANEL_IDS.talk.map(id => [id, panelElement(id).getBoundingClientRect()])));
   }
   const canvasLayout = () => talkLayout(design(), ratio) || measuredLayout();
-  function panelFields() {
+  function panelFields(typing = null) {
     const panel = isPanel(selected) ? canvasLayout()?.panels[selected] : null;
     $('panel-placement').hidden = !panel;
     if (!panel) return;
-    for (const key of ['x', 'y', 'w', 'h', 'z']) $(`panel-${key}`).value = Math.round(panel[key] * 100) / 100;
+    for (const key of ['x', 'y', 'w', 'h', 'z']) {
+      if (`panel-${key}` !== typing) $(`panel-${key}`).value = Math.round(panel[key] * 100) / 100;
+    }
     $('panel-hidden').checked = panel.hidden;
   }
   function changedTarget(id, patch, settings = {}) {
@@ -377,7 +379,8 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
       if (layer.children[index] !== hit) layer.insertBefore(hit, layer.children[index] || null);
     }
     for (const hit of old.values()) hit.remove();
-    panelFields();
+    // Background layout must not discard a number before its change event.
+    panelFields(shadow.activeElement?.id);
   }
   function resizeTarget(item, dx, dy, edge, keepRatio = false) {
     const image = item.type === 'image', minimum = isPanel(selected) ? 5 : 2, maximum = image ? 200 : 100;
