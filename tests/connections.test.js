@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ChatConnection, parseTwitchMessage, readSavedConnections, validChannel, connectionPresentation } from '../src/shared/connections.js';
 import { parseKickMessage } from '../src/browser/kick.js';
+import { eventHeading } from '../src/shared/comment-model.js';
 
 test('connection labels distinguish actual subscriptions from demos, pending connections and failures', () => {
   for (const status of ['デモモード', '未接続', '接続準備中', '接続失敗', '接続エラー — 通信環境を確認してください', '切断されました — 再接続してください', '再接続が必要です']) {
@@ -217,4 +218,14 @@ test('Twitch deduplicates the last 300 received IDs per connection, retaining ID
   socket.receive(notice('msg-id=sub')); assert.equal(twitch.messages.length, 305);
   twitch.connection.socket.receive(':server 366 anon #expected :End\r\n' + notice('id=bomb;msg-id=submysterygift'));
   assert.equal(twitch.messages.length, 306);
+});
+
+// Tags as recorded from a real 20-person community gift (2026-10-10); names are placeholders.
+test('community gifts carry their shared id and the recorded gift count', () => {
+  const mass = parseTwitchMessage(notice('msg-id=submysterygift;login=giver;display-name=Giver;msg-param-community-gift-id=1938352412556766640;msg-param-mass-gift-count=20;msg-param-sender-count=20;msg-param-sub-plan=1000'), 'expected');
+  assert.deepEqual(mass.event, { kind: 'giftBomb', plan: '1000', count: 20, group: '1938352412556766640' });
+  assert.equal(eventHeading(mass.event), 'まとめてギフト・Tier 1・20人');
+  const single = parseTwitchMessage(notice('msg-id=subgift;login=giver;msg-param-community-gift-id=1938352412556766640;msg-param-recipient-display-name=Recipient;msg-param-gift-months=1;msg-param-sender-count=0;msg-param-sub-plan=1000'), 'expected');
+  assert.deepEqual(single.event, { kind: 'gift', plan: '1000', giftMonths: 1, recipient: 'Recipient', group: '1938352412556766640' });
+  for (const bad of ['', 'a\\sb', 'x'.repeat(65)]) assert.equal(parseTwitchMessage(notice(`msg-id=subgift;msg-param-community-gift-id=${bad}`), 'expected').event.group, undefined);
 });

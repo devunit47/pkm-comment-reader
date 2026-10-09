@@ -47,7 +47,7 @@ export function parseTwitchMessage(line, channel) {
     const kind = kinds[tags['msg-id']];
     event = normalizeCommentEvent({ kind, plan: tags['msg-param-sub-plan'], cumulativeMonths: number('msg-param-cumulative-months'),
       streakMonths: tags['msg-param-should-share-streak'] === '1' ? number('msg-param-streak-months') : undefined,
-      giftMonths: number('msg-param-gift-months'), recipient: tags['msg-param-recipient-display-name'] || tags['msg-param-recipient-user-name'] || tags['msg-param-recipient-name'],
+      giftMonths: number('msg-param-gift-months'), count: number('msg-param-mass-gift-count'), group: tags['msg-param-community-gift-id'], recipient: tags['msg-param-recipient-display-name'] || tags['msg-param-recipient-user-name'] || tags['msg-param-recipient-name'],
       anonymous: tags['msg-id'].startsWith('anon') || tags['user-id'] === '274598607' || tags.login?.toLowerCase() === 'ananonymousgifter' });
   } else {
     if (!match[2].includes('!') || match[5] === undefined) return null;

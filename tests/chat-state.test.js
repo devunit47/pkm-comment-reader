@@ -154,3 +154,16 @@ test('event pins are independent copies and anonymous notices ignore synthetic-u
   anonymous.hidden = true; assert.equal(reconcilePinned(state), true);
   clearMessages(state); assert.equal(state.messages.length, 0);
 });
+
+test('gifts that belong to an earlier community gift do not become separate cards', () => {
+  const state = createChatState();
+  const event = (kind, group) => ({ event: { kind, plan: '1000', ...(group ? { group } : {}) } });
+  const early = addMessage(state, 'giver', '', 1, 0, 'giver', event('gift', 'g1'));
+  const mass = addMessage(state, 'giver', '', 2, 0, 'giver', { event: { kind: 'giftBomb', count: 3, group: 'g1' } });
+  for (let i = 0; i < 3; i++) assert.equal(addMessage(state, 'giver', '', 3 + i, 0, 'giver', event('gift', 'g1')), null);
+  const other = addMessage(state, 'giver', '', 6, 0, 'giver', event('gift', 'g2'));
+  const plain = addMessage(state, 'giver', '', 7, 0, 'giver', event('gift'));
+  assert.deepEqual(state.messages, [early, mass, other, plain]);
+  clearMessages(state);
+  assert.ok(addMessage(state, 'giver', '', 8, 0, 'giver', event('gift', 'g1')), 'clearing forgets earlier community gifts');
+});
