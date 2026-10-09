@@ -74,3 +74,16 @@ test('selection reads only the three normalized visibility fields, never embedde
   Object.defineProperty(settings,'speechImage',{get(){throw new Error('speechImage must not be normalized per comment');}});
   assert.equal(selectOutputComments(messages,settings).length,8);
 });
+
+test('disabled special cards are filtered before the visible count and keep events with bodies', () => {
+  const history = [{ id: 'normal', user: 'u', text: '本文', receivedAt: 1000 },
+    { id: 'resub', user: 'u', text: 'ありがとう', event: { kind: 'resub' }, receivedAt: 2000 },
+    { id: 'sub', user: 'u', text: '', event: { kind: 'sub' }, receivedAt: 3000 }];
+  const before = structuredClone(history);
+  for (const newestPosition of ['top', 'bottom']) {
+    assert.deepEqual(selectOutputComments(history, { commentEvents: false, maxVisible: 1, newestPosition }).map(item => item.id), ['resub']);
+    assert.deepEqual(selectOutputComments(history, { commentEvents: true, maxVisible: 1, newestPosition }).map(item => item.id), ['sub']);
+  }
+  assert.equal(selectOutputComments(history, { commentEvents: false, holdSeconds: 5 }, 7000).length, 0);
+  assert.deepEqual(history, before);
+});

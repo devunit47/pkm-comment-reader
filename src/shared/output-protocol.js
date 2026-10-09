@@ -1,4 +1,4 @@
-import { normalizeCommentContent } from './comment-model.js';
+import { normalizeCommentContent, normalizeCommentEvent } from './comment-model.js';
 // The stream output renders state that a control page publishes over a
 // same-origin BroadcastChannel. Every received value is normalized here, so
 // output.js never trusts the shape of a message from another window.
@@ -53,8 +53,10 @@ export function normalizeComment(value) {
   if (!value || typeof value !== 'object') return null;
   const id = typeof value.id === 'number' && Number.isSafeInteger(value.id) ? String(value.id) : text(value.id, 64);
   const content = normalizeCommentContent(value);
-  if (!id || !content.text) return null;
-  return { id, user: text(value.user, 200), ...content, receivedAt: Number.isFinite(value.receivedAt) ? value.receivedAt : 0 };
+  const event = normalizeCommentEvent(value.event);
+  if (!id || (!content.text && !event)) return null;
+  return { id, user: event?.anonymous ? '' : text(value.user || value.login, 200), ...content,
+    ...(event ? { event } : {}), receivedAt: Number.isFinite(value.receivedAt) ? value.receivedAt : 0 };
 }
 
 function normalizeSpeech(value) {

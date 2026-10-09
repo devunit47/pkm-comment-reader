@@ -84,6 +84,17 @@ body.talk-mode{overflow:hidden}body.talk-mode>.sidebar{display:none}body.talk-mo
 :is(#stage-chat-list,#stage-pinned-list)[data-comment-style=compact] .stage-comment{padding:3px 0;gap:6px}
 :is(#stage-chat-list,#stage-pinned-list)[data-comment-style=compact] .stage-comment p{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+.stage-comment[data-event]{border-inline-start:3px solid var(--stage-comment-item-name,var(--stage-comment-name,var(--stage-accent)));padding-inline-start:12px;min-width:0}
+.pokome-comment__event-heading{color:var(--stage-comment-item-name,var(--stage-comment-name,var(--stage-accent)));font-size:.85em;font-weight:700;line-height:1.4;overflow-wrap:anywhere;margin-bottom:6px;min-width:0}
+.pokome-comment__event-details{font-size:.85em;line-height:1.5;overflow-wrap:anywhere;margin-top:6px;min-width:0;color:var(--stage-comment-item-ink,var(--stage-comment-ink,var(--stage-text)))}
+:is(#stage-chat-list,#stage-pinned-list)[data-comment-style=inline] .stage-comment[data-event]{flex-wrap:wrap}
+:is(#stage-chat-list,#stage-pinned-list)[data-comment-style=inline] .pokome-comment__event-heading,:is(#stage-chat-list,#stage-pinned-list)[data-comment-style=inline] .pokome-comment__event-details{flex-basis:100%}
+:is(#stage-chat-list,#stage-pinned-list)[data-comment-style=compact] .pokome-comment__event-heading{flex:1;margin:0}
+@layer pokome-settings{
+#talk-stage[data-comment-text] .pokome-comment__event-details{color:var(--stage-comment-text) !important}
+#talk-stage[data-comment-outline] :is(.pokome-comment__event-heading,.pokome-comment__event-details){text-shadow:var(--stage-comment-shadow) !important}
+}
+
 .chat-demo-note{margin:12px 18px 0;color:var(--muted);font-size:11px;line-height:1.7}
 
 

@@ -142,6 +142,36 @@ async function releaseImageGate(page) {
   await page.evaluate(() => window.__imageGate.release());
   await settledFrame(page);
 }
+
+browserTest('special card samples remain visible at one item, preview pins and never enter saved designs', async t => {
+  const { page, editor, url, errors } = await fixture(t);
+  const frame = await openPreview(page);
+  await frame.locator('#stage-chat-list .stage-comment').first().waitFor({ state: 'attached' });
+  assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 10);
+  await editor.locator('#target-select').selectOption('chat');
+  await editor.locator('#draft-maxVisible').selectOption('1');
+  for (const position of ['bottom', 'top']) {
+    await editor.locator('#draft-newestPosition').selectOption(position);
+    for (const [sample, kind] of [['sub', 'sub'], ['resub', 'resub'], ['gift', 'gift'], ['giftBomb', 'giftBomb'], ['bits', 'bits'], ['anonymousGift', 'gift']]) {
+      await editor.locator('#preview-comment-sample').selectOption(sample);
+      await frame.locator(`#stage-chat-list [data-event="${kind}"]`).waitFor({ state: 'attached' });
+      assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 1);
+      assert.equal(await frame.locator('#stage-pinned-list [data-event]').getAttribute('data-event'), kind);
+    }
+  }
+  await editor.locator('#draft-commentEvents').uncheck();
+  assert.equal(await frame.locator('#stage-chat-list [data-event]').count(), 0);
+  assert.equal(await frame.locator('.stage-pinned').evaluate(element => element.hidden), true);
+  await editor.locator('#preview-comment-sample').selectOption('resub');
+  await frame.locator('#stage-pinned-list .pokome-comment__body').waitFor({ state: 'attached' });
+  assert.equal(await frame.locator('#stage-pinned-list [data-event]').count(), 0);
+  await applyDesign(editor);
+  await waitForDesign(url, design => design.studio.commentEvents === false);
+  const saved = await readDesign(url);
+  assert.ok(!JSON.stringify(saved).includes('sample-event'));
+  assert.ok(!Object.hasOwn(saved.studio, 'event'));
+  assert.deepEqual(errors, []);
+});
 browserTest('design preview edits multiple text/image items independently, applies and restores persistence', async t => {
   const { page, editor, errors } = await fixture(t);
   const frame = await openPreview(page), before = await appearance(page);

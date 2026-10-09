@@ -15,6 +15,27 @@ function publisher(overrides = {}) {
   return { instance, advance: ms => { now += ms; } };
 }
 const comment = (id, text = `text ${id}`) => ({ id, user: `user${id}`, text, receivedAt: id });
+
+test('v2 events survive snapshot, unchanged-count append, pin, remove and resync', () => {
+  const { instance } = publisher(); const view = createOutputView();
+  const sub = { id: 1, user: 'viewer', text: '', event: { kind: 'sub', plan: 'Prime' } };
+  const gift = { id: 2, user: 'DO_NOT_EXPOSE', text: '', event: { kind: 'gift', anonymous: true, recipient: 'recipient', url: 'evil', systemMsg: 'evil' } };
+  instance.update({ platform: 'twitch', received: 0, messages: [sub] });
+  instance.update({ platform: 'twitch', received: 0, messages: [sub, gift], pinned: gift });
+  assert.deepEqual(FakeChannel.sent.map(packet => packet.type), ['snapshot', 'append', 'pin']);
+  replay(view, FakeChannel.sent); assert.equal(view.messages.length, 2); assert.equal(view.received, 0);
+  assert.equal(view.pinned.event.kind, 'gift'); assert.equal(view.pinned.user, '');
+  assert.equal(view.pinned.event.url, undefined); assert.equal(view.pinned.event.systemMsg, undefined);
+  instance.update({ platform: 'twitch', received: 0, messages: [gift], pinned: gift });
+  replay(view, FakeChannel.sent.slice(-1)); assert.deepEqual(view.messages.map(message => message.id), ['2']);
+  assert.equal(applyOutputMessage(view, normalizeOutputMessage({ v: 2, type: 'pin', controllerId: 'control-a', seq: 99, pinned: sub })).resync, true);
+  instance.receive({ v: 2, type: 'hello', id: 'output', role: 'output' }); replay(view, FakeChannel.sent.slice(-1));
+  assert.equal(view.pinned.event.anonymous, true);
+  const packet = event => normalizeOutputMessage({ v: 2, type: 'append', controllerId: 'a', seq: 1, message: { id: 'bad', text: 'body', event } });
+  for (const event of [{ kind: 'unknown' }, { kind: 'bits', bits: -1 }]) assert.equal(packet(event).message.event, undefined);
+  assert.equal(normalizeOutputMessage({ v: 2, type: 'pin', controllerId: 'a', seq: 1, pinned: { id: 'bad', event: { kind: 'unknown' } } }).pinned, null);
+  instance.close();
+});
 // Feed published messages through the same normalization an output uses.
 function replay(view, messages, now = 1000) {
   return messages.map(message => applyOutputMessage(view, normalizeOutputMessage(message), now));

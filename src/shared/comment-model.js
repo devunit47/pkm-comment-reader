@@ -5,6 +5,44 @@ export const validEmoteId = value => typeof value === 'string' && /^[A-Za-z0-9_]
 export const normalizeNameColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
 export const normalizeBadges = value => TWITCH_ROLES.filter(role => Array.isArray(value) && value.includes(role));
 
+const positive = value => Number.isSafeInteger(value) && value > 0;
+export function normalizeCommentEvent(value) {
+  if (!value || !['sub', 'resub', 'gift', 'giftBomb', 'bits'].includes(value.kind)) return null;
+  const event = { kind: value.kind };
+  if (value.kind === 'bits') return positive(value.bits) ? { ...event, bits: value.bits } : null;
+  if (['Prime', '1000', '2000', '3000'].includes(value.plan)) event.plan = value.plan;
+  const keys = value.kind === 'gift' ? ['giftMonths'] : value.kind === 'giftBomb' ? ['count'] : ['cumulativeMonths', 'streakMonths'];
+  for (const key of keys) if (positive(value[key])) event[key] = value[key];
+  if (['gift', 'giftBomb'].includes(value.kind) && value.anonymous === true) event.anonymous = true;
+  if (value.kind === 'gift' && typeof value.recipient === 'string' && value.recipient) event.recipient = value.recipient.slice(0, 200);
+  return event;
+}
+
+export const commentAuthor = message => message.event?.anonymous ? '匿名' : message.user || message.login || '投稿者不明';
+export const hasCommentUser = message => !!message?.user && !message.event?.anonymous;
+
+export function eventHeading(value) {
+  const event = normalizeCommentEvent(value);
+  if (!event) return '';
+  const labels = { sub: 'サブスク', resub: '再サブスク', gift: 'サブスクギフト', giftBomb: 'まとめてギフト', bits: 'ビッツ' };
+  const result = [labels[event.kind]];
+  if (event.plan) result.push({ Prime: 'Prime', '1000': 'Tier 1', '2000': 'Tier 2', '3000': 'Tier 3' }[event.plan]);
+  if (event.cumulativeMonths) result.push(`累計${event.cumulativeMonths}か月`);
+  if (event.streakMonths) result.push(`連続${event.streakMonths}か月`);
+  if (event.giftMonths) result.push(`${event.giftMonths}か月分`);
+  if (event.count) result.push(`${event.count}人`);
+  if (event.bits) result.push(`${event.bits}ビッツ`);
+  return result.join('・');
+}
+
+export function eventDetails(value, user, names = true) {
+  const event = normalizeCommentEvent(value);
+  if (!event || !names) return '';
+  if (event.kind === 'gift') return `${event.anonymous ? '匿名' : user || '投稿者不明'}${event.recipient ? ` → ${event.recipient}` : ''}`;
+  if (event.kind === 'giftBomb') return event.anonymous ? '匿名のギフト' : user || '投稿者不明';
+  return '';
+}
+
 function appendText(parts, text) {
   if (!text) return;
   if (parts.at(-1)?.type === 'text') parts.at(-1).text += text;

@@ -10,7 +10,8 @@ import { createSettingsStore } from './settings-client.js';
 import { SETTINGS_FIELDS } from '../shared/settings-model.js';
 import { resolveStudioImages, nearestRatio, talkActorImage, talkLayout } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
-import { createChatState, addMessage, userRule, visibleMessages, clearMessages, reconcilePinned, setPinned } from './chat-state.js';
+import { createChatState, addMessage, userRule, messageHidden, visibleMessages, clearMessages, reconcilePinned, setPinned } from './chat-state.js';
+import { commentAuthor, hasCommentUser, eventHeading, eventDetails } from '../shared/comment-model.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 import { readSavedVoices, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
@@ -126,13 +127,14 @@ function renderSelection() {
   renderSpeechCredits();
   const state = states[active];
   const message = state.selected;
-  $('preview-user').textContent = message?.user || 'ぽこめ Reader';
+  $('preview-user').textContent = message ? commentAuthor(message) : 'ぽこめ Reader';
   $('preview-text').textContent = message
-    ? (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions, active, message.parts)) || 'このコメントは読み上げ対象外です。'
+    ? !message.text ? '読み上げる本文がありません' : (isSpeechUserExcluded(message, state.channel, state.speechOptions) ? '' : prepareSpeechText(message.text, state.speechOptions, active, message.parts)) || 'このコメントは読み上げ対象外です。'
     : `${names[active]}のコメントを待っています。`;
-  $('selected-user').textContent = message?.user || 'コメントを選択してください';
-  $('hide-user').disabled = !message;
-  $('mute-user').disabled = !message;
+  $('selected-user').textContent = message ? commentAuthor(message) : 'コメントを選択してください';
+  $('read-selected').disabled = !!message && !message.text;
+  $('hide-user').disabled = !hasCommentUser(message);
+  $('mute-user').disabled = !hasCommentUser(message);
   $('hide-user').textContent = message && userRule(state, message.user).hidden ? '↺ 非表示解除' : '⊘ ユーザーを非表示';
   $('mute-user').textContent = message && userRule(state, message.user).muted ? '↺ 除外解除' : '◖ 読み上げ除外';
   $('pin-comment').disabled = !message;
@@ -147,11 +149,12 @@ function render() {
   list.replaceChildren();
   for (const message of visible) {
     const row = make('div', `comment pokome-comment${state.selected?.id === message.id ? ' selected' : ''}`, '');
+    if (message.event) row.dataset.event = message.event.kind;
     const name = make('button', 'username pokome-comment__author', '');
-    name.append(make('span', `avatar ${active}`, active === 'kick' ? 'K' : '▣'), document.createTextNode(message.user));
+    name.append(make('span', `avatar ${active}`, active === 'kick' ? 'K' : '▣'), document.createTextNode(commentAuthor(message)));
     name.setAttribute('aria-haspopup', 'dialog');
     name.setAttribute('aria-controls', 'user-actions');
-    name.setAttribute('aria-label', message.user + ' の操作');
+    name.setAttribute('aria-label', commentAuthor(message) + ' の操作');
     name.title = 'ユーザー・コメントの操作メニューを開く';
     const openActions = event => {
       state.selected = message;
@@ -165,9 +168,9 @@ function render() {
       menu.showPopover();
       menu.style.left = Math.max(8, Math.min(rect.left, innerWidth - menu.offsetWidth - 8)) + 'px';
       menu.style.top = Math.max(8, Math.min(rect.bottom + 6, innerHeight - menu.offsetHeight - 8)) + 'px';
-      $('hide-user').focus();
+      (hasCommentUser(message) ? $('hide-user') : $('pin-comment')).focus();
     };
-    const body = make('button', 'message pokome-comment__body', message.text);
+    const body = make('button', 'message pokome-comment__body', [eventHeading(message.event), eventDetails(message.event, message.user), message.text].filter(Boolean).join(' — '));
     body.title = 'ユーザー・コメントの操作メニューを開く';
     body.setAttribute('aria-pressed', String(state.selected?.id === message.id));
     for (const trigger of [name, body]) {
@@ -198,11 +201,12 @@ function add(platform, user, text, createdAt, login = user, readAutomatically = 
   message.receivedAt = Date.now();
   if (platform === active) {
     render();
-    if (readAutomatically && state.autoSpeech && !userRule(state, user).hidden && !userRule(state, user).muted) speak(message, true);
+    if (readAutomatically && message.text && state.autoSpeech && !messageHidden(state, message) && (!hasCommentUser(message) || !userRule(state, message.user).muted)) speak(message, true);
   }
 }
 
 function speak(message, automatic = false) {
+  if (!message.text) { if (!automatic) notify('読み上げる本文がありません'); return; }
   const preference = enginePreferences[active];
   if (!supported && preference.engine === 'browser') { notify('このブラウザは読み上げに対応していません。'); return; }
   if (preference.engine !== 'browser' && !preference[preference.engine]) { notify('音声ソフトを起動し、声を取得・選択してください。'); return; }
@@ -348,7 +352,7 @@ $('filter').onchange = () => { states[active].filter = $('filter').value; render
 for (const [id, key] of [['hide-user', 'hidden'], ['mute-user', 'muted']]) {
   $(id).onclick = () => {
     $('user-actions').hidePopover();
-    if (states[active].selected) toggleRule(states[active].selected.user, key);
+    if (hasCommentUser(states[active].selected)) toggleRule(states[active].selected.user, key);
     $('search').focus();
   };
 }
@@ -574,7 +578,7 @@ $('clear').onclick = () => {
 function renderStageChat() {
   const state = states[active];
   reconcilePinned(state);
-  const messages = state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden);
+  const messages = state.messages.filter(message => !messageHidden(state, message));
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
   renderStageComments(list, messages, studio);
@@ -591,8 +595,8 @@ function renderPinned() {
   renderPinnedComment($('talk-stage'), pinned, studio);
   $('pinned-empty').hidden = !!pinned;
   $('pinned-content').hidden = !pinned;
-  $('pinned-user').textContent = pinned?.user || '';
-  $('pinned-text').textContent = pinned?.text || '';
+  $('pinned-user').textContent = pinned ? commentAuthor(pinned) : '';
+  $('pinned-text').textContent = pinned ? [eventHeading(pinned.event), eventDetails(pinned.event, pinned.user), pinned.text].filter(Boolean).join(' — ') : '';
   $('unpin-comment').hidden = !pinned;
   $('stage-unpin-comment').hidden = !pinned;
   $('pinned-design-hidden').hidden = !pinned || !talkLayout(designStore.design, shownTalkRatio)?.panels.pinned?.hidden;
@@ -602,7 +606,7 @@ function publishComments(messages) {
   const state = states[active];
   // Hidden users and comments are filtered here, so they never reach outputs.
   outputPublisher.update({ platform: active, received: state.received,
-    messages: messages ?? state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden), pinned: state.pinned });
+    messages: messages ?? state.messages.filter(message => !messageHidden(state, message)), pinned: state.pinned });
 }
 
 function updateStageCommentVisibility() { markClippedComments($('stage-chat-list')); }
