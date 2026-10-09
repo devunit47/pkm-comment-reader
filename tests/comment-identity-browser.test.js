@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, studio = {}) {
@@ -193,49 +193,49 @@ browserTest('identity rendering preserves line limits and clipping across six pr
     };
   }, maxLines);
   let combinations = 0;
-  for (const scheme of ['light', 'dark']) for (const theme of ['mint', 'rose', 'violet', 'paper']) for (const preset of Object.keys(COMMENT_PRESETS)) for (const fontSize of [16, 64]) {
+  const cases = matrixCases({ scheme: ['light', 'dark'], theme: ['mint', 'rose', 'violet', 'paper'], preset: Object.keys(COMMENT_PRESETS), fontSize: [16, 64],
+    ratio: [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]] });
+  for (const { scheme, theme, preset, fontSize, ratio: [ratio, size, width, height] } of cases) {
     await page.emulateMedia({ colorScheme: scheme }); await output.emulateMedia({ colorScheme: scheme });
     const studio = { ...applyCommentPreset(normalizeStudio({ theme }), preset), fontSize, commentAuthorColor: 'service', commentBadges: true, commentEmotes: 'image' };
-    for (const [ratio, size, width, height] of [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]]) {
-      const label = `${scheme}/${theme}/${preset}/${ratio}/${fontSize}px`;
-      await output.setViewportSize({ width, height });
-      await saveDesign(base, design => ({ ...design, outputSize: size, studio }));
-      for (const target of [page, output]) await target.waitForFunction(({ theme, ratio, style, panel, fontSize }) => {
-        const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
-        const stage = doc.querySelector('#talk-stage');
-        return stage.dataset.theme === theme && (stage.dataset.ratio || doc.body.dataset.ratio) === ratio && doc.querySelector('#stage-chat-list').dataset.commentStyle === style && (stage.dataset.commentPanel || 'theme') === panel && parseFloat(getComputedStyle(stage.querySelector('.pokome-comment__body')).fontSize) === fontSize;
-      }, { theme, ratio, style: studio.commentStyle, panel: studio.commentPanel, fontSize });
-      await page.bringToFront();
-      await page.locator('#stage-design-edit').click(); await editorTarget(page, 'chat');
-      await page.locator('#preview-ratio').selectOption(ratio);
-      const preview = page.frameLocator('#design-preview-frame');
-      await preview.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
-      const results = [];
-      for (const [owner, list] of [[page, talkStage(page).locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {
-        await owner.bringToFront();
-        await owner.waitForTimeout(50);
-        await list.evaluate(element => Promise.all([...element.querySelectorAll('img')].map(image => image.decode().catch(() => {}))));
-        results.push(await inspect(list, studio.commentMaxLines));
-      }
-      for (const result of results) {
-        assert.ok(result.viewportHeight > 0, `${label}: visible viewport`);
-        assert.deepEqual(result.overflow, [], `${label}: overflow/line clamp`);
-        assert.deepEqual(result.clipping, [], `${label}: clipping`);
-        assert.equal(result.badges, 4, `${label}: role symbols`);
-        assert.deepEqual(result.partialImages, [], `${label}: whole emotes inside line clamp`);
-        assert.deepEqual(result.imageBounds, [], `${label}: images inside chips and panel width`);
-        assert.equal(parseFloat(result.fontSize), fontSize, `${label}: requested font size`);
-        assert.deepEqual(result.imageOverlap, [], `${label}: wrapped emotes do not cover each other`);
-        assert.equal(parseFloat(result.emoteHeight), parseFloat(result.fontSize) * 2, `${label}: emote height`);
-      }
-      assert.ok(results.every(result => result.color === results[0].color), `${label}: same name color`);
-      await page.bringToFront();
-      await closeEditor(page);
-      combinations++;
+    const label = `${scheme}/${theme}/${preset}/${ratio}/${fontSize}px`;
+    await output.setViewportSize({ width, height });
+    await saveDesign(base, design => ({ ...design, outputSize: size, studio }));
+    for (const target of [page, output]) await target.waitForFunction(({ theme, ratio, style, panel, fontSize }) => {
+      const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+      const stage = doc.querySelector('#talk-stage');
+      return stage.dataset.theme === theme && (stage.dataset.ratio || doc.body.dataset.ratio) === ratio && doc.querySelector('#stage-chat-list').dataset.commentStyle === style && (stage.dataset.commentPanel || 'theme') === panel && parseFloat(getComputedStyle(stage.querySelector('.pokome-comment__body')).fontSize) === fontSize;
+    }, { theme, ratio, style: studio.commentStyle, panel: studio.commentPanel, fontSize });
+    await page.bringToFront();
+    await page.locator('#stage-design-edit').click(); await editorTarget(page, 'chat');
+    await page.locator('#preview-ratio').selectOption(ratio);
+    const preview = page.frameLocator('#design-preview-frame');
+    await preview.locator('img.pokome-comment__emote').first().waitFor({ state: 'attached' });
+    const results = [];
+    for (const [owner, list] of [[page, talkStage(page).locator('#stage-chat-list')], [page, preview.locator('#stage-chat-list')], [output, output.locator('#stage-chat-list')]]) {
+      await owner.bringToFront();
+      await owner.waitForTimeout(50);
+      await list.evaluate(element => Promise.all([...element.querySelectorAll('img')].map(image => image.decode().catch(() => {}))));
+      results.push(await inspect(list, studio.commentMaxLines));
     }
+    for (const result of results) {
+      assert.ok(result.viewportHeight > 0, `${label}: visible viewport`);
+      assert.deepEqual(result.overflow, [], `${label}: overflow/line clamp`);
+      assert.deepEqual(result.clipping, [], `${label}: clipping`);
+      assert.equal(result.badges, 4, `${label}: role symbols`);
+      assert.deepEqual(result.partialImages, [], `${label}: whole emotes inside line clamp`);
+      assert.deepEqual(result.imageBounds, [], `${label}: images inside chips and panel width`);
+      assert.equal(parseFloat(result.fontSize), fontSize, `${label}: requested font size`);
+      assert.deepEqual(result.imageOverlap, [], `${label}: wrapped emotes do not cover each other`);
+      assert.equal(parseFloat(result.emoteHeight), parseFloat(result.fontSize) * 2, `${label}: emote height`);
+    }
+    assert.ok(results.every(result => result.color === results[0].color), `${label}: same name color`);
+    await page.bringToFront();
+    await closeEditor(page);
+    combinations++;
   }
-  assert.equal(combinations, 288);
-  t.diagnostic('Edge: 288 preset/theme/scheme/ratio/font combinations, each compared across live, preview and output');
+  assert.equal(combinations, cases.length);
+  t.diagnostic(`Edge: ${cases.length} preset/theme/scheme/ratio/font combinations (FULL_MATRIX=1 runs all 288), each compared across live, preview and output`);
   assert.deepEqual(errors, []);
 });
 

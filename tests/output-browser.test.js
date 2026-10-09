@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -711,59 +711,59 @@ browserTest('pinned panels match live, preview and output across three ratios, f
   await output.waitForFunction(() => document.querySelector('.stage-speech')?.dataset.speaking === 'true');
   const editor = page.locator('#design-preview-editor');
   let combinations = 0;
-  for (const scheme of ['light', 'dark']) for (const theme of ['mint', 'rose', 'violet', 'paper']) {
+  const cases = matrixCases({ scheme: ['light', 'dark'], theme: ['mint', 'rose', 'violet', 'paper'],
+    ratio: [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]] });
+  for (const { scheme, theme, ratio: [ratio, size, width, height] } of cases) {
     await page.emulateMedia({ colorScheme: scheme }); await output.emulateMedia({ colorScheme: scheme });
-    for (const [ratio, size, width, height] of [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]]) {
-      const label = `${scheme}/${theme}/${ratio}`, layout = pinnedMatrixLayout(ratio), panel = layout.panels.pinned;
-      await output.setViewportSize({ width, height });
-      await saveDesign(url, design => ({ ...design, outputSize: size,
-        studio: { ...design.studio, theme, fontSize: 22, commentMaxLines: 2 },
-        ratios: { ...design.ratios, [ratio]: { ...(design.ratios[ratio] || {}), layout } } }));
-      await waitForDesign(url, design => design.outputSize === size && design.studio.theme === theme && design.ratios[ratio]?.layout?.panels.pinned?.x === panel.x);
-      for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel });
-      await page.locator('#stage-design-edit').click();
-      await editor.locator('#apply-design:not(:disabled)').waitFor();
-      await editor.locator('#preview-ratio').selectOption(ratio); await editor.locator('#preview-width').selectOption(size);
-      await editorTarget(editor, 'pinned');
-      const preview = page.frameLocator('#design-preview-frame');
-      await preview.locator('#stage-pinned-list .stage-comment').waitFor({ state: 'attached' });
-      await page.waitForFunction(({ theme, panel, width, height }) => {
-        const doc = document.querySelector('#design-preview-editor')?.shadowRoot?.querySelector('#design-preview-frame')?.contentDocument;
-        const stage = doc?.querySelector('#talk-stage'), target = stage?.querySelector('.stage-pinned');
-        return stage?.dataset.theme === theme && doc.documentElement.clientWidth === width && doc.documentElement.clientHeight === height
-          && target?.style.left === `${panel.x}%` && target.style.width === `${panel.w}%` && target.getBoundingClientRect().height > 0;
-      }, { theme, panel, width, height });
-      const results = await Promise.all([inspectPinnedPanel(talkStage(page).locator('#talk-stage')),
-        inspectPinnedPanel(preview.locator('#talk-stage')), inspectPinnedPanel(output.locator('#talk-stage'))]);
-      for (const result of results) {
-        for (const key of ['x', 'y', 'w', 'h']) assert.ok(Math.abs(result[key] - panel[key]) < .05, `${label}: ${key}`);
-        assert.equal(result.cards, 1, `${label}: one pinned card`);
-        assert.equal(result.controls, 0, `${label}: stage contains no controls`);
-        assert.equal(result.speech, true, `${label}: independent speech panel`);
-      }
-      for (const result of results.slice(1)) for (const key of ['z', 'font', 'lineClamp', 'style']) assert.equal(result[key], results[0][key], `${label}: same ${key}`);
-      assert.notEqual(await preview.locator('#stage-pinned-list .pokome-comment__body').textContent(), text, `${label}: fictitious preview`);
-      await closeEditor(editor);
-      await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios,
-        [ratio]: { ...design.ratios[ratio], layout: { panels: { ...layout.panels, pinned: { ...panel, hidden: true } } } } } }));
-      for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel, hidden: true });
-      assert.equal(await page.locator('#stage-unpin-comment').isVisible(), true, `${label}: hidden design retains pin`);
-      assert.equal(await page.locator('#pinned-design-hidden').getAttribute('hidden'), null, `${label}: home explains the hidden design`);
-      await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, [ratio]: { ...design.ratios[ratio], layout } } }));
-      for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel });
-      await page.locator('#stage-unpin-comment').click();
-      await waitUnpinned(page); await waitUnpinned(output);
-      await page.locator('#stage-design-edit').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
-      await editor.locator('#preview-ratio').selectOption(ratio);
-      await page.frameLocator('#design-preview-frame').locator('#stage-pinned-list .stage-comment').waitFor({ state: 'visible' });
-      await closeEditor(editor);
-      await page.locator('#leave-talk').click(); await pinComment(page); await page.locator('#enter-talk').click();
-      await waitPinned(page, text); await waitPinned(output, text);
-      combinations++;
+    const label = `${scheme}/${theme}/${ratio}`, layout = pinnedMatrixLayout(ratio), panel = layout.panels.pinned;
+    await output.setViewportSize({ width, height });
+    await saveDesign(url, design => ({ ...design, outputSize: size,
+      studio: { ...design.studio, theme, fontSize: 22, commentMaxLines: 2 },
+      ratios: { ...design.ratios, [ratio]: { ...(design.ratios[ratio] || {}), layout } } }));
+    await waitForDesign(url, design => design.outputSize === size && design.studio.theme === theme && design.ratios[ratio]?.layout?.panels.pinned?.x === panel.x);
+    for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel });
+    await page.locator('#stage-design-edit').click();
+    await editor.locator('#apply-design:not(:disabled)').waitFor();
+    await editor.locator('#preview-ratio').selectOption(ratio); await editor.locator('#preview-width').selectOption(size);
+    await editorTarget(editor, 'pinned');
+    const preview = page.frameLocator('#design-preview-frame');
+    await preview.locator('#stage-pinned-list .stage-comment').waitFor({ state: 'attached' });
+    await page.waitForFunction(({ theme, panel, width, height }) => {
+      const doc = document.querySelector('#design-preview-editor')?.shadowRoot?.querySelector('#design-preview-frame')?.contentDocument;
+      const stage = doc?.querySelector('#talk-stage'), target = stage?.querySelector('.stage-pinned');
+      return stage?.dataset.theme === theme && doc.documentElement.clientWidth === width && doc.documentElement.clientHeight === height
+        && target?.style.left === `${panel.x}%` && target.style.width === `${panel.w}%` && target.getBoundingClientRect().height > 0;
+    }, { theme, panel, width, height });
+    const results = await Promise.all([inspectPinnedPanel(talkStage(page).locator('#talk-stage')),
+      inspectPinnedPanel(preview.locator('#talk-stage')), inspectPinnedPanel(output.locator('#talk-stage'))]);
+    for (const result of results) {
+      for (const key of ['x', 'y', 'w', 'h']) assert.ok(Math.abs(result[key] - panel[key]) < .05, `${label}: ${key}`);
+      assert.equal(result.cards, 1, `${label}: one pinned card`);
+      assert.equal(result.controls, 0, `${label}: stage contains no controls`);
+      assert.equal(result.speech, true, `${label}: independent speech panel`);
     }
+    for (const result of results.slice(1)) for (const key of ['z', 'font', 'lineClamp', 'style']) assert.equal(result[key], results[0][key], `${label}: same ${key}`);
+    assert.notEqual(await preview.locator('#stage-pinned-list .pokome-comment__body').textContent(), text, `${label}: fictitious preview`);
+    await closeEditor(editor);
+    await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios,
+      [ratio]: { ...design.ratios[ratio], layout: { panels: { ...layout.panels, pinned: { ...panel, hidden: true } } } } } }));
+    for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel, hidden: true });
+    assert.equal(await page.locator('#stage-unpin-comment').isVisible(), true, `${label}: hidden design retains pin`);
+    assert.equal(await page.locator('#pinned-design-hidden').getAttribute('hidden'), null, `${label}: home explains the hidden design`);
+    await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, [ratio]: { ...design.ratios[ratio], layout } } }));
+    for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel });
+    await page.locator('#stage-unpin-comment').click();
+    await waitUnpinned(page); await waitUnpinned(output);
+    await page.locator('#stage-design-edit').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+    await editor.locator('#preview-ratio').selectOption(ratio);
+    await page.frameLocator('#design-preview-frame').locator('#stage-pinned-list .stage-comment').waitFor({ state: 'visible' });
+    await closeEditor(editor);
+    await page.locator('#leave-talk').click(); await pinComment(page); await page.locator('#enter-talk').click();
+    await waitPinned(page, text); await waitPinned(output, text);
+    combinations++;
   }
-  assert.equal(combinations, 24);
-  t.diagnostic('Edge: 24 pinned theme/scheme/ratio combinations across live, preview and output; design hiding and release in each');
+  assert.equal(combinations, cases.length);
+  t.diagnostic(`Edge: ${cases.length} pinned theme/scheme/ratio combinations (FULL_MATRIX=1 runs all 24) across live, preview and output; design hiding and release in each`);
   assert.deepEqual(errors, []);
 });
 
