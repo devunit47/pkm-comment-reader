@@ -21,16 +21,16 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
+    // The home speech panel is an operating view; the design editor previews the stage look.
+    const homeSpeechLook = () => page.evaluate(() => {
+      const panel = getComputedStyle(document.querySelector('#preview-text').parentElement);
+      return [panel.backgroundColor, panel.backgroundImage, panel.color];
+    });
+    const plainLook = await homeSpeechLook();
     for (const style of ['panel', 'bubble', 'image']) {
-      await saveStudio(`http://127.0.0.1:${server.address().port}`, { speechStyle: style });
-      await page.waitForFunction(style => document.querySelector('.speech-bubble').dataset.style === style, style);
-      const appearance = await page.evaluate(style => {
-        const preview = getComputedStyle(document.querySelector('.speech-bubble'));
-        const element = document.getElementById('talk-frame').contentDocument.querySelector(style === 'image' ? '.stage-speech-content' : '.stage-speech');
-        const stage = element.ownerDocument.defaultView.getComputedStyle(element);
-        return [style === 'image' ? preview.backgroundImage : preview.backgroundColor, style === 'image' ? stage.backgroundImage : stage.backgroundColor];
-      }, style);
-      assert.equal(appearance[0], appearance[1]);
+      await saveStudio(`http://127.0.0.1:${server.address().port}`, { speechStyle: style, speechBackground: '#ff0000' });
+      await talkStage(page).locator(`.stage-speech[data-style="${style}"]`).waitFor({ state: 'attached' });
+      assert.deepEqual(await homeSpeechLook(), plainLook, `${style}: home speech panel keeps the operating look`);
     }
     for (const id of ['studio-title', 'studio-subtitle', 'studio-footer', 'studio-speech-title']) assert.equal(await page.locator(`#${id}`).count(), 0);
     await page.locator('#enter-talk').click();
