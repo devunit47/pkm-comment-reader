@@ -10,7 +10,7 @@ import { createSettingsStore } from './settings-client.js';
 import { SETTINGS_FIELDS } from '../shared/settings-model.js';
 import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
-import { createChatState, addMessage, userRule, visibleMessages, clearMessages } from './chat-state.js';
+import { createChatState, addMessage, userRule, visibleMessages, clearMessages, reconcilePinned } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 import { readSavedVoices, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
@@ -355,6 +355,7 @@ $('hide-comment').onclick = () => {
   const state = states[active];
   if (state.selected) {
     state.selected.hidden = true;
+    reconcilePinned(state);
     state.selected = null;
     stop();
     renderSelection();
@@ -544,12 +545,13 @@ if (supported) {
   $('speech-status').textContent = 'ブラウザ非対応';
 }
 $('clear').onclick = () => {
-  if (!states[active].messages.length || !window.confirm(`${names[active]}のコメント履歴をすべて削除します。元に戻せません。削除しますか？`)) return;
+  if ((!states[active].messages.length && !states[active].pinned) || !window.confirm(`${names[active]}のコメント履歴をすべて削除し、固定も解除します。元に戻せません。削除しますか？`)) return;
   clearMessages(states[active]); stop(); renderSelection(); render();
 };
 
 function renderStageChat() {
   const state = states[active];
+  reconcilePinned(state);
   const messages = state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden);
   const list = $('stage-chat-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
@@ -559,7 +561,7 @@ function renderStageChat() {
   updateStageCommentVisibility();
   $('stage-count').textContent = `${state.received} COMMENTS`;
   // Hidden users and comments are filtered here, so they never reach outputs.
-  outputPublisher.update({ platform: active, received: state.received, messages });
+  outputPublisher.update({ platform: active, received: state.received, messages, pinned: state.pinned });
 }
 
 function updateStageCommentVisibility() { markClippedComments($('stage-chat-list')); }
@@ -804,7 +806,10 @@ function reflectSettings(detail) {
       if (JSON.stringify(state.speechOptions) !== JSON.stringify(value.speechOptions[platform])) state.speechHistory = createSpeechHistory();
       state.speechOptions = value.speechOptions[platform];
     }
-    if (fields.includes('users')) state.rules = Object.assign(Object.create(null), value.users[platform]);
+    if (fields.includes('users')) {
+      state.rules = Object.assign(Object.create(null), value.users[platform]);
+      reconcilePinned(state);
+    }
   }
   if (voiceChanged || engineChanged || optionsChanged || usersChanged || speechDisabled) stop();
   if (fields.includes('historyLimit')) applyHistoryLimit(value.historyLimit, false);
