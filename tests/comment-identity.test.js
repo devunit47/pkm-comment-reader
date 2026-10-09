@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { normalizeCommentEvent, eventHeading, eventDetails } from '../src/shared/comment-model.js';
 import assert from 'node:assert/strict';
 import { parseTwitchMessage } from '../src/shared/connections.js';
 import { addMessage, createChatState } from '../src/browser/chat-state.js';
@@ -7,6 +8,18 @@ import { normalizeOutputMessage, OutputPublisher } from '../src/shared/output-pr
 const parse = (text, tags = '') => parseTwitchMessage(`@${tags} :viewer!viewer@host PRIVMSG #channel :${text}`, 'channel');
 const textPart = text => ({ type: 'text', text });
 const emote = (id, name) => ({ type: 'emote', id, name });
+
+test('event normalization retains only kind-specific safe data and generates Japanese labels', () => {
+  const event = normalizeCommentEvent({ kind: 'gift', recipient: '<b>Recipient</b>', giftMonths: 3, cumulativeMonths: 99, bits: 100, plan: '1000', systemMsg: 'DO_NOT_USE', image: 'https://evil.example' });
+  assert.deepEqual(event, { kind: 'gift', plan: '1000', giftMonths: 3, recipient: '<b>Recipient</b>' });
+  assert.equal(eventHeading(event), 'サブスクギフト・Tier 1・3か月分');
+  assert.equal(eventDetails(event, 'Giver'), 'Giver → <b>Recipient</b>');
+  assert.equal(eventDetails(event, 'Giver', false), '');
+  assert.equal(normalizeCommentEvent({ kind: 'bits', bits: '100' }), null);
+  for (const value of [null, {}, [], { kind: 'unknown' }]) assert.equal(normalizeCommentEvent(value), null);
+  assert.deepEqual(normalizeCommentEvent({ kind: 'resub', cumulativeMonths: -1, streakMonths: 1.2 }), { kind: 'resub' });
+  assert.deepEqual(normalizeCommentEvent({ kind: 'giftBomb', count: Number.MAX_SAFE_INTEGER + 1 }), { kind: 'giftBomb' });
+});
 
 test('Twitch identity preserves emoji offsets, repeated emotes and ordered roles', () => {
   const message = parse('😀 Kappa Kappa!', 'color=#AB1234;badges=vip/1,moderator/1,subscriber/42,broadcaster/1,vip/1,unknown/1;emotes=25:2-6,8-12');

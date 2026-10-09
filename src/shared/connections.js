@@ -1,4 +1,4 @@
-import { normalizeNameColor, normalizeBadges, parseTwitchEmotes } from './comment-model.js';
+import { normalizeCommentContent, normalizeCommentEvent, parseTwitchEmotes } from './comment-model.js';
 export function connectionPresentation(status) {
   if (status === '接続中') return { kind: 'connected', label: '接続済み', detail: 'コメント受信待機中' };
   if (status === '接続準備中') return { kind: 'connecting', label: '接続準備中', detail: '接続完了を待っています' };
@@ -27,14 +27,34 @@ export function readSavedConnections(settings) {
 }
 
 export function parseTwitchMessage(line, channel) {
-  const match = line.match(/^(?:@([^ ]+) )?:([^! ]+)![^ ]+ PRIVMSG #([^ ]+) :([\s\S]*)$/);
-  if (!match || match[3].toLowerCase() !== channel) return null;
+  const match = line.match(/^(?:@([^ ]+) )?:([^ ]+) (PRIVMSG|USERNOTICE) #([^ :]+)(?: :([\s\S]*))?$/);
+  if (!match || match[4].toLowerCase() !== channel.toLowerCase()) return null;
   const tags = Object.fromEntries((match[1] || '').split(';').filter(tag => tag.includes('='))
-    .map(tag => { const index = tag.indexOf('='); return [tag.slice(0, index), tag.slice(index + 1)]; }));
-  const displayName = (tags['display-name'] || match[2]).replace(/\\([s:rn\\])/g,
-    (_, value) => ({ s: ' ', ':': ';', r: '\r', n: '\n', '\\': '\\' })[value]);
-  return { user: displayName, login: match[2], text: match[4], color: normalizeNameColor(tags.color),
-    badges: normalizeBadges((tags.badges || '').split(',').map(badge => badge.split('/')[0])), parts: parseTwitchEmotes(match[4], tags.emotes) };
+    .map(tag => { const index = tag.indexOf('='); return [tag.slice(0, index), tag.slice(index + 1).replace(/\\(.)/g,
+      (_, value) => ({ s: ' ', ':': ';', r: '\r', n: '\n', '\\': '\\' })[value] ?? value)]; }));
+  const number = key => /^\d+$/.test(tags[key] || '') && Number.isSafeInteger(Number(tags[key])) && Number(tags[key]) > 0 ? Number(tags[key]) : undefined;
+  let event;
+  const notice = match[3] === 'USERNOTICE';
+  if (notice) {
+    // Notices copied from Shared Chat are outside this feature's scope.
+    if (tags['source-room-id'] && tags['source-room-id'] !== tags['room-id']) return null;
+    const kinds = { sub: 'sub', resub: 'resub', subgift: 'gift', submysterygift: 'giftBomb', anonsubgift: 'gift', anonsubmysterygift: 'giftBomb' };
+    if (!Object.hasOwn(kinds, tags['msg-id'])) return null;
+    const kind = kinds[tags['msg-id']];
+    event = normalizeCommentEvent({ kind, plan: tags['msg-param-sub-plan'], cumulativeMonths: number('msg-param-cumulative-months'),
+      streakMonths: tags['msg-param-should-share-streak'] === '1' ? number('msg-param-streak-months') : undefined,
+      giftMonths: number('msg-param-gift-months'), recipient: tags['msg-param-recipient-display-name'] || tags['msg-param-recipient-user-name'] || tags['msg-param-recipient-name'],
+      anonymous: tags['msg-id'].startsWith('anon') || tags['user-id'] === '274598607' || tags.login?.toLowerCase() === 'ananonymousgifter' });
+  } else {
+    if (!match[2].includes('!') || match[5] === undefined) return null;
+    event = normalizeCommentEvent({ kind: 'bits', bits: number('bits') });
+  }
+  const login = (event?.anonymous ? '' : notice ? tags.login || '' : match[2].split('!')[0]).slice(0, 200);
+  const user = (event?.anonymous ? '' : tags['display-name'] || login).slice(0, 200);
+  const body = match[5] || '';
+  return { user, login, ...normalizeCommentContent({ text: body, color: tags.color,
+    badges: (tags.badges || '').split(',').map(badge => badge.split('/')[0]), parts: parseTwitchEmotes(body, tags.emotes) }),
+    ...(event ? { event } : {}), ...(tags.id ? { id: tags.id.slice(0, 200) } : {}) };
 }
 
 // Each instance owns one service's socket, lookup, timers and callbacks.
@@ -143,7 +163,13 @@ export class ChatConnection {
             connected();
           }
           const message = parseTwitchMessage(line, channel);
-          if (joined && message) this.onMessage(message);
+          if (joined && message && (!message.id || !messageIds.has(message.id))) {
+            if (message.id) {
+              messageIds.add(message.id);
+              if (messageIds.size > 300) messageIds.delete(messageIds.values().next().value);
+            }
+            this.onMessage(message);
+          }
           if (line.includes(' NOTICE ') && /Login authentication failed|Improperly formatted auth/.test(line)) {
             fail('認証エラー'); return;
           }

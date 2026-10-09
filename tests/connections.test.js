@@ -167,3 +167,54 @@ test('Twitch uses browser WebSocket without a local server', async () => {
     assert.equal(statuses.at(-1), '接続中');
   } finally { connection.disconnect(false); }
 });
+
+const notice = (tags, body = '', channel = 'expected') => `@${tags} :tmi.twitch.tv USERNOTICE #${channel}${body ? ` :${body}` : ''}`;
+test('Twitch notices preserve optional bodies and verified event fields without system messages', () => {
+  const message = parseTwitchMessage(notice('msg-id=resub;login=viewer;display-name=Name\\sHere;msg-param-sub-plan=Prime;msg-param-cumulative-months=6;msg-param-streak-months=2;msg-param-should-share-streak=1;emotes=25:2-6;system-msg=DO_NOT_USE', '😀 Kappa'), 'expected');
+  assert.deepEqual(message.event, { kind: 'resub', plan: 'Prime', cumulativeMonths: 6, streakMonths: 2 });
+  assert.equal(message.user, 'Name Here');
+  assert.equal(message.parts[1].name, 'Kappa');
+  assert.equal(JSON.stringify(message).includes('DO_NOT_USE'), false);
+  const gift = parseTwitchMessage(notice('msg-id=subgift;login=giver;msg-param-recipient-user-name=recipient;msg-param-gift-months=3;msg-param-months=12'), 'expected');
+  assert.equal(gift.text, '');
+  assert.deepEqual(gift.event, { kind: 'gift', recipient: 'recipient', giftMonths: 3 });
+  assert.equal(parseTwitchMessage(notice('msg-id=sub;login=viewer'), 'expected').event.kind, 'sub');
+  assert.equal(parseTwitchMessage(notice('msg-id=submysterygift;login=giver'), 'expected').event.kind, 'giftBomb');
+});
+
+test('invalid numeric tags, unshared streaks, other rooms and unsupported notices cannot create information', () => {
+  for (const bad of ['0', '-1', '1.2', '12abc', '9007199254740992', '']) {
+    const message = parseTwitchMessage(notice(`msg-id=resub;msg-param-cumulative-months=${bad};msg-param-streak-months=8;msg-param-should-share-streak=0;msg-param-sub-plan=unknown`), 'expected');
+    assert.deepEqual(message.event, { kind: 'resub' });
+    assert.equal(parseTwitchMessage(`@bits=${bad} :viewer!viewer@host PRIVMSG #expected :Cheer100`, 'expected').event, undefined);
+  }
+  assert.equal(parseTwitchMessage('@bits=100 :viewer!viewer@host PRIVMSG #expected :Cheer100', 'expected').event.bits, 100);
+  for (const kind of ['raid', 'bitsbadgetier', 'announcement', 'sharedchatnotice', 'unknown', 'constructor', '__proto__']) assert.equal(parseTwitchMessage(notice(`msg-id=${kind}`, 'body'), 'expected'), null);
+  assert.equal(parseTwitchMessage(notice('msg-id=sub', '', 'other'), 'expected'), null);
+  assert.equal(parseTwitchMessage(notice('msg-id=sub;source-room-id=2;room-id=1'), 'expected'), null);
+});
+
+test('anonymous gift formats never expose a synthetic sender or recipient as the gifter', () => {
+  for (const tags of ['msg-id=anonsubgift;login=owner', 'msg-id=subgift;user-id=274598607;login=ananonymousgifter;display-name=AnAnonymousGifter', 'msg-id=anonsubmysterygift']) {
+    const message = parseTwitchMessage(notice(tags + ';msg-param-recipient-display-name=Recipient'), 'expected');
+    assert.equal(message.event.anonymous, true);
+    assert.equal(message.user, ''); assert.equal(message.login, '');
+  }
+});
+
+test('Twitch deduplicates the last 300 received IDs per connection, retaining ID-less and individual gifts', async t => {
+  const twitch = client('twitch'); t.after(() => twitch.connection.disconnect());
+  await twitch.connection.connect('expected'); const socket = twitch.connection.socket;
+  socket.receive(':server 366 anon #expected :End\r\n');
+  const send = tags => socket.receive(notice(tags));
+  send('id=bomb;msg-id=submysterygift;login=giver');
+  send('id=gift;msg-id=subgift;login=giver'); send('id=gift;msg-id=subgift;login=giver');
+  send('msg-id=subgift;login=giver'); send('msg-id=subgift;login=giver');
+  assert.equal(twitch.messages.length, 4);
+  for (let i = 0; i < 300; i++) send(`id=n${i};msg-id=sub`);
+  send('id=bomb;msg-id=submysterygift'); assert.equal(twitch.messages.length, 305);
+  await twitch.connection.connect('expected');
+  socket.receive(notice('msg-id=sub')); assert.equal(twitch.messages.length, 305);
+  twitch.connection.socket.receive(':server 366 anon #expected :End\r\n' + notice('id=bomb;msg-id=submysterygift'));
+  assert.equal(twitch.messages.length, 306);
+});
