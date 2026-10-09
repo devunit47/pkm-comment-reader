@@ -15,6 +15,8 @@ export function normalizeCommentEvent(value) {
   for (const key of keys) if (positive(value[key])) event[key] = value[key];
   if (['gift', 'giftBomb'].includes(value.kind) && value.anonymous === true) event.anonymous = true;
   if (value.kind === 'gift' && typeof value.recipient === 'string' && value.recipient) event.recipient = value.recipient.slice(0, 200);
+  // Twitch tags every notice of one community gift with the same id (recorded, not documented).
+  if (['gift', 'giftBomb'].includes(value.kind) && typeof value.group === 'string' && /^[\w-]{1,64}$/.test(value.group)) event.group = value.group;
   return event;
 }
 

@@ -4,7 +4,7 @@ import { normalizeSpeechOptions, createSpeechHistory } from './speech-options.js
 
 export function createChatState() {
   return {
-    messages: [], seen: new Set(), received: 0, selected: null, pinned: null,
+    messages: [], seen: new Set(), received: 0, selected: null, pinned: null, giftGroups: [],
     rules: Object.create(null), status: 'デモモード', channel: '',
     autoSpeech: true, readName: false, voice: '', volume: 0.8, rate: 1.1,
     search: '', filter: 'all', sampleIndex: 0,
@@ -17,6 +17,9 @@ export function addMessage(state, user, text, id, createdAt = Date.now(), login 
   if (typeof user !== 'string' || typeof text !== 'string' || (!text && !event)) return null;
   user = event?.anonymous ? '' : (user || login || '').slice(0, 200);
   login = event?.anonymous ? '' : String(login || '').slice(0, 200);
+  // A community gift's own card stands for the individual gifts that follow it.
+  if (event?.kind === 'gift' && event.group && state.giftGroups.includes(event.group)) return null;
+  if (event?.kind === 'giftBomb' && event.group) state.giftGroups = [...state.giftGroups.slice(-49), event.group];
   const counted = !event || event.kind === 'bits';
   const date = new Date(createdAt);
   const message = {
@@ -49,6 +52,7 @@ export function clearMessages(state) {
   state.messages = [];
   state.selected = null;
   state.pinned = null;
+  state.giftGroups = [];
 }
 
 export function setPinned(state, message) {
