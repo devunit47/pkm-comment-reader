@@ -8,7 +8,7 @@ export function editionInfo(platforms) {
   };
 }
 
-export function initializeCustomization({ platforms, designStore, resetAppearance }) {
+export function initializeCustomization({ platforms, designStore, resetAppearance, notify }) {
   const edition = editionInfo(platforms);
   const capabilities = document.createElement('section');
   capabilities.className = 'panel studio-form';
@@ -47,7 +47,13 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
     } else if (protectedOriginal) shadow.getElementById('result').textContent = '';
     protectedOriginal = !!blocked;
   };
-  designStore?.subscribe(updateProtection);
+  // Only theme CSS can hide the operating page, so the control is offered while
+  // CSS is applied, or while the protected original needs its warning.
+  const updateRecovery = () => {
+    const needed = !!designStore?.design.theme.trim() || (designStore?.available && designStore.writable === false);
+    recovery.style.display = needed && !document.body.classList.contains('talk-mode') ? 'block' : 'none';
+  };
+  designStore?.subscribe(() => { updateProtection(); updateRecovery(); });
   updateProtection();
   shadow.getElementById('open-reset').onclick = () => { if (!dialog.open) dialog.showModal(); };
   shadow.getElementById('cancel-reset').onclick = () => dialog.close();
@@ -55,23 +61,16 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
     dialog.close();
     // Cleared first, so the message always describes this reset once it is saved.
     shadow.getElementById('result').textContent = '';
-    let message;
     try {
-      const saved = await resetAppearance();
-      message = saved ? '標準の見た目に戻しました。' : '標準に戻しましたが保存できません。ローカルサーバーが動いているか、customizationフォルダーを確認してください。';
-    } catch (error) { message = `標準に戻せませんでした：${error.message}`; }
-    shadow.getElementById('result').textContent = message;
-    shadow.getElementById('open-reset').focus();
+      await resetAppearance();
+      // The reset clears the CSS and hides this control, so announce it on the page.
+      notify('標準の見た目に戻しました。');
+    } catch (error) {
+      shadow.getElementById('result').textContent = `標準に戻せませんでした：${error.message}`;
+      shadow.getElementById('open-reset').focus();
+    }
   };
-  const updateRecovery = () => { recovery.style.display = document.body.classList.contains('talk-mode') ? 'none' : 'block'; };
   new MutationObserver(updateRecovery).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   updateRecovery();
-  const guide = document.createElement('section'); guide.id = 'appearance-recovery-guide'; guide.className = 'panel studio-form';
-  const guideFields = document.createElement('div'); guideFields.className = 'studio-fields';
-  const guideTitle = document.createElement('h2'); guideTitle.textContent = '復旧の案内';
-  const guideText = document.createElement('p'); guideText.textContent = '見た目が崩れたときは「見た目を標準に戻す」で、出力の大きさを含むデザイン全体を標準に戻せます。接続先・音声・ユーザー設定と、customizationフォルダーの素材は残ります。開いている下書きは適用できなくなります。';
-  const guideButton = document.createElement('button'); guideButton.id = 'recovery-guide-open'; guideButton.className = 'button'; guideButton.type = 'button'; guideButton.textContent = '復旧の確認を開く';
-  guideButton.onclick = () => shadow.getElementById('open-reset').click();
-  guideFields.append(guideTitle, guideText, guideButton); guide.append(guideFields); document.getElementById('studio-page').append(guide);
 
 }

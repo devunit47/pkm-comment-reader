@@ -58,7 +58,7 @@ test('output size is applied text and its editor changes the size only on Apply'
 test('design page orders final entries, shows the applied design and keeps preset confirmation read-only', { skip: !browserAvailable }, async t => {
   const { page, editor } = await fixture(t);
   await page.locator('[data-page="studio"]').click();
-  assert.deepEqual(await page.locator('#studio-page').evaluate(section => [...section.children].map(child => child.id)), ['design-presets', 'design-preview-editor', 'stream-output-panel', 'appearance-recovery-guide']);
+  assert.deepEqual(await page.locator('#studio-page').evaluate(section => [...section.children].map(child => child.id)), ['design-presets', 'design-preview-editor', 'stream-output-panel']);
   assert.match(await editor.locator('#applied-design-summary').textContent(), /ミント.*1280.*720/);
   assert.doesNotMatch(await editor.locator('.entry').textContent(), /ホームの配置|すぐに保存/);
   const presets = page.locator('#design-presets');
@@ -73,10 +73,6 @@ test('design page orders final entries, shows the applied design and keeps prese
   assert.equal(await editor.locator('.view input:visible').count(), 1);
   assert.equal(await editor.locator('#cancel-design').textContent(), 'キャンセル');
   await editor.locator('#cancel-design').click();
-  await page.locator('#recovery-guide-open').click();
-  assert.match(await page.locator('#appearance-recovery dialog').textContent(), /出力の大きさ/);
-  assert.match(await page.locator('#appearance-recovery dialog').textContent(), /下書き.*適用できなく/);
-  await page.locator('#appearance-recovery #cancel-reset').click();
 });
 
 test('150px standard home keeps content within the effective dock width', { skip: !browserAvailable }, async t => {

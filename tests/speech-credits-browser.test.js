@@ -131,8 +131,10 @@ test('credits follow voice, style, engine and platform, survive reload and appea
     assert.equal(await talkStage(page).locator('.stage-speech-content #stage-speech-credit').count(), 0);
     await page.locator('#leave-talk').click();
   }
-  await page.locator('#appearance-recovery #open-reset').click();
-  await page.locator('#appearance-recovery #confirm-reset').click();
+  await page.locator('[data-page="studio"]').click();
+  await page.locator('#design-presets #preset-reset').click();
+  await page.locator('#design-presets #preset-confirm').click();
+  await page.locator('#design-presets #preset-status').filter({ hasText: '標準へ戻しました' }).waitFor();
   await credits(page, 'VOICEVOX:四国めたん');
   await page.locator('[data-page="home"]').click();
   assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
@@ -334,7 +336,7 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   await page.locator('#appearance-recovery #open-reset').click();
   await page.locator('#appearance-recovery #confirm-reset').click();
   await waitForDesign(base, design => design.ratios['16:9'] === null);
-  await page.locator('#appearance-recovery #result').filter({ hasText: '標準の見た目に戻しました。' }).waitFor();
+  await page.locator('#notice').filter({ hasText: '標準の見た目に戻しました。' }).waitFor();
   assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
   assert.equal(await page.locator('#pokome-user-theme').textContent(), '');
   await page.locator('#enter-talk').click();
