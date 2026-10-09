@@ -3,7 +3,7 @@ import { defaultActorImage, defaultTalkLayout, talkLayout, talkOverlays, talkAct
 
 const orderZ = value => Number.isFinite(value) ? Math.max(0, Math.min(99, Math.round(value))) : 1;
 
-// Reserve tie slots for five panels and at most twenty overlays.
+// Reserve tie slots for six panels and at most twenty overlays.
 export const canvasZIndex = (z, index) => orderZ(z) * 32 + index;
 
 // Stable ties match the shared stage DOM: fixed panels, then overlay array order.

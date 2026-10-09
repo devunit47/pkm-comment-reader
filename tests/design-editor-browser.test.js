@@ -41,13 +41,13 @@ async function open(page, editor) {
 }
 const shown = editor => editor.locator('[data-target]').evaluateAll(sections => sections.filter(section => !section.hidden).map(section => section.dataset.target));
 
-browserTest('the target list shows the five panels and additions, and each target shows only its settings', async t => {
+browserTest('the target list shows the six panels and additions, and each target shows only its settings', async t => {
   const item = createOverlay('text', { id: 'note', text: '資料の文字' });
   const { page, editor, errors } = await fixture(t, { design: design => ({ ...design, ratios: { ...design.ratios, '16:9': { layout: null, overlays: { version: 1, items: [item], assets: {} } } } }) });
   await open(page, editor);
-  assert.deepEqual(await editor.locator('#target-select option').evaluateAll(options => options.map(option => option.value)), ['screen', 'header', 'chat', 'speech', 'actor', 'footer', 'note']);
+  assert.deepEqual(await editor.locator('#target-select option').evaluateAll(options => options.map(option => option.value)), ['screen', 'header', 'chat', 'speech', 'actor', 'footer', 'pinned', 'note']);
   assert.deepEqual(await shown(editor), ['screen']);
-  for (const [target, field, heading] of [['header', '#draft-title', /ヘッダー/], ['chat', '#draft-maxVisible', /コメント欄/], ['speech', '#draft-speechStyle', /読み上げ/], ['actor', '#actor-mode', /立ち絵/], ['footer', '#draft-footer', /フッター/], ['note', '#overlay-x', /追加した文字/]]) {
+  for (const [target, field, heading] of [['header', '#draft-title', /ヘッダー/], ['chat', '#draft-maxVisible', /コメント欄/], ['speech', '#draft-speechStyle', /読み上げ/], ['actor', '#actor-mode', /立ち絵/], ['footer', '#draft-footer', /フッター/], ['pinned', '#panel-x', /固定コメント/], ['note', '#overlay-x', /追加した文字/]]) {
     await editorTarget(editor, target);
     assert.deepEqual(await shown(editor), [target === 'note' ? 'overlay' : target]);
     assert.equal(await editor.locator(field).isVisible(), true);
@@ -366,7 +366,7 @@ browserTest('a 150px wide editor keeps every target’s settings within the widt
     return { scroll: dialog.scrollWidth, width, wide: [...dialog.querySelectorAll('*')].filter(element => { const box = element.getBoundingClientRect(); return box.width > 0 && box.right > width + .5; }).map(element => element.id || element.tagName).slice(0, 10) };
   });
   const views = [['targets']];
-  for (const target of ['screen', 'header', 'chat', 'speech', 'actor', 'footer']) views.push([target]);
+  for (const target of ['screen', 'header', 'chat', 'speech', 'actor', 'footer', 'pinned']) views.push([target]);
   for (const [target] of views) {
     if (target !== 'targets') await editorTarget(editor, target);
     const result = await overflow();

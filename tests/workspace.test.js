@@ -28,3 +28,18 @@ test('saved talk layouts roundtrip without carrying unrelated fields', () => {
   assert.deepEqual(normalizeLayout(JSON.parse(JSON.stringify(state)), PANEL_IDS.talk), state);
   assert.equal(state.token, undefined);
 });
+
+test('pinned is appended and a missing pin borrows only normalized chat geometry', () => {
+  const originalIds = ['header', 'chat', 'speech', 'actor', 'footer'];
+  assert.deepEqual(PANEL_IDS.talk, [...originalIds, 'pinned']);
+  for (const [h, z, expectedH, expectedZ] of [[30, 5, 15, 6], [8, 99, 8, 99]]) {
+    const panels = Object.fromEntries(originalIds.map((id, index) => [id, { x: index + 3, y: index + 4, w: 40, h: id === 'chat' ? h : 20, z: id === 'chat' ? z : index, hidden: id === 'chat' }]));
+    const raw = { panels }, before = structuredClone(raw);
+    const normalized = normalizeLayout(raw, PANEL_IDS.talk);
+    assert.deepEqual(normalized.panels.pinned, { x: panels.chat.x, y: panels.chat.y, w: 40, h: expectedH, z: expectedZ, hidden: false });
+    for (const id of originalIds) assert.deepEqual(normalized.panels[id], panels[id]);
+    assert.deepEqual(raw, before, 'reading does not rewrite saved layouts');
+    delete panels.actor;
+    assert.equal(normalizeLayout(raw, PANEL_IDS.talk), null, 'only a missing pinned panel can be supplemented');
+  }
+});

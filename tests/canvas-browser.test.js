@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget, editorThemeCSS, temporaryDataDirectory } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, waitForDesign, editorTarget, editorThemeCSS, temporaryDataDirectory } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t) {
@@ -23,6 +23,57 @@ async function fixture(t) {
   return { page, editor, url };
 }
 async function number(editor, id, value) { const input = editor.locator(`#${id}`); await input.fill(String(value)); await input.press('Tab'); }
+
+browserTest('pinned target supports placement, resize, stacking, hide, undo, ratio copy and reset without a live pin', async t => {
+  const { page, editor, url } = await fixture(t);
+  const frame = page.frameLocator('#design-preview-editor #design-preview-frame');
+  await editorTarget(editor, 'pinned');
+  await frame.locator('#stage-pinned-list .stage-comment').waitFor();
+  assert.equal(await editor.locator('#draft-state').textContent(), '変更なし');
+  await editor.locator('#canvas-snap').uncheck();
+  await number(editor, 'panel-x', 10); await number(editor, 'panel-y', 10);
+  await number(editor, 'panel-w', 50); await number(editor, 'panel-h', 20);
+  const target = editor.locator('.canvas-target[data-target-id=pinned]');
+  await target.press('ArrowRight');
+  assert.equal(Number(await editor.locator('#panel-x').inputValue()), 11);
+  await target.press('Shift+ArrowDown');
+  assert.equal(Number(await editor.locator('#panel-h').inputValue()), 21);
+  const beforeMove = Number(await editor.locator('#panel-x').inputValue());
+  const box = await target.boundingBox(), canvas = await editor.locator('#design-preview-frame').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + canvas.width * .02, box.y + box.height / 2); await page.mouse.up();
+  assert.ok(Math.abs(Number(await editor.locator('#panel-x').inputValue()) - beforeMove - 2) < .2);
+  const oldWidth = Number(await editor.locator('#panel-w').inputValue());
+  const handle = await target.locator('[data-edge=se]').boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2); await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + canvas.width * .02, handle.y + handle.height / 2); await page.mouse.up();
+  assert.ok(Math.abs(Number(await editor.locator('#panel-w').inputValue()) - oldWidth - 2) < .2);
+  const originalZ = Number(await editor.locator('#panel-z').inputValue());
+  await editor.locator('#canvas-backward').click();
+  assert.notEqual(Number(await editor.locator('#panel-z').inputValue()), originalZ);
+  await editor.locator('#undo-design').click(); assert.equal(Number(await editor.locator('#panel-z').inputValue()), originalZ);
+  await editor.locator('#panel-hidden').check();
+  assert.equal(await frame.locator('.stage-pinned').isVisible(), false);
+  await editorTarget(editor, 'actor'); assert.equal(await target.isVisible(), false);
+  await editorTarget(editor, 'pinned'); assert.equal(await target.isVisible(), true);
+  await editor.locator('#undo-design').click(); assert.equal(await editor.locator('#panel-hidden').isChecked(), false);
+  await editor.locator('#redo-design').click(); assert.equal(await editor.locator('#panel-hidden').isChecked(), true);
+  await editor.locator('#panel-hidden').uncheck();
+  const sourceX = Number(await editor.locator('#panel-x').inputValue());
+  await editor.locator('#preview-ratio').selectOption('4:3'); await editorTarget(editor, 'screen');
+  await editor.locator('#copy-ratio-source').selectOption('16:9');
+  await editor.locator('#copy-ratio').click(); await editor.locator('#editor-confirm-accept').click();
+  await editorTarget(editor, 'pinned'); assert.equal(Number(await editor.locator('#panel-x').inputValue()), sourceX);
+  await editorTarget(editor, 'screen'); await editor.locator('#reset-ratio').click(); await editor.locator('#editor-confirm-accept').click();
+  await editor.locator('#undo-design').click(); await editorTarget(editor, 'pinned');
+  assert.equal(Number(await editor.locator('#panel-x').inputValue()), sourceX);
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  await waitForDesign(url, design => Math.abs(design.ratios['4:3']?.layout?.panels.pinned.x - sourceX) < .001);
+  const design = await readDesign(url);
+  assert.ok(Math.abs(design.ratios['16:9'].layout.panels.pinned.x - sourceX) < .001);
+  assert.ok(Math.abs(design.ratios['4:3'].layout.panels.pinned.x - sourceX) < .001);
+  assert.equal(await page.frameLocator('#talk-frame').locator('.stage-pinned').getAttribute('hidden'), '', 'editing placement creates no real pin');
+});
 
 browserTest('canvas selection is read-only and the first panel edit materializes one undoable draft operation', async t => {
   const { page, editor, url } = await fixture(t), before = await readDesign(url);

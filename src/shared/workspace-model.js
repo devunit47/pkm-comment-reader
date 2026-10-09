@@ -1,4 +1,4 @@
-export const PANEL_IDS = { talk: ['header', 'chat', 'speech', 'actor', 'footer'] };
+export const PANEL_IDS = { talk: ['header', 'chat', 'speech', 'actor', 'footer', 'pinned'] };
 const bounded = (value, fallback, min, max) => typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
 
 // Coordinates and dimensions are percentages of the workspace canvas.
@@ -7,9 +7,16 @@ export function normalizeLayout(value, panelIds) {
   const panels = {};
   for (const id of panelIds) {
     const panel = value.panels[id];
+    if (id === 'pinned' && !Object.hasOwn(value.panels, id)) continue;
     if (!panel || typeof panel !== 'object') return null;
     const w = bounded(panel.w, 30, 5, 100), h = bounded(panel.h, 30, 5, 100);
     panels[id] = { x: bounded(panel.x, 0, 0, 100 - w), y: bounded(panel.y, 0, 0, 100 - h), w, h, z: Math.round(bounded(panel.z, 1, 0, 99)), hidden: panel.hidden === true };
+  }
+  if (panelIds.includes('pinned') && !panels.pinned) {
+    const chat = panels.chat;
+    if (!chat) return null;
+    // Existing layouts gain only this panel; reading never moves saved panels.
+    panels.pinned = { x: chat.x, y: chat.y, w: chat.w, h: Math.min(15, chat.h), z: Math.min(99, chat.z + 1), hidden: false };
   }
   return { panels };
 }

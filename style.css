@@ -256,4 +256,5 @@ body.pokome-talk{margin:0;width:100%;height:100%;overflow:hidden}
 @media(max-width:300px){#talk-controls .stage-controls{grid-template-columns:minmax(0,1fr)}#stage-connection-content{padding:8px}#stage-connection-content form,#stage-connection-content p{margin:8px}.stage-switch{flex-direction:column}}
 
 .stage-pinned{flex:0 1 auto;max-height:30%}
+#user-actions #pin-comment{font-size:11px}
 .pinned-details{padding:16px;min-width:0;overflow-wrap:anywhere}.pinned-details p{margin:0 0 12px;line-height:1.7}.pinned-details strong{display:block;margin-bottom:8px}.pinned-details button{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere}

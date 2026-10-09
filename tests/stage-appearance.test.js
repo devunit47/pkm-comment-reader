@@ -224,7 +224,7 @@ test('overlay rendering creates owner-document nodes, preserves literal text and
   assert.equal(element.dataset.overlayId, 'text-one'); assert.equal(element.textContent, text);
   assert.equal(element.children.length, 0); assert.equal(element.hidden, true);
   assert.deepEqual(Object.fromEntries(element.style.values), {
-    left: '7%', top: '12%', width: '41%', height: '19%', 'z-index': '261', color: '#12abcd', 'font-size': '48px',
+    left: '7%', top: '12%', width: '41%', height: '19%', 'z-index': '262', color: '#12abcd', 'font-size': '48px',
   });
   assert.equal(preview.get('stage-title').textContent, '');
 });
@@ -316,7 +316,6 @@ test('comment look writes only the attributes and variables it needs and removes
   assert.deepEqual(stage.dataset, baseline.dataset);
   assert.deepEqual(new Map(stage.style.values), baseline.style);
 });
-
 
 test('pinned cards use raw text safely and remove the entire panel when released', () => {
   const { stage, get } = fixture();

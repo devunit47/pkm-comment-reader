@@ -60,7 +60,7 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
     ['addition ahead of chat', 2, 4, ['second', 'first', 'footer', 'actor', 'speech', 'header', 'chat']],
   ]) {
     await saveDesign(url, design => ({ ...design, studio: { ...design.studio, layout: 'left' }, ratios: { ...design.ratios, '16:9': {
-      layout: { version: 1, panels: Object.fromEntries(ids.map(id => [id, { x: 20, y: 20, w: 50, h: 50, z: id === 'chat' ? chatZ : 3, hidden: false }])) },
+      layout: { version: 1, panels: { ...Object.fromEntries(ids.map(id => [id, { x: 20, y: 20, w: 50, h: 50, z: id === 'chat' ? chatZ : 3, hidden: false }])), pinned: { x: 20, y: 20, w: 50, h: 15, z: 3, hidden: true } } },
       overlays: { version: 1, items: ['first', 'second'].map(id => createOverlay(id === 'first' ? 'image' : 'text', { id, assetId: 'red', text: id, x: 20, y: 20, w: 50, h: 50, z: overlayZ })), assets: { red: ref } },
     } } }));
     await page.goto(url); await appReady(page);
@@ -97,7 +97,7 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
   const expectedDefault = ['one', 'zero', 'chat'];
   const legacyOrder = async stage => (await paintOrder(stage, 'chat')).filter(id => expectedDefault.includes(id));
   assert.deepEqual(await legacyOrder(previewStage), expectedDefault, 'default layout retains master paint order: canvas');
-  assert.deepEqual(await editor.locator('#target-select option').evaluateAll(options => options.map(o => o.value)), ['screen', ...ids, 'zero', 'one']);
+  assert.deepEqual(await editor.locator('#target-select option').evaluateAll(options => options.map(o => o.value)), ['screen', ...ids, 'pinned', 'zero', 'one']);
   assert.equal((await readDesign(url)).ratios['16:9'].layout, null, 'reading leaves the saved layout unchanged');
   await closeEditor(editor);
   await page.locator('[data-page="home"]').click(); await page.locator('#enter-talk').click();

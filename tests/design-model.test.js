@@ -167,9 +167,10 @@ test('each ratio has a built-in default: the grid for 16:9 and 4:3, a percentage
   assert.equal(defaultTalkLayout('4:3'), null);
   const portrait = defaultTalkLayout('9:16');
   assert.deepEqual(portrait, normalizeLayout(portrait, PANEL_IDS.talk), 'the default is already normalized');
-  assert.deepEqual(portrait.panels.chat, { x: 4, y: 64, w: 92, h: 29, z: 2, hidden: false });
+  assert.deepEqual(portrait.panels.chat, { x: 4, y: 74, w: 92, h: 19, z: 2, hidden: false });
+  assert.deepEqual(portrait.panels.pinned, { x: 4, y: 64, w: 92, h: 9, z: 2, hidden: false });
   // Panels do not overlap, and the speech panel fits its 220px minimum at 1920px tall.
-  const order = ['header', 'actor', 'speech', 'chat', 'footer'].map(id => portrait.panels[id]);
+  const order = ['header', 'actor', 'speech', 'pinned', 'chat', 'footer'].map(id => portrait.panels[id]);
   for (let index = 1; index < order.length; index++) assert.ok(order[index].y >= order[index - 1].y + order[index - 1].h, `panel ${index}`);
   assert.ok(portrait.panels.speech.h / 100 * 1920 >= 220);
   portrait.panels.chat.x = 50;
@@ -286,4 +287,19 @@ test('normalized version 2 image coordinates survive conversion and saving for e
     assert.deepEqual(talkActorImage(current, ratio), defaultActorImage());
   }
   assert.deepEqual(normalizeDesign(JSON.parse(JSON.stringify(current)), images), current);
+});
+
+test('saved five-panel ratios gain a pin without moving the original panels or retaining private comment data', () => {
+  const ids = ['header', 'chat', 'speech', 'actor', 'footer'];
+  const panels = Object.fromEntries(ids.map((id, index) => [id, { x: 5 + index, y: 10 + index, w: 30, h: 20, z: index, hidden: false }]));
+  const raw = { format: 'pokome-design', version: 3, pinned: { text: 'private' }, ratios: Object.fromEntries(RATIOS.map(ratio => [ratio, { layout: { panels }, pinned: { text: 'private' } }])) };
+  const before = structuredClone(raw), normalized = normalizeDesign(raw);
+  for (const ratio of RATIOS) {
+    const layout = talkLayout(normalized, ratio);
+    for (const id of ids) assert.deepEqual(layout.panels[id], panels[id]);
+    assert.deepEqual(layout.panels.pinned, { ...panels.chat, h: 15, z: panels.chat.z + 1 });
+    assert.equal(Object.hasOwn(normalized.ratios[ratio], 'pinned'), false);
+  }
+  assert.equal(Object.hasOwn(normalized, 'pinned'), false);
+  assert.deepEqual(raw, before);
 });

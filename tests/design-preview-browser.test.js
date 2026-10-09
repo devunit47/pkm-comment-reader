@@ -190,7 +190,7 @@ browserTest('design preview edits multiple text/image items independently, appli
   assert.ok(Number(await editor.locator('#overlay-w').inputValue()) > sizeBefore.w);
   assert.ok(Number(await editor.locator('#overlay-h').inputValue()) > sizeBefore.h);
   await number(editor, 'z', 9);
-  assert.equal(await firstItem.evaluate(element => getComputedStyle(element).zIndex), String(9 * 32 + 5));
+  assert.equal(await firstItem.evaluate(element => getComputedStyle(element).zIndex), String(9 * 32 + 6));
   await editor.locator('#overlay-hidden').check(); assert.equal(await firstItem.isVisible(), false);
   await editor.locator('#overlay-hidden').uncheck(); assert.equal(await firstItem.isVisible(), true);
   await editorTarget(editor, second); await editor.locator('#delete-overlay').click();
@@ -346,9 +346,9 @@ browserTest('preview CSS and sample markup are isolated; Cancel, iframe Escape a
   await editorThemeCSS(editor);
   await editor.locator('#draft-css').fill('.pokome-workspace .pokome-comment__author { color: #123456; }');
   assert.equal(await frame.locator('#talk-stage').getAttribute('data-theme'), 'rose');
-  assert.equal(await frame.locator('.stage-comment.pokome-comment').count(), 10);
+  assert.equal(await frame.locator('#stage-chat-list .stage-comment.pokome-comment').count(), 10);
   assert.equal(await frame.locator('.pokome-comment__author').first().evaluate(element => getComputedStyle(element).color), 'rgb(18, 52, 86)');
-  assert.equal(await frame.locator('.pokome-comment__body').count(), 10);
+  assert.equal(await frame.locator('#stage-chat-list .pokome-comment__body').count(), 10);
   assert.equal(await frame.locator('script,iframe,object,embed,link').count(), 0);
   assert.equal(await page.locator(frameSelector).getAttribute('sandbox'), 'allow-same-origin');
   assert.match(await frame.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content'), /connect-src 'none'/);
@@ -538,7 +538,7 @@ browserTest('a design saved elsewhere reaches the page live and an older open dr
 });
 
 browserTest('preview speech clamp uses saved geometry and relaxes when draft CSS lowers the minimum', async t => {
-  const panels = Object.fromEntries(['header','chat','speech','actor','footer'].map(id => [id, { x: 0, y: 0, w: 40, h: 20, z: 1, hidden: false }]));
+  const panels = Object.fromEntries(['header','chat','speech','actor','footer','pinned'].map(id => [id, { x: 0, y: 0, w: 40, h: 20, z: 1, hidden: false }]));
   panels.speech = { x: 50, y: 75, w: 50, h: 25, z: 2, hidden: false };
   const { page, editor, url, errors } = await fixture(t, { design: design => ({ ...design, theme: '.pokome-workspace .stage-speech { min-height:300px; }',
     ratios: { ...design.ratios, '16:9': { layout: { panels }, overlays: overlays([]) } } }) });

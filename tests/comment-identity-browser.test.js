@@ -48,6 +48,62 @@ async function receive(page, text, tags = 'color=#ffffff;badges=vip/1;emotes=25:
   await page.evaluate(({ text, tags }) => window.testSockets[0].onmessage({ data: `@${tags} :viewer!viewer@host PRIVMSG #qa_channel :${text}\r\n` }), { text, tags });
 }
 
+browserTest('pinned raw comments share identity, anonymous styles, emote fallback and line limits across all three scenes', async t => {
+  const { page, context, base, errors } = await fixture(t, { commentBadges: true, commentAuthorColor: 'service', commentPanel: 'light', commentMaxLines: 2 });
+  const { saveDesign } = await import('./browser-support.js');
+  await page.evaluate(() => { window.speechSynthesis.speak = utterance => { window.spoken.push(utterance.text); utterance.onstart?.(); }; });
+  const raw = 'Kappa Kappa Broken https://example.test/private-marker ' + '固定の本文は短縮しません。'.repeat(70);
+  await receive(page, raw, 'color=#ffffff;badges=broadcaster/1,moderator/1,vip/1,subscriber/12;emotes=25:0-4,6-10/broken:12-17');
+  await page.locator('#comment-list .message').last().click(); await page.locator('#pin-comment').click();
+  const output = await context.newPage(); await output.goto(base + '/output.html');
+  await output.locator('#stage-pinned-list .stage-comment').waitFor({ state: 'attached' });
+  await page.locator('#enter-talk').click();
+  const live = talkStage(page);
+  const ready = owner => owner.waitForFunction(() => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    const list = doc.querySelector('#stage-pinned-list');
+    return list?.textContent.includes('Broken') && list.querySelectorAll('img').length === 2 && [...list.querySelectorAll('img')].every(img => img.complete && img.naturalWidth > 0);
+  });
+  await ready(page); await ready(output);
+  const inspect = list => list.evaluate(element => {
+    const card = element.querySelector('.stage-comment'), author = card.querySelector('strong'), body = card.querySelector('p'), css = getComputedStyle(body);
+    return { title: card.title, color: getComputedStyle(author).color, nameDisplay: getComputedStyle(author).display,
+      font: css.fontSize, line: css.lineHeight, clamp: css.webkitLineClamp, badges: author.querySelectorAll('.pokome-comment__badge').length,
+      images: [...body.querySelectorAll('img')].map(image => [getComputedStyle(image).height, image.naturalWidth > 0]),
+      broken: body.textContent.includes('Broken'), pieces: body.querySelectorAll('.pokome-comment__emote-piece').length };
+  });
+  const actual = await inspect(live.locator('#stage-pinned-list'));
+  assert.deepEqual(await inspect(output.locator('#stage-pinned-list')), actual);
+  assert.equal(actual.title, 'viewer: ' + raw);
+  assert.equal(actual.badges, 4); assert.equal(actual.pieces, 2); assert.equal(actual.broken, true); assert.equal(actual.clamp, '2');
+  assert.ok(actual.images.every(([height, loaded]) => parseFloat(height) === parseFloat(actual.font) * 2 && loaded));
+  assert.ok((await page.evaluate(() => window.spoken.at(-1))).length < raw.length);
+  assert.equal(await live.locator('.stage-speech').getAttribute('data-speaking'), 'true');
+  await page.locator('#stage-design-edit').click(); await editorTarget(page, 'pinned');
+  const preview = page.frameLocator('#design-preview-frame');
+  await preview.locator('#stage-pinned-list img').first().waitFor({ state: 'attached' });
+  await preview.locator('#stage-pinned-list img').evaluateAll(images => Promise.all(images.map(image => image.decode())));
+  const sample = await inspect(preview.locator('#stage-pinned-list'));
+  for (const key of ['color', 'nameDisplay', 'font', 'line', 'clamp', 'badges']) assert.equal(sample[key], actual[key], key);
+  assert.equal(sample.title.includes('private-marker'), false, 'preview uses fictional content');
+  await closeEditor(page);
+  await saveDesign(base, design => ({ ...design, studio: { ...design.studio, commentStyle: 'anonymous', commentEmotes: 'text', commentMaxLines: 0 } }));
+  for (const owner of [page, output]) await owner.waitForFunction(() => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    return doc.querySelector('#stage-pinned-list').dataset.commentStyle === 'anonymous' && !doc.querySelector('#stage-pinned-list img');
+  });
+  for (const list of [live.locator('#stage-pinned-list'), output.locator('#stage-pinned-list')]) {
+    const result = await inspect(list);
+    assert.equal(result.nameDisplay, 'none'); assert.equal(result.clamp, 'none'); assert.equal(await list.locator('p').textContent(), raw);
+  }
+  await page.locator('#stage-design-edit').click();
+  await preview.locator('#stage-pinned-list .stage-comment').waitFor({ state: 'attached' });
+  const anonymous = await inspect(preview.locator('#stage-pinned-list'));
+  assert.equal(anonymous.nameDisplay, 'none'); assert.equal(anonymous.clamp, 'none'); assert.equal(anonymous.images.length, 0);
+  await closeEditor(page);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('Twitch emotes and service colors reach live, preview and output; failed images become text and speech excludes emotes', async t => {
   const { context, page, base, requests, errors } = await fixture(t, { commentAuthorColor: 'service', commentPanel: 'light' });
   await receive(page, '😀 Kappa hello');
@@ -61,7 +117,7 @@ browserTest('Twitch emotes and service colors reach live, preview and output; fa
   const color = locator => locator.evaluate(element => getComputedStyle(element).color);
   const liveColor = await color(talkStage(page).locator('#stage-chat-list .stage-comment').filter({ hasText: 'viewer' }).first().locator('strong'));
   assert.equal(await color(output.locator('#stage-chat-list .stage-comment').filter({ hasText: 'viewer' }).first().locator('strong')), liveColor);
-  assert.equal(await color(frame.locator('.stage-comment').first().locator('strong')), liveColor);
+  assert.equal(await color(frame.locator('#stage-chat-list .stage-comment').first().locator('strong')), liveColor);
   assert.ok(requests.every(url => /^https:\/\/static-cdn\.jtvnw\.net\/emoticons\/v2\/[A-Za-z0-9_]+\/default\/dark\/3\.0$/.test(url)));
   await closeEditor(page);
   assert.deepEqual(await page.evaluate(() => window.spoken), ['viewerさん。😀 hello']);
@@ -76,7 +132,7 @@ browserTest('Twitch emotes and service colors reach live, preview and output; fa
   const count = requests.length;
   await receive(page, '😀 Kappa hello');
   await page.locator('#open-design-preview').click();
-  await frame.locator('.stage-comment').nth(9).waitFor({ state: 'attached' });
+  await frame.locator('#stage-chat-list .stage-comment').nth(9).waitFor({ state: 'attached' });
   assert.equal(await frame.locator('img.pokome-comment__emote').count(), 0);
   await page.waitForTimeout(150);
   assert.equal(requests.length, count, 'text mode never requests the CDN, including preview and new comments');
@@ -190,10 +246,10 @@ browserTest('one-comment previews retain role and emote samples in both newest p
   const frame = page.frameLocator('#design-preview-frame');
   for (const position of ['bottom', 'top']) {
     await page.locator('#draft-newestPosition').selectOption(position);
-    await frame.locator('.stage-comment').waitFor({ state: 'attached' });
-    assert.equal(await frame.locator('.stage-comment').count(), 1);
-    assert.equal(await frame.locator('img.pokome-comment__emote').count(), 1, `${position}: emote sample`);
-    assert.equal(await frame.locator('.pokome-comment__badge').count(), 4, `${position}: role samples`);
+    await frame.locator('#stage-chat-list .stage-comment').waitFor({ state: 'attached' });
+    assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 1);
+    assert.equal(await frame.locator('#stage-chat-list img.pokome-comment__emote').count(), 1, `${position}: emote sample`);
+    assert.equal(await frame.locator('#stage-chat-list .pokome-comment__badge').count(), 4, `${position}: role samples`);
   }
 });
 browserTest('emotes are twice the text height, preserve their image ratio and remain whole inside clamped chips', async t => {

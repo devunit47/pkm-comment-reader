@@ -251,8 +251,8 @@ browserTest('the preview shows and edits each ratio separately, with edge guides
   // The draw runs on the next frame after the size changes.
   await frame.locator('.pokome-overlay').first().waitFor({ state: 'detached' });
   assert.equal(await frame.locator('.pokome-overlay').count(), 0, '9:16 starts without the 16:9 additions');
-  // At 1920px tall the speech minimum fits, so the comments sit at their saved 64%.
-  assert.equal(await frame.locator('#talk-stage .stage-chat').evaluate(element => { const stage = element.closest('#talk-stage').getBoundingClientRect(); return Math.round((element.getBoundingClientRect().top - stage.top) / stage.height * 100); }), 64);
+  // At 1920px tall the speech minimum fits, so comments sit below the pin at 74%.
+  assert.equal(await frame.locator('#talk-stage .stage-chat').evaluate(element => { const stage = element.closest('#talk-stage').getBoundingClientRect(); return Math.round((element.getBoundingClientRect().top - stage.top) / stage.height * 100); }), 74);
   assert.equal(await preview.locator('#preview-guides').isVisible(), true);
   assert.equal(await frame.locator('#safe-guides .guide-shade').count(), 2);
   assert.deepEqual(await frame.locator('#safe-guides .guide-shade').evaluateAll(nodes => nodes.map(node => node.style.height)), ['6%', '10%']);
