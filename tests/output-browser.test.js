@@ -64,6 +64,55 @@ const mockSpeechAndConnection = () => {
   window.WebSocket = class { constructor() { window.testSockets.push(this); } send() {} close() {} };
 };
 
+browserTest('Twitch event controls retain notice-only pins, speak only bodies and block anonymous-user rules', async t => {
+  const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
+  await page.evaluate(() => { document.querySelector('#twitch-channel').value = 'qa_channel'; document.querySelector('#twitch-connect-form').requestSubmit(); });
+  await page.waitForFunction(() => window.testSockets.length === 1);
+  await page.evaluate(() => window.testSockets[0].onmessage({ data: ':server 366 anon #qa_channel :End\r\n' }));
+  const send = async (tags, body = '') => page.evaluate(({ tags, body }) => window.testSockets[0].onmessage({ data: `@${tags} :tmi.twitch.tv USERNOTICE #qa_channel${body ? ` :${body}` : ''}` }), { tags, body });
+  await send('id=sub;msg-id=sub;login=viewer;display-name=Viewer;msg-param-sub-plan=1000');
+  await page.locator('#comment-list [data-event="sub"]').waitFor();
+  assert.match(await page.locator('#count').textContent(), /^0 /);
+  assert.deepEqual(await page.evaluate(() => window.spoken), []);
+  await page.locator('#comment-list .message').first().click();
+  assert.equal(await page.locator('#read-selected').isDisabled(), true);
+  assert.equal(await page.locator('#preview-text').textContent(), '読み上げる本文がありません');
+  await page.locator('#pin-comment').click();
+  assert.match(await page.locator('#pinned-text').textContent(), /サブスク・Tier 1/);
+  const output = await context.newPage(); await output.goto(url + '/output.html');
+  await send('id=resub;msg-id=resub;login=viewer;display-name=Viewer;msg-param-cumulative-months=6', '投稿者の本文');
+  await page.waitForFunction(() => window.spoken.length === 1);
+  assert.deepEqual(await page.evaluate(() => window.spoken), ['投稿者の本文']);
+  await output.waitForFunction(() => document.querySelector('#stage-speech-text')?.textContent === '投稿者の本文');
+  const before = await output.locator('#stage-speech-text').textContent();
+  const credit = await page.locator('#preview-speech-credit').textContent();
+  await send('id=gift;msg-id=subgift;login=giver;msg-param-recipient-display-name=受取人');
+  assert.equal(await page.locator('#preview-speech-credit').textContent(), credit);
+  assert.equal(await output.locator('#stage-speech-text').textContent(), before);
+  assert.deepEqual(await page.evaluate(() => window.spoken), ['投稿者の本文']);
+  assert.match(await page.locator('#pinned-text').textContent(), /サブスク・Tier 1/);
+  await page.locator('#search').fill('受取人'); assert.equal(await page.locator('#comment-list .message').count(), 1);
+  await page.locator('#search').fill('');
+  await page.locator('#filter').selectOption('first'); assert.equal(await page.locator('#comment-list .message').count(), 0);
+  await page.locator('#filter').selectOption('all');
+  await send('id=anon;msg-id=subgift;login=ananonymousgifter;display-name=AnAnonymousGifter;user-id=274598607;msg-param-recipient-display-name=受取人');
+  await page.locator('#comment-list [data-event="gift"] .message').last().click();
+  assert.equal(await page.locator('#hide-user').isDisabled(), true);
+  assert.equal(await page.locator('#mute-user').isDisabled(), true);
+  await page.locator('#pin-comment').click(); assert.equal(await page.locator('#pinned-user').textContent(), '匿名');
+  await page.locator('#comment-list [data-event="gift"] .message').last().click();
+  await page.locator('#hide-comment').click(); assert.equal(await page.locator('#pinned-empty').isVisible(), true);
+  await send('id=unknown-author;msg-id=sub'); await page.locator('#comment-list [data-event="sub"] .message').last().click();
+  assert.equal(await page.locator('#selected-user').textContent(), '投稿者不明'); assert.equal(await page.locator('#hide-user').isDisabled(), true);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.testSockets[0].onmessage({ data: '@bits=100 :viewer!viewer@host PRIVMSG #qa_channel :Cheer100' }));
+  await page.locator('#filter').selectOption('first'); assert.equal(await page.locator('#comment-list .message').count(), 1);
+  assert.match(await page.locator('#count').textContent(), /^1 /);
+  assert.equal(JSON.stringify(await readSettings(url)).includes('AnAnonymousGifter'), false);
+  assert.equal(JSON.stringify(await readDesign(url)).includes('受取人'), false);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('pin controls replace and release independent service comments, survive retention and fit narrow docks', async t => {
   const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
   await page.locator('#auto-speech').uncheck();

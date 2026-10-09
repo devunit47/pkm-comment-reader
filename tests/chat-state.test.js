@@ -123,3 +123,34 @@ test('hiding a selected pin after history retention removes it releases the pin'
   assert.equal(reconcilePinned(state), true);
   assert.equal(state.pinned, null);
 });
+
+test('notices share retention and search, but only PRIVMSG contributes to counts and first comments', () => {
+  const state = createChatState(); state.historyLimit = 2;
+  const event = { kind: 'gift', recipient: '受取人', plan: '2000' };
+  const gift = addMessage(state, '贈り主', '', 1, 0, 'giver', { event });
+  assert.ok(gift); assert.equal(gift.first, false); assert.equal(state.received, 0); assert.equal(state.seen.size, 0);
+  state.search = '受取人'; assert.deepEqual(visibleMessages(state), [gift]);
+  state.search = 'サブスクギフト'; assert.deepEqual(visibleMessages(state), [gift]);
+  state.search = ''; state.filter = 'first'; assert.deepEqual(visibleMessages(state), []);
+  const ordinary = addMessage(state, '贈り主', 'こんにちは', 2);
+  const bits = addMessage(state, 'other', 'Cheer100', 3, 0, 'other', { event: { kind: 'bits', bits: 100 } });
+  assert.equal(ordinary.first, true); assert.equal(bits.first, true); assert.equal(state.received, 2);
+  assert.deepEqual(state.messages.map(message => message.id), [2, 3]);
+  assert.equal(addMessage(state, 'viewer', '', 4, 0, '', { event: { kind: 'unknown' } }), null);
+});
+
+test('event pins are independent copies and anonymous notices ignore synthetic-user rules', () => {
+  const state = createChatState();
+  const gift = addMessage(state, '贈り主', '', 1, 0, 'giver', { event: { kind: 'gift', recipient: '受取人' } });
+  state.rules['受取人'] = { hidden: true };
+  setPinned(state, gift); gift.event.recipient = 'changed';
+  assert.equal(state.pinned.event.recipient, '受取人'); assert.equal(reconcilePinned(state), false);
+  state.rules['贈り主'] = { hidden: true }; assert.equal(reconcilePinned(state), true);
+  const anonymous = addMessage(state, 'AnAnonymousGifter', '', 2, 0, 'ananonymousgifter', { event: { kind: 'gift', anonymous: true } });
+  state.rules.AnAnonymousGifter = { hidden: true }; state.rules[''] = { hidden: true };
+  assert.equal(anonymous.user, ''); assert.equal(anonymous.login, '');
+  assert.deepEqual(visibleMessages(state), [anonymous]);
+  setPinned(state, anonymous); assert.equal(reconcilePinned(state), false);
+  anonymous.hidden = true; assert.equal(reconcilePinned(state), true);
+  clearMessages(state); assert.equal(state.messages.length, 0);
+});
