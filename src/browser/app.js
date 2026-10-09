@@ -638,18 +638,7 @@ function renderTalkAppearance() {
     { actorImage: talkActorImage(designStore.design, shownTalkRatio) });
 }
 function renderStudio() {
-  const stage = $('talk-stage');
   renderTalkAppearance();
-  const preview = document.querySelector('.speech-bubble');
-  preview.dataset.style = studio.speechStyle;
-  for (const property of ['--speech-background', '--speech-ink', '--speech-image', '--speech-image-ink']) {
-    preview.style.setProperty(property, stage.style.getPropertyValue(property));
-  }
-  const stageColors = stage.ownerDocument.defaultView.getComputedStyle(stage);
-  preview.style.setProperty('--stage-surface', stageColors.getPropertyValue('--stage-surface'));
-  preview.style.setProperty('--stage-text', stageColors.getPropertyValue('--stage-text'));
-  preview.style.setProperty('--stage-border', stageColors.getPropertyValue('--stage-border'));
-  preview.style.setProperty('--stage-accent', stageColors.getPropertyValue('--stage-accent'));
   $('studio-list-count').value = historyLimit;
   $('history-limit-label').textContent = `サービスごとに直近${historyLimit}件 · ユーザー名・コメントから操作`;
   outputPanel?.refresh();
