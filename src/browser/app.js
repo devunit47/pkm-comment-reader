@@ -8,7 +8,7 @@ import { exportSettings, parseSettings, restoreSettings, LEGACY_APPEARANCE_KEYS,
 import { createDesignStore } from './design-client.js';
 import { createSettingsStore } from './settings-client.js';
 import { SETTINGS_FIELDS } from '../shared/settings-model.js';
-import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage, talkLayout } from '../shared/design-model.js';
+import { resolveStudioImages, nearestRatio, talkActorImage, talkLayout } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
 import { createChatState, addMessage, userRule, visibleMessages, clearMessages, reconcilePinned, setPinned } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
@@ -796,17 +796,8 @@ talkView.ready.then(ready => {
   themeEditor.reflectTheme(designStore.design.theme); workspaceEditor.reload();
   renderStudio(); designPreview.showLive(); renderStageChat(); renderStageSpeech();
 });
-initializeCustomization({ platforms: enabledPlatforms, designStore,
-  async resetAppearance() {
-    // Preserve the operating UI too when the server protects an unreadable original.
-    await designStore.reset();
-    const design = defaultDesign();
-    studio = design.studio;
-    themeEditor.reflectTheme(design.theme); workspaceEditor.reload();
-    renderStudio(); render();
-    return true;
-  },
-});
+// The design store's change event refreshes the page after a reset.
+initializeCustomization({ platforms: enabledPlatforms, designStore, notify, resetAppearance: () => designStore.reset() });
 $('stage-design-edit').onclick = () => designPreview.openEditor();
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ settingsStore, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });
