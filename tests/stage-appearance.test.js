@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderStageAppearance, renderOverlays, renderPinnedComment } from '../src/browser/stage-appearance.js';
+import { renderStageAppearance, renderOverlays, renderPinnedComment, renderStageComments } from '../src/browser/stage-appearance.js';
 import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS, applyCommentPreset } from '../src/shared/studio.js';
 import { normalizeOverlays, createOverlay } from '../src/shared/overlay-model.js';
 import { normalizeActorImage } from '../src/shared/design-model.js';
@@ -328,4 +328,54 @@ test('pinned cards use raw text safely and remove the entire panel when released
   withoutGlobals(() => renderPinnedComment(stage, null, normalizeStudio()));
   assert.equal(stage.querySelector('.stage-pinned').hidden, true);
   assert.equal(get('stage-pinned-list').children.length, 0);
+});
+
+test('event cards retain literal headings, details and optional bodies independently of badges', () => {
+  const { get } = fixture(), list = get('stage-chat-list');
+  for (const event of [{ kind: 'sub', plan: 'Prime' }, { kind: 'resub', cumulativeMonths: 6 },
+    { kind: 'gift', recipient: '<受取人>', giftMonths: 3 }, { kind: 'giftBomb' }, { kind: 'bits', bits: 100 }]) {
+    renderStageComments(list, [{ user: '<贈り主>', text: '<本文>', event }], normalizeStudio());
+    const card = list.children[0];
+    assert.equal(card.dataset.event, event.kind);
+    assert.ok(card.querySelector('.pokome-comment__event-heading').textContent);
+    assert.equal(card.querySelector('.pokome-comment__body').textContent, '<本文>');
+    assert.equal(card.querySelector('img'), null);
+    if (event.kind === 'gift') assert.equal(card.querySelector('.pokome-comment__event-details').textContent, '<贈り主> → <受取人>');
+  }
+  renderStageComments(list, [{ user: '利用者', event: { kind: 'sub' } }], normalizeStudio());
+  assert.equal(list.children[0].querySelector('p'), null);
+  assert.equal(list.children[0].querySelector('.pokome-comment__event-heading').textContent, 'サブスク');
+});
+
+test('anonymous display removes all event participant names and compact retains its heading', () => {
+  const { get } = fixture(), list = get('stage-chat-list');
+  const message = { user: '贈り主', text: '本文', event: { kind: 'gift', recipient: '受取人', plan: '2000' } };
+  renderStageComments(list, [message], normalizeStudio({ commentStyle: 'anonymous', commentBadges: true }));
+  const card = list.children[0];
+  assert.equal(card.querySelector('strong'), null);
+  assert.equal(card.querySelector('.pokome-comment__event-details'), null);
+  for (const name of ['贈り主', '受取人']) { assert.ok(!card.textContent.includes(name)); assert.ok(!card.title.includes(name)); }
+  assert.match(card.title, /サブスクギフト・Tier 2/);
+  renderStageComments(list, [message], normalizeStudio({ commentStyle: 'compact' }));
+  assert.ok(list.children[0].querySelector('.pokome-comment__event-heading'));
+  assert.equal(list.children[0].querySelector('p'), null);
+  assert.equal(list.children[0].querySelector('.pokome-comment__event-details'), null);
+});
+
+test('event visibility removes empty cards and empty pinned panels while preserving message bodies', () => {
+  const { stage, get } = fixture();
+  const studio = normalizeStudio({ commentEvents: false });
+  assert.equal(studio.commentEvents, false);
+  assert.equal(normalizeStudio().commentEvents, true);
+  assert.equal(normalizeStudio({ commentEvents: 'false' }).commentEvents, true);
+  const notice = { user: '利用者', event: { kind: 'sub' } };
+  renderPinnedComment(stage, notice, studio);
+  assert.equal(stage.querySelector('.stage-pinned').hidden, true);
+  assert.equal(get('stage-pinned-list').children.length, 0);
+  renderPinnedComment(stage, { ...notice, text: '本文' }, studio);
+  assert.equal(stage.querySelector('.stage-pinned').hidden, false);
+  const card = get('stage-pinned-list').children[0];
+  assert.equal(card.dataset.event, undefined);
+  assert.equal(card.querySelector('p').textContent, '本文');
+  assert.equal(card.querySelector('.pokome-comment__event-heading'), null);
 });

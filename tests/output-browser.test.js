@@ -113,6 +113,41 @@ browserTest('Twitch event controls retain notice-only pins, speak only bodies an
   assert.deepEqual(errors, []);
 });
 
+browserTest('event cards sync to late outputs, expire independently of pins and fall back to bodies when disabled', async t => {
+  const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection, clock: true, maxVisible: 1 });
+  await page.locator('#auto-speech').uncheck();
+  await page.evaluate(() => { document.querySelector('#twitch-channel').value = 'qa_channel'; document.querySelector('#twitch-connect-form').requestSubmit(); });
+  await page.waitForFunction(() => window.testSockets.length === 1);
+  const send = (id, kind, body = '') => page.evaluate(({ id, kind, body }) => window.testSockets[0].onmessage({ data: `@id=${id};msg-id=${kind};login=viewer;display-name=Viewer :tmi.twitch.tv USERNOTICE #qa_channel${body ? ` :${body}` : ''}` }), { id, kind, body });
+  await page.evaluate(() => window.testSockets[0].onmessage({ data: ':server 366 anon #qa_channel :End\r\n' }));
+  await send('sub', 'sub'); await pinComment(page);
+  const output = await context.newPage(); await output.goto(url + '/output.html');
+  await output.locator('#stage-pinned-list [data-event="sub"]').waitFor();
+  await output.locator('#stage-chat-list [data-event="sub"]').waitFor({ state: 'attached' });
+  await output.reload(); await output.locator('#stage-pinned-list [data-event="sub"]').waitFor();
+  await send('resub', 'resub', '残す本文');
+  await send('gift', 'subgift');
+  await output.locator('#stage-chat-list [data-event="gift"]').waitFor({ state: 'attached' });
+  assert.equal(await output.locator('#stage-chat-list .stage-comment').count(), 1);
+  assert.match(await output.locator('#stage-count').textContent(), /^0 COMMENTS$/);
+  await saveStudio(url, { holdSeconds: 5, newestPosition: 'top' });
+  await context.clock.runFor(6000);
+  await output.waitForFunction(() => !document.querySelector('#stage-chat-list .stage-comment'));
+  assert.equal(await output.locator('#stage-pinned-list [data-event="sub"]').count(), 1);
+  await saveStudio(url, { holdSeconds: 0, commentEvents: false });
+  await output.waitForFunction(() => document.querySelector('.stage-pinned').hidden && document.querySelector('#stage-chat-list .pokome-comment__body')?.textContent === '残す本文');
+  assert.equal(await output.locator('[data-event]').count(), 0);
+  assert.equal(await page.locator('#comment-list [data-event]').count(), 3, 'operating history is independent of the design toggle');
+  assert.equal(await page.locator('#pinned-content').isVisible(), true, 'the event remains pinned in memory');
+  await pinComment(page, 1); await waitPinned(output, '残す本文');
+  assert.equal(await output.locator('#stage-pinned-list [data-event]').count(), 0);
+  await saveStudio(url, { commentEvents: true });
+  await output.locator('#stage-pinned-list [data-event="resub"]').waitFor();
+  await page.locator('#unpin-comment').click(); await waitUnpinned(output);
+  assert.deepEqual(await page.evaluate(() => window.spoken), []);
+  assert.deepEqual(errors, []);
+});
+
 browserTest('pin controls replace and release independent service comments, survive retention and fit narrow docks', async t => {
   const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
   await page.locator('#auto-speech').uncheck();

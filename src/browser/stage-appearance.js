@@ -1,4 +1,4 @@
-import { normalizeCommentContent } from '../shared/comment-model.js';
+import { normalizeCommentContent, normalizeCommentEvent, eventHeading, eventDetails, commentAuthor } from '../shared/comment-model.js';
 import { canvasZIndex } from '../shared/canvas-model.js';
 import { talkSpeechStyles, PANEL_IDS } from '../shared/workspace-model.js';
 import { THEME_ACCENTS } from '../shared/studio.js';
@@ -103,8 +103,8 @@ export function renderOverlays(stage, state) {
 
 // Keep synchronized history so relaxed settings can reveal it again.
 // Callers normalize settings once at the storage or draft boundary.
-export function selectOutputComments(messages, { maxVisible = 0, holdSeconds = 0, newestPosition = 'bottom' } = {}, now = Date.now(), expire = true) {
-  const eligible = messages.filter(message => !message.hidden && (!expire || holdSeconds === 0 ||
+export function selectOutputComments(messages, { maxVisible = 0, holdSeconds = 0, newestPosition = 'bottom', commentEvents = true } = {}, now = Date.now(), expire = true) {
+  const eligible = messages.filter(message => !message.hidden && (commentEvents || !normalizeCommentEvent(message.event) || !!normalizeCommentContent(message).text) && (!expire || holdSeconds === 0 ||
     (Number.isFinite(message.receivedAt) && message.receivedAt > 0 && now < message.receivedAt + holdSeconds * 1000)));
   const selected = maxVisible === 0 ? eligible : eligible.slice(-maxVisible);
   return newestPosition === 'top' ? selected.reverse() : selected;
@@ -131,12 +131,23 @@ function serviceNameColor(color, studio) {
 
 export function renderStageComments(list, messages, studio = {}) {
   const doc = list.ownerDocument;
-  list.replaceChildren(...messages.map(message => {
+  list.replaceChildren(...messages.flatMap(message => {
     const content = normalizeCommentContent(message);
+    const receivedEvent = normalizeCommentEvent(message.event);
+    const event = studio.commentEvents === false ? null : receivedEvent;
+    if (receivedEvent && !event && !content.text) return [];
+    const names = studio.commentStyle !== 'anonymous';
+    const user = commentAuthor({ ...message, event: receivedEvent });
+    const heading = eventHeading(event), details = eventDetails(event, user, names);
     const card = doc.createElement('div');
     card.className = 'stage-comment pokome-comment';
-    card.title = `${message.user}: ${content.text}`;
-    const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = message.user;
+    card.title = event ? [heading, names ? user : '', details, content.text].filter(Boolean).join('・') : names ? `${user}: ${content.text}` : content.text;
+    if (event) {
+      card.dataset.event = event.kind;
+      const title = doc.createElement('div'); title.className = 'pokome-comment__event-heading'; title.textContent = heading;
+      card.append(title);
+    }
+    const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = user;
     if (studio.commentBadges && content.badges.length) {
       author.textContent = '';
       for (const role of content.badges) {
@@ -145,9 +156,15 @@ export function renderStageComments(list, messages, studio = {}) {
         badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); badge.setAttribute('title', label);
         author.append(badge);
       }
-      const name = doc.createElement('span'); name.textContent = message.user; author.append(name);
+      const name = doc.createElement('span'); name.textContent = user; author.append(name);
     }
     if (studio.commentAuthorColor === 'service' && content.color) author.style.setProperty('color', serviceNameColor(content.color, studio), 'important');
+    if (!receivedEvent || names) card.append(author);
+    if (event && studio.commentStyle === 'compact') return card;
+    if (details) {
+      const detail = doc.createElement('div'); detail.className = 'pokome-comment__event-details'; detail.textContent = details; card.append(detail);
+    }
+    if (event && !content.text) return card;
     const body = doc.createElement('p'); body.className = 'pokome-comment__body';
     if (studio.commentEmotes === 'text') body.textContent = content.text;
     else for (const part of content.parts) {
@@ -165,7 +182,7 @@ export function renderStageComments(list, messages, studio = {}) {
       }
       body.append(piece);
     }
-    card.append(author, body);
+    card.append(body);
     return card;
   }));
 }
@@ -182,8 +199,9 @@ export function markClippedComments(list) {
 }
 
 export function renderPinnedComment(stage, pinned, studio) {
-  stage.querySelector('.stage-pinned').hidden = !pinned;
-  renderStageComments(stage.querySelector('#stage-pinned-list'), pinned ? [pinned] : [], studio);
+  const list = stage.querySelector('#stage-pinned-list');
+  renderStageComments(list, pinned ? [pinned] : [], studio);
+  stage.querySelector('.stage-pinned').hidden = !list.children.length;
 }
 
 export const TALK_PANEL_SELECTORS = Object.freeze({ header: '.stage-header', chat: '.stage-chat', speech: '.stage-speech', actor: '.stage-actor', footer: '.stage-footer', pinned: '.stage-pinned' });

@@ -28,6 +28,15 @@ const SAMPLE_PINNED = Object.freeze({ id: 'sample-pinned', user: '固定のサ�
   ...normalizeCommentContent({ text: '取り上げたいコメントをここに固定できます。 😀 Kappa', color: '#ffffff',
     badges: ['broadcaster', 'moderator', 'vip', 'subscriber'],
     parts: [{ type: 'text', text: '取り上げたいコメントをここに固定できます。 😀 ' }, { type: 'emote', id: '25', name: 'Kappa' }] }) });
+const SAMPLE_EVENTS = Object.freeze(Object.fromEntries([
+  ['sub', 'サブスク', { kind: 'sub', plan: 'Prime', cumulativeMonths: 1 }],
+  ['resub', '再サブスク', { kind: 'resub', plan: '1000', cumulativeMonths: 6, streakMonths: 3 }],
+  ['gift', 'サブスクギフト', { kind: 'gift', plan: '2000', giftMonths: 3, recipient: 'ギフトを受け取ったサンプルさん' }],
+  ['giftBomb', 'まとめてギフト', { kind: 'giftBomb', plan: '1000' }],
+  ['bits', 'ビッツ', { kind: 'bits', bits: 100 }],
+  ['anonymousGift', '匿名ギフト', { kind: 'gift', anonymous: true, plan: '1000', recipient: '匿名ギフトを受け取ったサンプルさん' }],
+].map(([key, label, event]) => [key, { label, message: { id: `sample-event-${key}`, user: '表示の折り返しを確認する長い名前のサンプルさん', receivedAt: 11, event,
+  ...normalizeCommentContent({ text: ['resub', 'bits'].includes(key) ? 'いつも楽しい配信をありがとう！ 😀 Kappa' : '', color: '#9146ff', badges: ['subscriber'] }) } }])));
 const size = value => value.split('x').map(Number);
 // Panels and additions share the same canvas controls.
 const PANEL_TARGETS = Object.freeze([['screen', '画面全体'], ['header', 'ヘッダー（タイトル）'], ['chat', 'コメント欄'], ['speech', '読み上げ'], ['actor', '立ち絵'], ['footer', 'フッター'], ['pinned', '固定コメント']]);
@@ -38,7 +47,7 @@ const TYPED_KEYS = ['title', 'subtitle', 'footer', 'speechTitle', 'accent', 'spe
 const NUMBER_KEYS = ['fontSize', 'speechFontSize', 'maxVisible', 'holdSeconds', 'commentItemOpacity', 'commentPanelOpacity'], NULLABLE_KEYS = ['commentMaxLines', 'commentGap', 'commentLineHeight'];
 // '' keeps the theme's color; the mode select chooses between it and the color input.
 const COLOR_MODE_KEYS = ['commentTextColor', 'commentAuthorColor'];
-const FIELD_KEYS = ['theme', 'accentMode', 'accent', 'decoration', 'title', 'subtitle', 'footer', 'speechTitle', 'fontSize', 'speechFontSize', 'speechStyle', 'speechBackground', 'speechTextColor', 'commentStyle', 'maxVisible', 'holdSeconds', 'newestPosition', 'source', 'actorAppearance', 'commentPanel', 'commentPanelOpacity', 'commentItemBackground', 'commentItemOpacity', 'commentOutline', 'commentOutlineColor', 'commentLineHeight', 'commentMaxLines', 'commentGap', 'commentDivider', 'commentLabel', 'commentEmotes', 'commentBadges'];
+const FIELD_KEYS = ['theme', 'accentMode', 'accent', 'decoration', 'title', 'subtitle', 'footer', 'speechTitle', 'fontSize', 'speechFontSize', 'speechStyle', 'speechBackground', 'speechTextColor', 'commentStyle', 'maxVisible', 'holdSeconds', 'newestPosition', 'source', 'actorAppearance', 'commentPanel', 'commentPanelOpacity', 'commentItemBackground', 'commentItemOpacity', 'commentOutline', 'commentOutlineColor', 'commentLineHeight', 'commentMaxLines', 'commentGap', 'commentDivider', 'commentLabel', 'commentEmotes', 'commentBadges', 'commentEvents'];
 const OUTPUT_LABELS = { '1920x1080': '1920 × 1080（横）', '1280x720': '1280 × 720（横）', '1080x1920': '1080 × 1920（縦）', '1440x1080': '1440 × 1080（4:3）' };
 const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
 const ACTOR_KEYS = ['mode', 'scale', 'alignX', 'alignY', 'offsetX', 'offsetY', 'overflow'];
@@ -78,6 +87,7 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 <button id="draft-reset" type="button">デザイン全体を標準に戻す</button><p><small>出力の大きさ・テーマCSS・すべての比率の配置と追加の文字・画像を含めて、標準のデザインを下書きに読み込みます。「適用」までは保存しません。</small></p></div>
 <div data-target="header" hidden><span class="scope">全比率共通の見た目</span>${textField('title', 'タイトル', 60)}${textField('subtitle', 'サブタイトル', 100)}</div>
 <div data-target="chat" hidden><span class="scope">全比率共通の見た目</span><label>コメント欄の見た目をまとめて切り替え<select id="draft-commentPreset">${options([...Object.entries(COMMENT_PRESETS).map(([value, preset]) => [value, preset.label]), ['', '個別に調整中']])}</select></label><p><small>選ぶと下の見た目とコメントの表示をまとめて変更します。配置・文字サイズ・表示件数は変えません。</small></p><label>コメントの表示<select id="draft-commentStyle">${options([['stacked', '名前を上に表示'], ['anonymous', '名前なし'], ['inline', '名前と本文を横並び'], ['compact', '1行コンパクト']])}</select></label><label>コメントの文字サイズ<input id="draft-fontSize" type="number" min="16" max="64" step="1"></label><p><small>テーマCSSに文字サイズの指定がある場合は、その指定が優先されます。</small></p>
+<label class="check"><input id="draft-commentEvents" type="checkbox">特別なカードを表示する</label><p><small>オフでも投稿者の本文は通常のコメントとして表示します。ホームの一覧・読み上げ・固定・履歴には影響しません。</small></p><label>確認する見本<select id="preview-comment-sample">${options([['normal', '通常のコメント'], ...Object.entries(SAMPLE_EVENTS).map(([key, value]) => [key, value.label])])}</select></label><p><small>選んだ通知を新着と固定欄に表示します。見本の選択は保存しません。</small></p>
 <label>配信出力の表示件数<select id="draft-maxVisible">${options([['0', '制限なし'], ...Array.from({ length: 30 }, (_, index) => [String(index + 1), `${index + 1}件`])])}</select></label><label>配信出力の表示時間<select id="draft-holdSeconds">${options([['0', '時間では消さない'], ['5', '5秒'], ['15', '15秒'], ['30', '30秒']])}</select></label><label>配信出力の新着位置<select id="draft-newestPosition">${options([['bottom', '下'], ['top', '上']])}</select></label><p><small>サンプルは時間で消えません。雑談画面の履歴表示は変わりません。</small></p>
 <label>投稿ごとの背景<select id="draft-commentItemBackground">${options([['theme', 'テーマのまま'], ['none', 'なし'], ['light', '白い丸い背景'], ['dark', '黒い丸い背景']])}</select></label><label>投稿背景の不透明度（%）<input id="draft-commentItemOpacity" type="number" min="0" max="100" step="1"></label><label>本文の最大行数<select id="draft-commentMaxLines">${options([['', 'テーマのまま'], ['0', '制限なし'], ...[1, 2, 3, 4, 5].map(lines => [String(lines), `${lines}行`])])}</select></label><p><small>本文だけを省略して表示します。保存した本文と読み上げには影響しません。「1行コンパクト」にも優先します。</small></p><label>コメント同士の間隔<select id="draft-commentGap">${options([['', 'テーマのまま'], ...[0, 4, 8, 12, 14, 16, 24].map(gap => [String(gap), `${gap}px`])])}</select></label>
 <label>パネルの背景<select id="draft-commentPanel">${options([['theme', 'テーマのまま'], ['none', 'なし（枠も消す）'], ['light', '白'], ['dark', '黒']])}</select></label><label>パネルの不透明度（%）<input id="draft-commentPanelOpacity" type="number" min="0" max="100" step="5"></label>
@@ -277,8 +287,11 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
       renderedStudio = studio; renderedActorImage = actorImage; renderedRatio = ratio;
     }
     renderOverlays(previewStage, resolveOverlayAssets(state, imageScope()));
-    renderStageComments(previewStage.querySelector('#stage-chat-list'), selectOutputComments(SAMPLE_COMMENTS, studio, 0, false), studio);
-    renderPinnedComment(previewStage, SAMPLE_PINNED, studio);
+    const sample = SAMPLE_EVENTS[$('preview-comment-sample').value]?.message;
+    const messages = sample ? [...SAMPLE_COMMENTS, sample] : SAMPLE_COMMENTS;
+    renderStageComments(previewStage.querySelector('#stage-chat-list'), selectOutputComments(messages, studio, 0, false), studio);
+    renderPinnedComment(previewStage, sample || SAMPLE_PINNED, studio);
+    previewStage.querySelector('#stage-count').textContent = `${messages.length} COMMENTS`;
     const themeStyle = frameDoc.getElementById('preview-theme');
     if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
     // The draft CSS can change the speech minimum, which moves the panels below it.
@@ -568,6 +581,7 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
   const snapInput = document.createElement('input'); snapInput.type = 'checkbox'; snapInput.id = 'canvas-snap'; snapInput.checked = true;
   snapLabel.append(snapInput, document.createTextNode('2%に位置をそろえる')); shadow.querySelector('.view').append(snapLabel);
   $('preview-guides').onchange = drawGuides;
+  $('preview-comment-sample').onchange = draw;
   $('target-select').onchange = () => { session?.seal(); select($('target-select').value); if (matchMedia('(max-width: 767px)').matches) tab('settings'); };
   $('add-text').onclick = () => {
     if (!editable() || ratioOverlays().items.length >= MAX_OVERLAYS) return;
