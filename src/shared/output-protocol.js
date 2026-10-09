@@ -49,7 +49,7 @@ export function normalizeOutputPreferences(value) {
   };
 }
 
-function normalizeComment(value) {
+export function normalizeComment(value) {
   if (!value || typeof value !== 'object') return null;
   const id = typeof value.id === 'number' && Number.isSafeInteger(value.id) ? String(value.id) : text(value.id, 64);
   const content = normalizeCommentContent(value);
@@ -80,7 +80,7 @@ export function normalizeOutputMessage(value) {
     if (!Array.isArray(value.messages)) return null;
     return { type, controllerId, seq, platform: text(value.platform, 20), received: count(value.received),
       messages: value.messages.slice(-MAX_OUTPUT_MESSAGES).map(normalizeComment).filter(Boolean),
-      speech: normalizeSpeech(value.speech), credit: text(value.credit, 500) };
+      pinned: normalizeComment(value.pinned), speech: normalizeSpeech(value.speech), credit: text(value.credit, 500) };
   }
   if (type === 'append') {
     const comment = normalizeComment(value.message);
@@ -91,11 +91,12 @@ export function normalizeOutputMessage(value) {
     return { type, controllerId, seq, received: count(value.received), ids: value.ids.slice(0, MAX_OUTPUT_MESSAGES).map(id => typeof id === 'number' ? String(id) : text(id, 64)).filter(Boolean) };
   }
   if (type === 'speech') return { type, controllerId, seq, speech: normalizeSpeech(value.speech), credit: text(value.credit, 500) };
+  if (type === 'pin') return { type, controllerId, seq, pinned: normalizeComment(value.pinned) };
   return null;
 }
 
 export function createOutputView() {
-  return { controllerId: '', seq: 0, lastSeen: 0, platform: '', received: 0, messages: [], speech: null, credit: '' };
+  return { controllerId: '', seq: 0, lastSeen: 0, platform: '', received: 0, messages: [], pinned: null, speech: null, credit: '' };
 }
 
 // Pure reducer for the output page. `resync` asks the caller to send hello.
@@ -122,7 +123,7 @@ export function applyOutputMessage(view, message, now = Date.now()) {
   }
   if (message.type === 'snapshot') {
     Object.assign(view, { controllerId: message.controllerId, seq: message.seq, lastSeen: now, platform: message.platform,
-      received: message.received, messages: message.messages, speech: message.speech, credit: message.credit });
+      received: message.received, messages: message.messages, pinned: message.pinned, speech: message.speech, credit: message.credit });
     result.changed = true;
     return result;
   }
@@ -136,6 +137,8 @@ export function applyOutputMessage(view, message, now = Date.now()) {
     const ids = new Set(message.ids);
     view.messages = view.messages.filter(comment => !ids.has(comment.id));
     view.received = message.received;
+  } else if (message.type === 'pin') {
+    view.pinned = message.pinned;
   } else {
     view.speech = message.speech; view.credit = message.credit;
   }
@@ -152,8 +155,8 @@ export class OutputPublisher {
   constructor({ Channel = globalThis.BroadcastChannel, now = () => Date.now(), id = randomId(), onStatus = () => {}, setTimer = (run, ms) => globalThis.setInterval(run, ms), clearTimer = timer => globalThis.clearInterval(timer) } = {}) {
     this.id = id; this.now = now; this.onStatus = onStatus; this.clearTimer = clearTimer;
     this.seq = 0;
-    this.state = { platform: '', received: 0, messages: [], speech: null, credit: '' };
-    this.sentIds = null; this.sentPlatform = null; this.sentSpeech = '';
+    this.state = { platform: '', received: 0, messages: [], pinned: null, speech: null, credit: '' };
+    this.sentIds = null; this.sentPlatform = null; this.sentSpeech = ''; this.sentPinned = '';
     this.outputs = new Map(); this.controllers = new Map(); this.lastStatus = '';
     this.supported = typeof Channel === 'function';
     if (!this.supported) return;
@@ -165,14 +168,16 @@ export class OutputPublisher {
   post(message) { if (this.channel) this.channel.postMessage({ v: 2, ...message }); }
   next(type, fields) { this.post({ type, controllerId: this.id, seq: ++this.seq, ...fields }); }
   snapshot() {
-    const { platform, received, messages, speech, credit } = this.state;
-    this.next('snapshot', { platform, received, messages, speech, credit });
+    const { platform, received, messages, pinned, speech, credit } = this.state;
+    this.next('snapshot', { platform, received, messages, pinned, speech, credit });
     this.sentIds = messages.map(message => message.id); this.sentPlatform = platform; this.sentReceived = received;
     this.sentSpeech = JSON.stringify([speech, credit]);
+    this.sentPinned = JSON.stringify(pinned);
   }
-  update({ platform, received, messages }) {
+  update({ platform, received, messages, pinned = null }) {
     const list = messages.map(normalizeComment).filter(Boolean);
-    this.state = { ...this.state, platform, received, messages: list };
+    const fixed = normalizeComment(pinned);
+    this.state = { ...this.state, platform, received, messages: list, pinned: fixed };
     if (!this.channel) return;
     if (this.sentIds === null || platform !== this.sentPlatform) { this.snapshot(); return; }
     const ids = list.map(message => message.id), current = new Set(ids);
@@ -184,6 +189,11 @@ export class OutputPublisher {
     if (removed.length || (!added.length && received !== this.sentReceived)) this.next('remove', { ids: removed, received });
     for (const message of added) this.next('append', { message, received });
     this.sentIds = ids; this.sentReceived = received;
+    const pinKey = JSON.stringify(fixed);
+    if (pinKey !== this.sentPinned) {
+      this.next('pin', { pinned: fixed });
+      this.sentPinned = pinKey;
+    }
   }
   speech({ speech, credit }) {
     const value = speech ? { user: speech.user || '', text: speech.text || '', speaking: speech.speaking === true } : null;

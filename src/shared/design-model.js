@@ -134,8 +134,9 @@ const PORTRAIT_LAYOUT = Object.freeze({ panels: {
   actor: { x: 4, y: 11, w: 92, h: 30, z: 1, hidden: false },
   // At least the speech panel's 220px minimum on a 1080×1920 output.
   speech: { x: 4, y: 42, w: 92, h: 20, z: 2, hidden: false },
-  chat: { x: 4, y: 64, w: 92, h: 29, z: 2, hidden: false },
+  chat: { x: 4, y: 74, w: 92, h: 19, z: 2, hidden: false },
   footer: { x: 4, y: 94, w: 92, h: 4, z: 1, hidden: false },
+  pinned: { x: 4, y: 64, w: 92, h: 9, z: 2, hidden: false },
 } });
 // null keeps the stylesheet's grid, which suits landscape screens.
 export const defaultTalkLayout = ratio => ratio === '9:16' ? normalizeLayout(structuredClone(PORTRAIT_LAYOUT), PANEL_IDS.talk) : null;

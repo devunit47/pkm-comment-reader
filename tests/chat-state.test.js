@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createChatState, addMessage, visibleMessages, clearMessages, userRule } from '../src/browser/chat-state.js';
+import { createChatState, addMessage, visibleMessages, clearMessages, userRule, setPinned, reconcilePinned } from '../src/browser/chat-state.js';
 
 test('retention removes oldest messages without changing received counts', () => {
   const state = createChatState(); state.historyLimit = 2;
@@ -48,4 +48,78 @@ test('hiding one comment leaves other messages from the same user visible', () =
   first.hidden = true;
   assert.deepEqual(visibleMessages(state).map(message => message.id), [2]);
   assert.deepEqual(userRule(state, 'viewer'), {});
+});
+
+test('pinning copies normalized content independently of history, selection and filters', () => {
+  const state = createChatState(); state.historyLimit = 1;
+  const message = addMessage(state, 'viewer', 'Kappa original', 1, 1000, 'viewer', {
+    color: '#AABBCC', badges: ['moderator'], parts: [{ type: 'emote', id: '25', name: 'Kappa' }, { type: 'text', text: ' original' }],
+  });
+  assert.equal(state.pinned, null);
+  state.selected = message;
+  assert.equal(state.pinned, null);
+  setPinned(state, message);
+  message.parts[0].name = 'changed'; message.badges.push('vip'); message.text = 'changed';
+  addMessage(state, 'other', 'newest', 2);
+  state.search = 'missing'; state.filter = 'first'; state.selected = state.messages[0];
+  assert.equal(reconcilePinned(state), false);
+  assert.equal(state.pinned.text, 'Kappa original');
+  assert.deepEqual(state.pinned.badges, ['moderator']);
+  assert.equal(state.pinned.parts[0].name, 'Kappa');
+  assert.equal(state.pinned.color, '#aabbcc');
+  assert.equal(state.received, 2);
+  assert.equal(state.messages.length, 1);
+  setPinned(state, state.messages[0]);
+  assert.equal(state.pinned.id, '2');
+  setPinned(state, null);
+  assert.equal(state.pinned, null);
+});
+
+test('hidden comments and hidden users clear pins, while muted users keep them', () => {
+  const state = createChatState();
+  const message = addMessage(state, 'viewer', 'first', 1);
+  setPinned(state, message);
+  state.rules.viewer = { muted: true };
+  assert.equal(reconcilePinned(state), false);
+  assert.equal(state.pinned.id, '1');
+  message.hidden = true;
+  assert.equal(reconcilePinned(state), true);
+  assert.equal(state.pinned, null);
+  setPinned(state, message);
+  assert.equal(state.pinned, null);
+  message.hidden = false;
+  setPinned(state, message);
+  state.messages = [];
+  state.rules.viewer = { hidden: true };
+  assert.equal(reconcilePinned(state), true);
+  assert.equal(state.pinned, null);
+  state.rules.viewer = {};
+  assert.equal(reconcilePinned(state), false);
+  assert.equal(state.pinned, null);
+});
+
+test('history clearing releases only that service pin and new states restore no pin', () => {
+  const twitch = createChatState(), kick = createChatState();
+  setPinned(twitch, addMessage(twitch, 'viewer', 'twitch', 1));
+  setPinned(kick, addMessage(kick, 'viewer', 'kick', 2));
+  clearMessages(twitch);
+  assert.equal(twitch.pinned, null);
+  assert.equal(kick.pinned.text, 'kick');
+  assert.equal(createChatState().pinned, null);
+});
+
+test('hiding a selected pin after history retention removes it releases the pin', () => {
+  const state = createChatState(); state.historyLimit = 1;
+  const original = addMessage(state, 'viewer', 'pinned original', 1);
+  setPinned(state, original);
+  state.selected = original;
+  const other = addMessage(state, 'other', 'newest', 2);
+  assert.equal(state.messages.includes(original), false);
+  assert.equal(reconcilePinned(state), false);
+  state.selected = other; other.hidden = true;
+  assert.equal(reconcilePinned(state), false);
+  assert.equal(state.pinned.id, '1');
+  state.selected = original; original.hidden = true;
+  assert.equal(reconcilePinned(state), true);
+  assert.equal(state.pinned, null);
 });

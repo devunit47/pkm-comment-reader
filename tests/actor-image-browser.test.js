@@ -270,7 +270,7 @@ browserTest('live, preview and output share actor and outside overlay geometry, 
   await page.waitForFunction(() => document.querySelector('#design-preview-editor').shadowRoot.getElementById('design-preview-frame').contentDocument.getElementById('talk-stage').dataset.actorImage === 'custom');
   assert.deepEqual(await preview.locator('#talk-stage').evaluate(geometry), live);
   assert.equal(live.clip, 'hidden'); assert.equal(live.actorClip, 'visible');
-  assert.deepEqual(live.overlays.map(item => item.z), ['37', '70', '135']);
+  assert.deepEqual(live.overlays.map(item => item.z), ['38', '71', '136']);
   assert.equal(live.overlays[0].x, -.6); assert.equal(live.overlays[1].w, 2);
   assert.ok(Math.abs(live.overlays[2].y - .085) < .0001, '8.5% survives browser subpixel rounding');
   await page.locator('#cancel-design').click();

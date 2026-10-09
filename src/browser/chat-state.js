@@ -1,9 +1,10 @@
 import { normalizeCommentContent } from '../shared/comment-model.js';
+import { normalizeComment } from '../shared/output-protocol.js';
 import { normalizeSpeechOptions, createSpeechHistory } from './speech-options.js';
 
 export function createChatState() {
   return {
-    messages: [], seen: new Set(), received: 0, selected: null,
+    messages: [], seen: new Set(), received: 0, selected: null, pinned: null,
     rules: Object.create(null), status: 'デモモード', channel: '',
     autoSpeech: true, readName: false, voice: '', volume: 0.8, rate: 1.1,
     search: '', filter: 'all', sampleIndex: 0,
@@ -42,4 +43,20 @@ export function visibleMessages(state) {
 export function clearMessages(state) {
   state.messages = [];
   state.selected = null;
+  state.pinned = null;
+}
+
+export function setPinned(state, message) {
+  state.pinned = message && !message.hidden && !userRule(state, message.user).hidden ? normalizeComment(message) : null;
+  return state.pinned;
+}
+
+export function reconcilePinned(state) {
+  if (!state.pinned) return false;
+  const hidden = userRule(state, state.pinned.user).hidden ||
+    (state.selected?.hidden && String(state.selected.id) === state.pinned.id) ||
+    state.messages.some(message => String(message.id) === state.pinned.id && message.hidden);
+  if (!hidden) return false;
+  state.pinned = null;
+  return true;
 }

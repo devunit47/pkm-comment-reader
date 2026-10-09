@@ -1,6 +1,6 @@
 import { normalizeCommentContent } from '../shared/comment-model.js';
 import { canvasZIndex } from '../shared/canvas-model.js';
-import { talkSpeechStyles } from '../shared/workspace-model.js';
+import { talkSpeechStyles, PANEL_IDS } from '../shared/workspace-model.js';
 import { THEME_ACCENTS } from '../shared/studio.js';
 
 // The live stage and script-free design preview share exactly the same visual
@@ -16,6 +16,7 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
   // Preserve saved themes that override the comment size directly.
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
+  $('stage-pinned-list').dataset.commentStyle = studio.commentStyle;
   renderCommentLook(stage, studio);
   $('stage-speech-user').hidden = studio.commentStyle === 'anonymous';
   stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
@@ -82,7 +83,7 @@ export function renderOverlays(stage, state) {
     ordered.push(element);
     element.hidden = item.hidden;
     for (const [property, value] of Object.entries({ left: item.x, top: item.y, width: item.w, height: item.h })) element.style.setProperty(property, `${value}%`);
-    element.style.zIndex = canvasZIndex(item.z, index + 5);
+    element.style.zIndex = canvasZIndex(item.z, index + PANEL_IDS.talk.length);
     element.style.color = item.color || '';
     element.style.fontSize = `${item.fontSize || 32}px`;
     if (item.type === 'text') element.textContent = item.text;
@@ -180,7 +181,12 @@ export function markClippedComments(list) {
   }
 }
 
-export const TALK_PANEL_SELECTORS = Object.freeze({ header: '.stage-header', chat: '.stage-chat', speech: '.stage-speech', actor: '.stage-actor', footer: '.stage-footer' });
+export function renderPinnedComment(stage, pinned, studio) {
+  stage.querySelector('.stage-pinned').hidden = !pinned;
+  renderStageComments(stage.querySelector('#stage-pinned-list'), pinned ? [pinned] : [], studio);
+}
+
+export const TALK_PANEL_SELECTORS = Object.freeze({ header: '.stage-header', chat: '.stage-chat', speech: '.stage-speech', actor: '.stage-actor', footer: '.stage-footer', pinned: '.stage-pinned' });
 
 // Read-only application of a saved talk layout, matching workspace.js outside
 // of its editing mode. A null layout keeps the stylesheet's default grid.

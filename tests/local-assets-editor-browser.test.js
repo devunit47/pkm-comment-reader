@@ -101,7 +101,7 @@ for (const id of ['css', 'actor', 'speech', 'overlay']) {
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
     assert.equal(uploads, completedUploads, 'a superseded PC read must not register its late image');
     if (id === 'css') assert.match(await editor.locator('#draft-css').inputValue(), /7px/);
-    if (id === 'overlay') assert.equal(await editor.locator('#target-select option').count(), 8);
+    if (id === 'overlay') assert.equal(await editor.locator('#target-select option').count(), 9);
     assert.deepEqual(await readDesign(base), saved);
     await closeEditor(editor);
   });
@@ -139,7 +139,7 @@ test('all three folder image destinations are draft operations and persist only 
     assert.deepEqual(await readDesign(base), before);
   }
   await editor.locator('#undo-design').click();
-  assert.equal(await editor.locator('#target-select option').count(), 6);
+  assert.equal(await editor.locator('#target-select option').count(), 7);
   await editor.locator('#redo-design').click();
   await editor.locator('#apply-design').click();
   await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
@@ -277,7 +277,7 @@ test('late folder images cannot change a discarded, closed, superseded or cleare
       await editor.locator('#open-design-preview').click();
       await editor.locator('#apply-design:not(:disabled)').waitFor();
     } else await editor.locator('#apply-design:not(:disabled)').waitFor();
-    assert.equal(await editor.locator('#target-select option').count(), id === 'overlay' && action === 'load' ? 7 : 6, 'no late overlay is inserted');
+    assert.equal(await editor.locator('#target-select option').count(), id === 'overlay' && action === 'load' ? 8 : 7, 'no late overlay is inserted');
     assert.deepEqual(await readDesign(base), before);
     await closeEditor(editor);
   }

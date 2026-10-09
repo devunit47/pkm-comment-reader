@@ -8,13 +8,13 @@ const overlays = () => ({ version: 1, items: [{ id: 'chat', type: 'text', z: 2 }
 const keys = (l, o) => canvasOrder(l, o).map(t => `${t.kind}:${t.id}`);
 
 test('rendered stacking keeps every tie below the next saved z', () => {
-  assert.ok(canvasZIndex(1, 24) < canvasZIndex(2, 0));
+  assert.ok(canvasZIndex(1, 25) < canvasZIndex(2, 0));
   assert.ok(canvasZIndex(1, 4) < canvasZIndex(1, 5));
 });
 
 test('canvas order combines panels and overlays, retaining the fixed tie order', () => {
-  assert.deepEqual(keys(layout(), overlays()), ['overlay:picture', 'panel:header', 'panel:actor', 'panel:footer', 'panel:chat', 'panel:speech', 'overlay:chat']);
-  assert.deepEqual(keys(null, { items: [{ id: 'zero', z: 0 }, { id: 'one', z: 1 }] }), ['panel:header', 'panel:chat', 'panel:speech', 'panel:actor', 'panel:footer', 'overlay:zero', 'overlay:one']);
+  assert.deepEqual(keys(layout(), overlays()), ['overlay:picture', 'panel:header', 'panel:actor', 'panel:footer', 'panel:chat', 'panel:speech', 'panel:pinned', 'overlay:chat']);
+  assert.deepEqual(keys(null, { items: [{ id: 'zero', z: 0 }, { id: 'one', z: 1 }] }), ['panel:header', 'panel:chat', 'panel:speech', 'panel:actor', 'panel:footer', 'panel:pinned', 'overlay:zero', 'overlay:one']);
 });
 
 test('moving across tied targets changes only adjacent display order and does not mutate inputs', () => {
@@ -22,7 +22,7 @@ test('moving across tied targets changes only adjacent display order and does no
   const next = moveCanvasTarget(l, o, { kind: 'panel', id: 'speech' }, 'forward');
   const expected = keys(l, o); [expected[5], expected[6]] = [expected[6], expected[5]];
   assert.deepEqual(keys(next.layout, next.overlays), expected);
-  assert.deepEqual(canvasOrder(next.layout, next.overlays).map(t => t.z), [0, 1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(canvasOrder(next.layout, next.overlays).map(t => t.z), [0, 1, 2, 3, 4, 5, 6, 7]);
   assert.deepEqual({ l, o }, before);
 });
 
@@ -38,7 +38,7 @@ test('moving distinct adjacent z values preserves unrelated z values', () => {
 });
 
 test('measured rectangles retain fractional coordinates relative to the rendered stage', () => {
-  const rects = Object.fromEntries(['header', 'chat', 'speech', 'actor', 'footer'].map(id => [id, { left: 30.5, top: 40.5, width: 200, height: 100 }]));
+  const rects = Object.fromEntries(['header', 'chat', 'speech', 'actor', 'footer', 'pinned'].map(id => [id, { left: 30.5, top: 40.5, width: 200, height: 100 }]));
   const result = layoutFromRects({ left: 10, top: 20, width: 1000, height: 500 }, rects);
   assert.ok(Math.abs(result.panels.chat.x - 2.05) < 1e-10);
   assert.ok(Math.abs(result.panels.chat.y - 4.1) < 1e-10);

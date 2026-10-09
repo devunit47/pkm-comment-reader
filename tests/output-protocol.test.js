@@ -151,3 +151,61 @@ test('controller reports outputs and other controllers with generous presence', 
   unsupported.update({ platform: 'twitch', received: 0, messages: [] });
   assert.equal(unsupported.status().supported, false);
 });
+
+test('v2 pins normalize comment metadata and invalid pins become null', () => {
+  const source = { ...comment(1, 'Kappa'), color: '#AABBCC', badges: ['moderator', 'unknown'], parts: [{ type: 'emote', id: '25', name: 'Kappa' }], extra: 'ignored' };
+  const pin = normalizeOutputMessage({ v: 2, type: 'pin', controllerId: 'a', seq: 2, pinned: source });
+  assert.equal(pin.pinned.id, '1');
+  assert.equal(pin.pinned.color, '#aabbcc');
+  assert.deepEqual(pin.pinned.badges, ['moderator']);
+  assert.deepEqual(pin.pinned.parts, [{ type: 'emote', id: '25', name: 'Kappa' }]);
+  assert.equal(pin.pinned.extra, undefined);
+  source.parts[0].name = 'changed';
+  assert.equal(pin.pinned.parts[0].name, 'Kappa');
+  for (const pinned of [null, { id: 'x', text: '' }, '<script>']) {
+    assert.equal(normalizeOutputMessage({ v: 2, type: 'pin', controllerId: 'a', seq: 3, pinned }).pinned, null);
+    assert.equal(normalizeOutputMessage({ v: 2, type: 'snapshot', controllerId: 'a', seq: 3, messages: [], pinned }).pinned, null);
+  }
+});
+
+test('pins survive history removal and publish replacement and release in sequence', () => {
+  const { instance } = publisher(); const view = createOutputView();
+  instance.update({ platform: 'twitch', received: 1, messages: [comment(1)], pinned: comment(1) });
+  instance.speech({ speech: { user: 'speaker', text: 'reading', speaking: true }, credit: 'voice' });
+  instance.update({ platform: 'twitch', received: 2, messages: [comment(2)], pinned: comment(1) });
+  replay(view, FakeChannel.sent);
+  assert.equal(view.pinned.id, '1');
+  assert.deepEqual(view.messages.map(item => item.id), ['2']);
+  FakeChannel.sent = [];
+  instance.update({ platform: 'twitch', received: 2, messages: [comment(2)], pinned: comment(2) });
+  instance.update({ platform: 'twitch', received: 2, messages: [comment(2)], pinned: comment(2) });
+  instance.update({ platform: 'twitch', received: 2, messages: [], pinned: null });
+  assert.deepEqual(FakeChannel.sent.map(item => item.type), ['pin', 'remove', 'pin']);
+  assert.deepEqual(FakeChannel.sent.map(item => item.seq), [5, 6, 7]);
+  replay(view, FakeChannel.sent);
+  assert.equal(view.pinned, null);
+  assert.equal(view.speech.text, 'reading');
+  assert.equal(view.credit, 'voice');
+});
+
+test('late output, missing pin differences and controller replacement recover through snapshots', () => {
+  const { instance } = publisher(); const view = createOutputView();
+  instance.update({ platform: 'twitch', received: 1, messages: [comment(1)], pinned: comment(1) });
+  replay(view, FakeChannel.sent);
+  FakeChannel.sent = [];
+  instance.update({ platform: 'twitch', received: 1, messages: [comment(1)], pinned: comment(2) });
+  instance.update({ platform: 'twitch', received: 2, messages: [comment(1), comment(3)], pinned: comment(2) });
+  assert.equal(replay(view, FakeChannel.sent.slice(1))[0].resync, true);
+  assert.equal(view.pinned.id, '1');
+  FakeChannel.sent = [];
+  instance.receive({ v: 2, type: 'hello', id: 'late-output', role: 'output' });
+  replay(view, FakeChannel.sent);
+  const late = createOutputView(); replay(late, FakeChannel.sent);
+  assert.equal(view.pinned.id, '2');
+  assert.deepEqual(late.pinned, view.pinned);
+  applyOutputMessage(view, normalizeOutputMessage({ v: 2, type: 'bye', id: 'control-a', role: 'controller' }), 2000);
+  replay(view, [{ v: 2, type: 'snapshot', controllerId: 'control-b', seq: 1, messages: [], pinned: comment(9) }], 2001);
+  assert.equal(view.pinned.id, '9');
+  replay(view, [{ v: 2, type: 'snapshot', controllerId: 'control-b', seq: 2, messages: [], pinned: null }], 2002);
+  assert.equal(view.pinned, null);
+});

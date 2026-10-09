@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
-async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [], maxVisible = 30 } = {}) {
+async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [], maxVisible = 30, initScript, clock = false } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath, args });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-output-browser-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
@@ -21,6 +21,8 @@ async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [],
   const url = `http://127.0.0.1:${server.address().port}`;
   const context = await browser.newContext({ viewport });
   await blockExternalFonts(context);
+  if (initScript) await context.addInitScript(initScript);
+  if (clock) await context.clock.install();
   const errors = [];
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const page = await context.newPage();
@@ -36,6 +38,136 @@ const producerPage = url => `${url}/speech-background.svg`;
 const comments = output => output.locator('.stage-comment').evaluateAll(cards => cards.map(card => card.textContent));
 const backgrounds = output => output.evaluate(() => ['html', 'body', 'main', '#talk-stage'].map(selector => getComputedStyle(document.querySelector(selector)).backgroundColor));
 const controls = output => output.evaluate(() => document.querySelectorAll('button,input,select,textarea,dialog,[popover],output').length);
+
+async function pinComment(page, index = 0) {
+  await page.locator('#comment-list .message').nth(index).click();
+  await page.locator('#pin-comment').click();
+}
+async function waitPinned(owner, text) {
+  await owner.waitForFunction(text => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    return doc.querySelector('#stage-pinned-list .pokome-comment__body')?.textContent === text;
+  }, text);
+}
+async function waitUnpinned(owner) {
+  await owner.waitForFunction(() => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    return doc.querySelector('.stage-pinned')?.hidden === true && !doc.querySelector('#stage-pinned-list .stage-comment');
+  });
+}
+const mockSpeechAndConnection = () => {
+  window.spoken = []; window.testSockets = [];
+  Object.defineProperty(window, 'speechSynthesis', { value: {
+    getVoices: () => [], addEventListener() {}, cancel() {},
+    speak(utterance) { window.spoken.push(utterance.text); this.last = utterance; utterance.onstart?.(); },
+  } });
+  window.WebSocket = class { constructor() { window.testSockets.push(this); } send() {} close() {} };
+};
+
+browserTest('pin controls replace and release independent service comments, survive retention and fit narrow docks', async t => {
+  const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
+  await page.locator('#auto-speech').uncheck();
+  const first = await page.locator('#comment-list .message').first().textContent();
+  const second = await page.locator('#comment-list .message').nth(1).textContent();
+  const count = await page.locator('#count').textContent();
+  await page.locator('#comment-list .message').first().click();
+  assert.equal(await page.locator('#pinned-empty').isVisible(), true, 'selection alone does not pin');
+  await page.locator('#pin-comment').click();
+  assert.equal(await page.locator('#search').evaluate(element => element === document.activeElement), true);
+  assert.equal(await page.locator('#pinned-text').textContent(), first);
+  const output = await context.newPage(); await output.goto(url + '/output.html');
+  await waitPinned(output, first);
+  assert.equal(await controls(output), 0);
+  await page.locator('#comment-list .message').nth(1).click();
+  assert.equal(await page.locator('#pinned-text').textContent(), first);
+  await page.locator('#pin-comment').click(); await waitPinned(output, second);
+  await page.locator('#comment-list .message').nth(1).click();
+  assert.equal(await page.locator('#pin-comment').textContent(), 'このコメントの固定を解除');
+  await page.locator('#pin-comment').click(); await waitUnpinned(output);
+  assert.equal(await page.locator('#count').textContent(), count);
+  assert.deepEqual(await page.evaluate(() => window.spoken), []);
+  await pinComment(page); await waitPinned(output, first);
+  await output.reload(); await waitPinned(output, first);
+  await saveSetting(url, 'historyLimit', 1);
+  await page.waitForFunction(() => document.querySelectorAll('#comment-list .message').length === 1);
+  assert.equal(await page.locator('#pinned-text').textContent(), first, 'removed history does not release pin');
+  await page.locator('#unpin-comment').click(); await waitUnpinned(output);
+  await pinComment(page); const twitch = await page.locator('#pinned-text').textContent();
+  await page.locator('[data-platform="kick"]').click(); await pinComment(page);
+  const kick = await page.locator('#pinned-text').textContent();
+  await page.locator('[data-platform="twitch"]').click(); assert.equal(await page.locator('#pinned-text').textContent(), twitch);
+  await page.locator('[data-platform="kick"]').click(); assert.equal(await page.locator('#pinned-text').textContent(), kick);
+  await page.locator('[data-platform="twitch"]').click();
+  const user = await page.locator('#pinned-user').textContent();
+  await saveSetting(url, 'users', { twitch: { [user]: { hidden: true } }, kick: {} });
+  await waitUnpinned(page); await waitUnpinned(output);
+  await saveSetting(url, 'users', { twitch: {}, kick: {} });
+  await page.waitForFunction(() => document.querySelectorAll('#comment-list .message').length === 1);
+  await waitUnpinned(page);
+  for (const width of [1440, 300, 150]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await pinComment(page);
+    const home = await page.locator('#pinned-status').evaluate(element => {
+      const rect = element.getBoundingClientRect(), button = element.querySelector('button').getBoundingClientRect();
+      return { fits: element.scrollWidth <= element.clientWidth + 1 && rect.left >= 0 && rect.right <= innerWidth + 1, button: button.width > 0 && button.right <= innerWidth + 1 };
+    });
+    assert.deepEqual(home, { fits: true, button: true }, String(width));
+    await page.locator('#unpin-comment').click(); await waitUnpinned(page);
+    await pinComment(page); await page.locator('#enter-talk').click();
+    await page.locator('#stage-unpin-comment').focus();
+    const talk = await page.locator('#talk-controls').evaluate(element => {
+      const rect = element.getBoundingClientRect(), button = element.querySelector('#stage-unpin-comment').getBoundingClientRect();
+      return { fits: element.scrollWidth <= element.clientWidth + 1 && rect.left >= 0 && rect.right <= innerWidth + 1, button: button.width > 0 && button.right <= innerWidth + 1 };
+    });
+    assert.deepEqual(talk, { fits: true, button: true }, String(width));
+    await page.locator('#stage-unpin-comment').click(); await waitUnpinned(output);
+    await page.keyboard.press('Escape');
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await pinComment(page); await page.reload(); await appReady(page); await waitUnpinned(page); await waitUnpinned(output);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('pin survives speech and output expiry, but hiding, clearing and connection initialization release it', async t => {
+  const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection, clock: true });
+  await page.locator('#auto-speech').uncheck();
+  await pinComment(page);
+  const fixed = await page.locator('#pinned-text').textContent();
+  const output = await context.newPage(); await output.goto(url + '/output.html'); await waitPinned(output, fixed);
+  await page.locator('#comment-list .message').nth(1).click(); await page.locator('#read-selected').click();
+  await output.waitForFunction(() => document.querySelector('.stage-speech').dataset.speaking === 'true');
+  await waitPinned(output, fixed);
+  const spoken = await page.evaluate(() => window.spoken);
+  await pinComment(page, 2); const replacement = await page.locator('#pinned-text').textContent();
+  assert.deepEqual(await page.evaluate(() => window.spoken), spoken, 'pin does not enqueue audio');
+  await waitPinned(output, replacement);
+  await page.evaluate(() => window.speechSynthesis.last.onend());
+  await context.clock.runFor(5100); await waitPinned(output, replacement);
+  await saveStudio(url, { holdSeconds: 5, maxVisible: 1, newestPosition: 'top', commentMaxLines: 2, commentLabel: false });
+  await output.waitForFunction(() => document.querySelector('#talk-stage').dataset.commentMaxLines === '2');
+  assert.equal(await output.locator('.stage-pinned h2').isVisible(), true, 'the dedicated pinned heading identifies the card');
+  await context.clock.runFor(6000);
+  await output.waitForFunction(() => document.querySelectorAll('#stage-chat-list .stage-comment').length === 0);
+  await waitPinned(output, replacement);
+  await page.locator('#comment-list .message').nth(2).click(); await page.locator('#hide-comment').click();
+  await waitUnpinned(page); await waitUnpinned(output);
+  await pinComment(page);
+  await page.locator('#comment-list .message').first().click(); await page.locator('#hide-user').click();
+  await waitUnpinned(page); await waitUnpinned(output);
+  await pinComment(page);
+  let confirmation = '';
+  page.once('dialog', dialog => { confirmation = dialog.message(); dialog.dismiss(); });
+  await page.locator('#clear').click(); assert.match(confirmation, /固定も解除します/);
+  assert.equal(await page.locator('#pinned-empty').isVisible(), false);
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#clear').click(); await waitUnpinned(page); await waitUnpinned(output);
+  await page.locator('#demo').click(); await page.locator('#demo').click(); await pinComment(page);
+  await page.evaluate(() => { document.querySelector('#twitch-channel').value = 'qa_channel'; document.querySelector('#twitch-connect-form').requestSubmit(); });
+  await page.waitForFunction(() => window.testSockets.length === 1);
+  await waitUnpinned(page); await waitUnpinned(output);
+  assert.deepEqual(errors, []);
+});
+
 
 browserTest('preview clipping follows direction, scrolling, frame size and CSS changes without hiding tall cards', async t => {
   const { page, errors } = await fixture(t, { maxVisible: null });
@@ -98,22 +230,22 @@ browserTest('preview has ten persistent samples and count and direction changes 
   await page.locator('.nav[data-page="studio"]').click();
   await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat');
   const frame = page.frameLocator('#design-preview-frame');
-  await frame.locator('.stage-comment').first().waitFor({ state: 'attached' });
-  assert.equal(await frame.locator('.stage-comment').count(), 10);
-  const all = await frame.locator('.stage-comment').allTextContents();
+  await frame.locator('#stage-chat-list .stage-comment').first().waitFor({ state: 'attached' });
+  assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 10);
+  const all = await frame.locator('#stage-chat-list .stage-comment').allTextContents();
   await page.locator('#draft-maxVisible').selectOption('8');
-  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all.slice(-8));
+  assert.deepEqual(await frame.locator('#stage-chat-list .stage-comment').allTextContents(), all.slice(-8));
   await page.locator('#draft-maxVisible').selectOption('3');
-  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all.slice(-3));
+  assert.deepEqual(await frame.locator('#stage-chat-list .stage-comment').allTextContents(), all.slice(-3));
   await page.locator('#draft-newestPosition').selectOption('top');
-  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all.slice(-3).reverse());
+  assert.deepEqual(await frame.locator('#stage-chat-list .stage-comment').allTextContents(), all.slice(-3).reverse());
   await page.locator('#draft-maxVisible').selectOption('0');
-  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), [...all].reverse());
+  assert.deepEqual(await frame.locator('#stage-chat-list .stage-comment').allTextContents(), [...all].reverse());
   await page.locator('#draft-holdSeconds').selectOption('5');
   await page.waitForTimeout(5100);
-  assert.equal(await frame.locator('.stage-comment').count(), 10);
+  assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 10);
   await page.locator('#draft-newestPosition').selectOption('bottom');
-  assert.deepEqual(await frame.locator('.stage-comment').allTextContents(), all);
+  assert.deepEqual(await frame.locator('#stage-chat-list .stage-comment').allTextContents(), all);
   await closeEditor(page);
   assert.equal((await readDesign(url)).studio.maxVisible, 0);
   assert.deepEqual(errors, []);
@@ -277,11 +409,11 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   await page.locator('#draft-holdSeconds').selectOption('5');
   await page.locator('#draft-newestPosition').selectOption('top');
   const frame = page.frameLocator('#design-preview-frame');
-  await frame.locator('.stage-comment').first().waitFor();
-  assert.equal(await frame.locator('.stage-comment').count(), 1);
+  await frame.locator('#stage-chat-list .stage-comment').first().waitFor();
+  assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 1);
   await context.clock.setFixedTime(now + 5100);
   await context.clock.runFor(5100);
-  assert.equal(await frame.locator('.stage-comment').count(), 1);
+  assert.equal(await frame.locator('#stage-chat-list .stage-comment').count(), 1);
   assert.equal((await comments(output)).length, 8);
   await closeEditor(page);
   assert.equal((await readDesign(url)).studio.maxVisible, 8);
@@ -443,4 +575,199 @@ browserTest('reopening the output window applies a newly chosen size', async t =
   await output.waitForFunction(() => innerWidth === 1080 && innerHeight === 1920);
   await page.locator('#output-status').filter({ hasText: '1080 × 1920' }).waitFor();
   assert.deepEqual(errors, []);
+});
+
+const pinnedMatrixLayout = ratio => ({ panels: {
+  header: { x: 4, y: 2, w: 92, h: 8, z: 1, hidden: false },
+  chat: { x: 4, y: 79, w: 92, h: 14, z: 2, hidden: false },
+  speech: { x: 4, y: 25, w: 92, h: 35, z: 3, hidden: false },
+  actor: { x: 4, y: 11, w: 92, h: 12, z: 1, hidden: false },
+  footer: { x: 4, y: 94, w: 92, h: 5, z: 1, hidden: false },
+  pinned: { x: ratio === '9:16' ? 8 : 9, y: 65, w: ratio === '4:3' ? 80 : 84, h: 12, z: 8, hidden: false },
+} });
+
+async function waitPinnedDesign(owner, { theme, ratio, panel, hidden = false }) {
+  await owner.waitForFunction(({ theme, ratio, panel, hidden }) => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    const stage = doc.querySelector('#talk-stage'), target = stage?.querySelector('.stage-pinned');
+    return stage?.dataset.theme === theme && (stage.dataset.ratio || doc.body.dataset.ratio) === ratio
+      && target?.style.left === `${panel.x}%` && target.style.width === `${panel.w}%`
+      && (hidden || Math.abs(target.getBoundingClientRect().height / stage.getBoundingClientRect().height * 100 - panel.h) < .05)
+      && Number(target.style.zIndex) > 99
+      && (getComputedStyle(target).display === 'none') === hidden;
+  }, { theme, ratio, panel, hidden });
+}
+
+async function inspectPinnedPanel(stage) {
+  return stage.evaluate(stage => {
+    const target = stage.querySelector('.stage-pinned'), card = target.querySelector('.stage-comment');
+    const rect = target.getBoundingClientRect(), base = stage.getBoundingClientRect();
+    const body = card?.querySelector('.pokome-comment__body');
+    return { x: (rect.left - base.left) / base.width * 100, y: (rect.top - base.top) / base.height * 100,
+      w: rect.width / base.width * 100, h: rect.height / base.height * 100,
+      z: getComputedStyle(target).zIndex, font: getComputedStyle(body).fontSize,
+      lineClamp: getComputedStyle(body).webkitLineClamp, style: target.querySelector('#stage-pinned-list').dataset.commentStyle,
+      cards: target.querySelectorAll('.stage-comment').length,
+      controls: stage.querySelectorAll('button,input,select,textarea,dialog,[popover]').length,
+      speech: !!stage.querySelector('.stage-speech')?.getBoundingClientRect().height };
+  });
+}
+
+browserTest('pinned panels match live, preview and output across three ratios, four themes and both schemes', async t => {
+  const { context, page, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
+  await page.locator('#auto-speech').uncheck();
+  const text = await page.locator('#comment-list .message').first().textContent();
+  await pinComment(page);
+  await page.locator('#comment-list .message').nth(1).click();
+  await page.locator('#user-actions').evaluate(element => element.hidePopover());
+  await page.locator('#read-selected').click();
+  await page.locator('#enter-talk').click();
+  const output = await context.newPage(); output.setDefaultTimeout(8000);
+  await output.goto(`${url}/output.html`); await waitPinned(output, text);
+  await output.waitForFunction(() => document.querySelector('.stage-speech')?.dataset.speaking === 'true');
+  const editor = page.locator('#design-preview-editor');
+  let combinations = 0;
+  for (const scheme of ['light', 'dark']) for (const theme of ['mint', 'rose', 'violet', 'paper']) {
+    await page.emulateMedia({ colorScheme: scheme }); await output.emulateMedia({ colorScheme: scheme });
+    for (const [ratio, size, width, height] of [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]]) {
+      const label = `${scheme}/${theme}/${ratio}`, layout = pinnedMatrixLayout(ratio), panel = layout.panels.pinned;
+      await output.setViewportSize({ width, height });
+      await saveDesign(url, design => ({ ...design, outputSize: size,
+        studio: { ...design.studio, theme, fontSize: 22, commentMaxLines: 2 },
+        ratios: { ...design.ratios, [ratio]: { ...(design.ratios[ratio] || {}), layout } } }));
+      await waitForDesign(url, design => design.outputSize === size && design.studio.theme === theme && design.ratios[ratio]?.layout?.panels.pinned?.x === panel.x);
+      for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel });
+      await page.locator('#stage-design-edit').click();
+      await editor.locator('#apply-design:not(:disabled)').waitFor();
+      await editor.locator('#preview-ratio').selectOption(ratio); await editor.locator('#preview-width').selectOption(size);
+      await editorTarget(editor, 'pinned');
+      const preview = page.frameLocator('#design-preview-frame');
+      await preview.locator('#stage-pinned-list .stage-comment').waitFor({ state: 'attached' });
+      await page.waitForFunction(({ theme, panel, width, height }) => {
+        const doc = document.querySelector('#design-preview-editor')?.shadowRoot?.querySelector('#design-preview-frame')?.contentDocument;
+        const stage = doc?.querySelector('#talk-stage'), target = stage?.querySelector('.stage-pinned');
+        return stage?.dataset.theme === theme && doc.documentElement.clientWidth === width && doc.documentElement.clientHeight === height
+          && target?.style.left === `${panel.x}%` && target.style.width === `${panel.w}%` && target.getBoundingClientRect().height > 0;
+      }, { theme, panel, width, height });
+      const results = await Promise.all([inspectPinnedPanel(talkStage(page).locator('#talk-stage')),
+        inspectPinnedPanel(preview.locator('#talk-stage')), inspectPinnedPanel(output.locator('#talk-stage'))]);
+      for (const result of results) {
+        for (const key of ['x', 'y', 'w', 'h']) assert.ok(Math.abs(result[key] - panel[key]) < .05, `${label}: ${key}`);
+        assert.equal(result.cards, 1, `${label}: one pinned card`);
+        assert.equal(result.controls, 0, `${label}: stage contains no controls`);
+        assert.equal(result.speech, true, `${label}: independent speech panel`);
+      }
+      for (const result of results.slice(1)) for (const key of ['z', 'font', 'lineClamp', 'style']) assert.equal(result[key], results[0][key], `${label}: same ${key}`);
+      assert.notEqual(await preview.locator('#stage-pinned-list .pokome-comment__body').textContent(), text, `${label}: fictitious preview`);
+      await closeEditor(editor);
+      await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios,
+        [ratio]: { ...design.ratios[ratio], layout: { panels: { ...layout.panels, pinned: { ...panel, hidden: true } } } } } }));
+      for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel, hidden: true });
+      assert.equal(await page.locator('#stage-unpin-comment').isVisible(), true, `${label}: hidden design retains pin`);
+      assert.equal(await page.locator('#pinned-design-hidden').getAttribute('hidden'), null, `${label}: home explains the hidden design`);
+      await saveDesign(url, design => ({ ...design, ratios: { ...design.ratios, [ratio]: { ...design.ratios[ratio], layout } } }));
+      for (const owner of [page, output]) await waitPinnedDesign(owner, { theme, ratio, panel });
+      await page.locator('#stage-unpin-comment').click();
+      await waitUnpinned(page); await waitUnpinned(output);
+      await page.locator('#stage-design-edit').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+      await editor.locator('#preview-ratio').selectOption(ratio);
+      await page.frameLocator('#design-preview-frame').locator('#stage-pinned-list .stage-comment').waitFor({ state: 'visible' });
+      await closeEditor(editor);
+      await page.locator('#leave-talk').click(); await pinComment(page); await page.locator('#enter-talk').click();
+      await waitPinned(page, text); await waitPinned(output, text);
+      combinations++;
+    }
+  }
+  assert.equal(combinations, 24);
+  t.diagnostic('Edge: 24 pinned theme/scheme/ratio combinations across live, preview and output; design hiding and release in each');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('presets preserve ratio layouts and a live pin without persisting its comment or settings backup', async t => {
+  const { context, page, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
+  await page.locator('#auto-speech').uncheck();
+  await page.evaluate(() => {
+    document.querySelector('#twitch-channel').value = 'qa_channel'; document.querySelector('#twitch-connect-form').requestSubmit();
+  });
+  await page.waitForFunction(() => window.testSockets.length === 1);
+  const marker = '固定本文は保存しない-p2b1-ユニーク';
+  await page.evaluate(text => {
+    const socket = window.testSockets[0]; socket.onopen();
+    socket.onmessage({ data: ':server 366 anon #qa_channel :End\r\n' });
+    socket.onmessage({ data: `:pin_fixture!pin_fixture@host PRIVMSG #qa_channel :${text}\r\n` });
+  }, marker);
+  await page.locator('#comment-list .message').filter({ hasText: marker }).waitFor(); await pinComment(page);
+  const output = await context.newPage(); output.setDefaultTimeout(8000); await output.goto(`${url}/output.html`); await waitPinned(output, marker);
+  const layouts = Object.fromEntries(['16:9', '9:16', '4:3'].map(ratio => [ratio, { layout: pinnedMatrixLayout(ratio) }]));
+  await saveDesign(url, design => ({ ...design, ratios: layouts }));
+  await page.locator('#enter-talk').click();
+  await waitPinnedDesign(page, { theme: (await readDesign(url)).studio.theme, ratio: '16:9', panel: layouts['16:9'].layout.panels.pinned });
+  await page.locator('#leave-talk').click();
+  await page.locator('[data-page="studio"]').click();
+  await page.waitForFunction(() => !document.querySelector('#design-presets')?.shadowRoot?.getElementById('preset-save').disabled);
+  const ui = page.locator('#design-presets'), editor = page.locator('#design-preview-editor');
+  await ui.locator('#preset-save').click(); await ui.locator('#preset-name').fill('固定枠の全比率'); await ui.locator('#preset-name-submit').click();
+  await ui.locator('#preset-status').filter({ hasText: 'プリセットに保存しました' }).waitFor();
+  const id = await ui.locator('#preset-select').inputValue(); assert.ok(id);
+  const preset = await (await fetch(`${url}/api/design/presets/${id}`)).json();
+  assert.ok(!JSON.stringify(preset).includes(marker)); assert.ok(!JSON.stringify(preset).includes('pin_fixture'));
+  for (const [ratio, size, width, height] of [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]]) {
+    await output.setViewportSize({ width, height });
+    await saveDesign(url, design => ({ ...design, outputSize: size, ratios: { ...design.ratios, [ratio]: null } }));
+    await page.waitForFunction(({ ratio, x }) => {
+      const doc = document.getElementById('talk-frame')?.contentDocument, stage = doc?.querySelector('#talk-stage');
+      return (stage?.dataset.ratio || doc?.body.dataset.ratio) === ratio && stage.querySelector('.stage-pinned').style.left !== `${x}%`;
+    }, { ratio, x: layouts[ratio].layout.panels.pinned.x });
+    await ui.locator('#preset-load').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+    await editor.locator('#preview-ratio').selectOption(ratio);
+    await page.frameLocator('#design-preview-frame').locator('#stage-pinned-list .stage-comment').waitFor({ state: 'visible' });
+    await editor.locator('#apply-design').click(); await ui.locator('#preset-confirm').click();
+    await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+    await waitForDesign(url, design => design.ratios[ratio]?.layout.panels.pinned.z === 8);
+    await saveDesign(url, design => ({ ...design, outputSize: size })); await output.setViewportSize({ width, height });
+    await waitPinned(output, marker);
+    const design = await readDesign(url); assert.deepEqual(design.ratios[ratio].layout, layouts[ratio].layout);
+    assert.ok(!JSON.stringify(design).includes(marker)); assert.ok(!JSON.stringify(design).includes('pin_fixture'));
+  }
+  await page.locator('[data-page="settings"]').click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#backup-settings').click()]);
+  const backup = await readFile(await download.path(), 'utf8');
+  assert.ok(!backup.includes(marker)); assert.ok(!backup.includes('pin_fixture'));
+  assert.ok(!JSON.stringify(await readSettings(url)).includes(marker));
+  assert.deepEqual(errors, []);
+});
+
+browserTest('reading a five-panel saved design supplements only pinned and never rewrites the source file', async t => {
+  const { defaultDesign } = await import('../src/shared/design-model.js');
+  const directory = await mkdtemp(join(tmpdir(), 'pokome-pinned-five-panels-'));
+  const design = defaultDesign();
+  for (const ratio of ['16:9', '9:16', '4:3']) {
+    const layout = pinnedMatrixLayout(ratio); delete layout.panels.pinned;
+    layout.panels.chat = { x: 11.25, y: 70.5, w: 73.5, h: 19.25, z: 98, hidden: true };
+    design.ratios[ratio] = { layout, overlays: { version: 1, items: [], assets: {} } };
+  }
+  await mkdir(join(directory, 'current'), { recursive: true });
+  const path = join(directory, 'current', 'design.json'), raw = JSON.stringify(design, null, 2) + '\r\n';
+  await writeFile(path, raw);
+  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory() });
+  const browser = await chromium.launch({ headless: true, executablePath });
+  t.after(async () => { await browser.close(); if (server.listening) await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}`, page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  await blockExternalFonts(page); await page.goto(url); await appReady(page);
+  const normalized = await readDesign(url);
+  for (const ratio of ['16:9', '9:16', '4:3']) {
+    for (const id of ['header', 'chat', 'speech', 'actor', 'footer']) assert.deepEqual(normalized.ratios[ratio].layout.panels[id], design.ratios[ratio].layout.panels[id], `${ratio}: unchanged ${id}`);
+    assert.deepEqual(normalized.ratios[ratio].layout.panels.pinned, { x: 11.25, y: 70.5, w: 73.5, h: 15, z: 99, hidden: false });
+  }
+  await page.locator('[data-page="studio"]').click();
+  const editor = page.locator('#design-preview-editor'); await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  for (const ratio of ['16:9', '9:16', '4:3']) {
+    await editor.locator('#preview-ratio').selectOption(ratio); await editorTarget(editor, 'pinned');
+    await page.frameLocator('#design-preview-frame').locator('#stage-pinned-list .stage-comment').waitFor({ state: 'visible' });
+    assert.equal(await editor.locator('#panel-x').inputValue(), '11.25');
+    assert.equal(await editor.locator('#panel-z').inputValue(), '99');
+  }
+  await closeEditor(editor);
+  assert.equal(await readFile(path, 'utf8'), raw, 'loading and inspecting never migrate the saved file');
 });

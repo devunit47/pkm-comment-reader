@@ -114,11 +114,11 @@ browserTest('moving across equal z values renumbers both kinds and one undo rest
   });
   await editorTarget(editor, 'note'); await editor.locator('#canvas-backward').click();
   const overlayZ = await value(editor, 'overlay-z');
-  await editorTarget(editor, 'footer'); assert.ok(await value(editor, 'panel-z') > overlayZ);
+  await editorTarget(editor, 'pinned'); assert.ok(await value(editor, 'panel-z') > overlayZ);
   await editor.locator('#undo-design').click(); assert.equal(await value(editor, 'panel-z'), 1);
   await editorTarget(editor, 'note'); assert.equal(await value(editor, 'overlay-z'), 1);
   assert.equal(await editor.locator('#draft-state').textContent(), '変更なし');
-  await editorTarget(editor, 'footer'); await editor.locator('#canvas-forward').click();
+  await editorTarget(editor, 'pinned'); await editor.locator('#canvas-forward').click();
   assert.ok(await value(editor, 'panel-z') > 1);
   await editor.locator('#undo-design').click(); assert.equal(await value(editor, 'panel-z'), 1);
 });
@@ -150,13 +150,13 @@ browserTest('Shift corner resize preserves image pixel aspect at landscape and p
 
 browserTest('saved addition IDs matching panel or screen names remain separate editing targets', async t => {
   const { editor, url } = await fixture(t, design => withTalk(design, '16:9', {
-    overlays: { version: 1, items: ['chat', 'screen', 'footer'].map(id => createOverlay('text', { id, text: `追加-${id}`, x: 50, y: 50, w: 10, h: 10 })), assets: {} },
+    overlays: { version: 1, items: ['chat', 'screen', 'footer', 'pinned'].map(id => createOverlay('text', { id, text: `追加-${id}`, x: 50, y: 50, w: 10, h: 10 })), assets: {} },
   }));
   const before = await readDesign(url);
   await editor.locator('#target-select').selectOption({ label: 'コメント欄' });
   assert.equal(await editor.locator('#overlay-text').isVisible(), false, 'the panel does not expose an addition sharing its name');
   const panelX = await value(editor, 'panel-x');
-  for (const id of ['chat', 'screen', 'footer']) {
+  for (const id of ['chat', 'screen', 'footer', 'pinned']) {
     await editor.locator('#target-select').selectOption({ label: `追加-${id}` });
     assert.equal(await editor.locator('#panel-placement').isVisible(), false);
     const hit = target(editor, `overlay:${id}`);
@@ -171,10 +171,10 @@ browserTest('saved addition IDs matching panel or screen names remain separate e
   }
   await editor.locator('#target-select').selectOption({ label: 'コメント欄' });
   assert.equal(await value(editor, 'panel-x'), panelX);
-  assert.equal(await editor.locator('.canvas-target').count(), 8);
+  assert.equal(await editor.locator('.canvas-target').count(), 10);
   await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
   const saved = await readDesign(url);
-  assert.deepEqual(saved.ratios['16:9'].overlays.items.map(item => item.id), ['chat', 'screen', 'footer']);
-  assert.deepEqual(saved.ratios['16:9'].overlays.items.map(item => item.x), [52, 52, 52]);
+  assert.deepEqual(saved.ratios['16:9'].overlays.items.map(item => item.id), ['chat', 'screen', 'footer', 'pinned']);
+  assert.deepEqual(saved.ratios['16:9'].overlays.items.map(item => item.x), [52, 52, 52, 52]);
   assert.deepEqual(saved.ratios['16:9'].layout, before.ratios['16:9'].layout, 'addition edits never alter panel layout');
 });
