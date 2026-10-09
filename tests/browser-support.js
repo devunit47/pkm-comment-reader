@@ -112,6 +112,26 @@ export async function blockExternalFonts(page) {
   await page.route('https://static-cdn.jtvnw.net/**', route => route.fulfill({ contentType: 'image/png', body: emotePixels }));
 }
 
+// Release checks (FULL_MATRIX=1) try every combination. Ordinary runs keep a
+// pairwise subset: any two axes still meet in every value pair at least once.
+export function matrixCases(axes) {
+  const names = Object.keys(axes);
+  const all = names.reduce((rows, name) => rows.flatMap(row => axes[name].map(value => ({ ...row, [name]: value }))), [{}]);
+  if (process.env.FULL_MATRIX === '1' || names.length < 3) return all;
+  const pairs = row => names.flatMap((a, i) => names.slice(i + 1).map(b => JSON.stringify([a, row[a], b, row[b]])));
+  const uncovered = new Set(all.flatMap(pairs)), chosen = [];
+  while (uncovered.size) {
+    let best = null, gain = 0;
+    for (const row of all) {
+      const count = pairs(row).filter(pair => uncovered.has(pair)).length;
+      if (count > gain) { best = row; gain = count; }
+    }
+    chosen.push(best);
+    for (const pair of pairs(best)) uncovered.delete(pair);
+  }
+  return chosen;
+}
+
 // The design editor shows one target's settings at a time. Narrow docks list
 // targets and settings on separate tabs; choosing a target opens its settings.
 export async function editorTarget(editor, target) {

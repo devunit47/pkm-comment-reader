@@ -37,6 +37,7 @@ git clone https://github.com/devunit47/pkm-comment-reader-notes.git notes
 
 - 変更の影響に応じたテストを実行し、出力を自分で確認する。文書だけの変更など、実行するテストがない場合は、差分と文書の整合性を確認し、テスト未実施の理由を報告する。
 - 通常の変更は、関連テストと全テスト1回で確認する。繰り返し実行・高並列・CPU負荷での確認は、不安定なテストの原因調査とリリース前だけに行い、回数は必要な分に限る。
+- 見た目の条件（テーマ・明暗・比率・プリセットなど）を掛け合わせるブラウザテストは、`tests/browser-support.js` の `matrixCases` で組み合わせを作る。普段はどの2条件の値の組も一度は出る代表の組み合わせだけを流し、リリース前に `FULL_MATRIX=1` で総当たりを流す。
 - 最終 diff を読み直し、要求漏れ・意図しない変更・不要な複雑化がないことを確認する。見た目を変えた場合は、テーマとの組み合わせと実ブラウザでの表示も確認する。
 - 完了を伝えるときは、変更内容・検証結果・削除したもの（なければその旨）を報告する。実行していない検証と残る制約があれば明示する。
 
@@ -55,6 +56,7 @@ git clone https://github.com/devunit47/pkm-comment-reader-notes.git notes
 | 構文チェック | `npm run check` |
 | 全テスト | `npm test`（`node --test`。Playwright と Chromium 系ブラウザがあればブラウザテストも実行。Windows では Edge を自動検出） |
 | 1ファイルだけ | `node --test tests/<file>.test.js` |
+| 総当たりを含む全テスト（リリース前） | `FULL_MATRIX=1 npm test`（PowerShell では `$env:FULL_MATRIX='1'; npm test`） |
 | Windows 配布版 | `npm run build:local`（`dist-local/`） |
 
 - 外部パッケージのインストールは不要（依存なし）。
