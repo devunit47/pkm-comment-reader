@@ -1,4 +1,4 @@
-import { renderStageAppearance, renderStageComments, markClippedComments } from './stage-appearance.js';
+import { renderStageAppearance, renderStageComments, renderPinnedComment, markClippedComments } from './stage-appearance.js';
 import { OutputPublisher, OUTPUT_SIZES } from '../shared/output-protocol.js';
 import { initializeOutputPanel } from './output-panel.js';
 import { initializeDesignPreview } from './design-preview.js';
@@ -8,9 +8,9 @@ import { exportSettings, parseSettings, restoreSettings, LEGACY_APPEARANCE_KEYS,
 import { createDesignStore } from './design-client.js';
 import { createSettingsStore } from './settings-client.js';
 import { SETTINGS_FIELDS } from '../shared/settings-model.js';
-import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage } from '../shared/design-model.js';
+import { defaultDesign, resolveStudioImages, nearestRatio, talkActorImage, talkLayout } from '../shared/design-model.js';
 import { readSpeechEngines, LocalSpeechPlayer, normalizeLocalVoices, speechCredit, speechDisplayCredits } from '../shared/speech-engine.js';
-import { createChatState, addMessage, userRule, visibleMessages, clearMessages, reconcilePinned } from './chat-state.js';
+import { createChatState, addMessage, userRule, visibleMessages, clearMessages, reconcilePinned, setPinned } from './chat-state.js';
 import { ChatConnection, readSavedConnections, validChannel, connectionPresentation } from '../shared/connections.js';
 import { normalizeSpeechOptions, prepareSpeechText, shouldAutoRead, rememberAutoRead, createSpeechHistory, isSpeechUserExcluded, readSavedAutoSpeech } from './speech-options.js';
 import { readSavedVoices, readHistoryLimit, normalizeHistoryLimit } from '../shared/studio.js';
@@ -135,6 +135,8 @@ function renderSelection() {
   $('mute-user').disabled = !message;
   $('hide-user').textContent = message && userRule(state, message.user).hidden ? '↺ 非表示解除' : '⊘ ユーザーを非表示';
   $('mute-user').textContent = message && userRule(state, message.user).muted ? '↺ 除外解除' : '◖ 読み上げ除外';
+  $('pin-comment').disabled = !message;
+  $('pin-comment').textContent = message && state.pinned?.id === String(message.id) ? 'このコメントの固定を解除' : 'このコメントを固定';
 }
 
 function render() {
@@ -364,6 +366,26 @@ $('hide-comment').onclick = () => {
   }
   $('search').focus();
 };
+$('pin-comment').onclick = () => {
+  const state = states[active], message = state.selected;
+  if (!message) return;
+  const release = state.pinned?.id === String(message.id), replace = !!state.pinned;
+  setPinned(state, release ? null : message);
+  $('user-actions').hidePopover();
+  renderPinned();
+  publishComments();
+  notify(release ? '固定を解除しました。' : replace ? '固定するコメントを差し替えました。' : 'コメントを固定しました。');
+  $('search').focus();
+};
+function releasePinned() {
+  setPinned(states[active], null);
+  renderPinned();
+  publishComments();
+  notify('固定を解除しました。');
+  (document.body.classList.contains('talk-mode') ? $('talk-view') : $('search')).focus({ preventScroll: true });
+}
+$('unpin-comment').onclick = releasePinned;
+$('stage-unpin-comment').onclick = releasePinned;
 $('read-selected').onclick = () => states[active].selected ? speak(states[active].selected) : notify('コメントを選択してください。');
 $('stop-speech').onclick = stop;
 function setAutoSpeech(enabled) {
@@ -560,8 +582,27 @@ function renderStageChat() {
   if (bottom) list.scrollTop = list.scrollHeight;
   updateStageCommentVisibility();
   $('stage-count').textContent = `${state.received} COMMENTS`;
+  renderPinned();
+  publishComments(messages);
+}
+
+function renderPinned() {
+  const pinned = states[active].pinned;
+  renderPinnedComment($('talk-stage'), pinned, studio);
+  $('pinned-empty').hidden = !!pinned;
+  $('pinned-content').hidden = !pinned;
+  $('pinned-user').textContent = pinned?.user || '';
+  $('pinned-text').textContent = pinned?.text || '';
+  $('unpin-comment').hidden = !pinned;
+  $('stage-unpin-comment').hidden = !pinned;
+  $('pinned-design-hidden').hidden = !pinned || !talkLayout(designStore.design, shownTalkRatio)?.panels.pinned?.hidden;
+}
+
+function publishComments(messages) {
+  const state = states[active];
   // Hidden users and comments are filtered here, so they never reach outputs.
-  outputPublisher.update({ platform: active, received: state.received, messages, pinned: state.pinned });
+  outputPublisher.update({ platform: active, received: state.received,
+    messages: messages ?? state.messages.filter(message => !message.hidden && !userRule(state, message.user).hidden), pinned: state.pinned });
 }
 
 function updateStageCommentVisibility() { markClippedComments($('stage-chat-list')); }

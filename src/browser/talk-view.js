@@ -11,7 +11,7 @@ export function initializeTalkView(stage, { onPointerDown = () => {} } = {}) {
     const doc = frame.contentDocument;
     if (!doc.querySelector('link').sheet?.cssRules.length) throw new Error('雑談画面のスタイルを読み込めませんでした。画面を再読み込みしてください。');
     doc.querySelector('main').append(stage); stage.hidden = false;
-    for (const selector of ['#stage-chat-list', '.stage-speech-content']) stage.querySelector(selector).tabIndex = 0;
+    for (const selector of ['#stage-chat-list', '#stage-pinned-list', '.stage-speech-content']) stage.querySelector(selector).tabIndex = 0;
     doc.addEventListener('pointerdown', onPointerDown);
     doc.addEventListener('keydown', event => {
       if (event.key === 'Escape') {

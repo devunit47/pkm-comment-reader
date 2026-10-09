@@ -1,7 +1,7 @@
 import { compileTheme } from '../shared/theme.js';
 import { createDesignStore } from './design-client.js';
 import { resolveStudioImages, resolveOverlayAssets, nearestRatio, talkLayout, talkOverlays, talkActorImage } from '../shared/design-model.js';
-import { renderStageAppearance, renderOverlays, renderStageComments, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
+import { renderStageAppearance, renderOverlays, renderStageComments, renderPinnedComment, selectOutputComments, markClippedComments, applyTalkLayout } from './stage-appearance.js';
 import { OUTPUT_CHANNEL, HEARTBEAT_MS, parseOutputOptions, normalizeOutputMessage, createOutputView, applyOutputMessage } from '../shared/output-protocol.js';
 
 // The stream output only renders. It has no chat connection, no audio and no
@@ -65,6 +65,7 @@ function renderChat() {
     expiryTimer = setTimeout(renderChat, Math.max(1, Math.min(2147483647, next - now)));
   }
   $('stage-count').textContent = `${view.received} COMMENTS`;
+  renderPinnedComment(stage, view.pinned, studio);
 }
 function renderSpeech() {
   // No placeholder text: an idle output shows nothing a viewer must read.

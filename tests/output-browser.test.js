@@ -4,11 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory } from './browser-support.js';
+import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
-async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [], maxVisible = 30 } = {}) {
+async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [], maxVisible = 30, initScript, clock = false } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath, args });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-output-browser-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
@@ -21,6 +21,8 @@ async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [],
   const url = `http://127.0.0.1:${server.address().port}`;
   const context = await browser.newContext({ viewport });
   await blockExternalFonts(context);
+  if (initScript) await context.addInitScript(initScript);
+  if (clock) await context.clock.install();
   const errors = [];
   context.on('page', page => page.on('pageerror', error => errors.push(error.message)));
   const page = await context.newPage();
@@ -36,6 +38,136 @@ const producerPage = url => `${url}/speech-background.svg`;
 const comments = output => output.locator('.stage-comment').evaluateAll(cards => cards.map(card => card.textContent));
 const backgrounds = output => output.evaluate(() => ['html', 'body', 'main', '#talk-stage'].map(selector => getComputedStyle(document.querySelector(selector)).backgroundColor));
 const controls = output => output.evaluate(() => document.querySelectorAll('button,input,select,textarea,dialog,[popover],output').length);
+
+async function pinComment(page, index = 0) {
+  await page.locator('#comment-list .message').nth(index).click();
+  await page.locator('#pin-comment').click();
+}
+async function waitPinned(owner, text) {
+  await owner.waitForFunction(text => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    return doc.querySelector('#stage-pinned-list .pokome-comment__body')?.textContent === text;
+  }, text);
+}
+async function waitUnpinned(owner) {
+  await owner.waitForFunction(() => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    return doc.querySelector('.stage-pinned')?.hidden === true && !doc.querySelector('#stage-pinned-list .stage-comment');
+  });
+}
+const mockSpeechAndConnection = () => {
+  window.spoken = []; window.testSockets = [];
+  Object.defineProperty(window, 'speechSynthesis', { value: {
+    getVoices: () => [], addEventListener() {}, cancel() {},
+    speak(utterance) { window.spoken.push(utterance.text); this.last = utterance; utterance.onstart?.(); },
+  } });
+  window.WebSocket = class { constructor() { window.testSockets.push(this); } send() {} close() {} };
+};
+
+browserTest('pin controls replace and release independent service comments, survive retention and fit narrow docks', async t => {
+  const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection });
+  await page.locator('#auto-speech').uncheck();
+  const first = await page.locator('#comment-list .message').first().textContent();
+  const second = await page.locator('#comment-list .message').nth(1).textContent();
+  const count = await page.locator('#count').textContent();
+  await page.locator('#comment-list .message').first().click();
+  assert.equal(await page.locator('#pinned-empty').isVisible(), true, 'selection alone does not pin');
+  await page.locator('#pin-comment').click();
+  assert.equal(await page.locator('#search').evaluate(element => element === document.activeElement), true);
+  assert.equal(await page.locator('#pinned-text').textContent(), first);
+  const output = await context.newPage(); await output.goto(url + '/output.html');
+  await waitPinned(output, first);
+  assert.equal(await controls(output), 0);
+  await page.locator('#comment-list .message').nth(1).click();
+  assert.equal(await page.locator('#pinned-text').textContent(), first);
+  await page.locator('#pin-comment').click(); await waitPinned(output, second);
+  await page.locator('#comment-list .message').nth(1).click();
+  assert.equal(await page.locator('#pin-comment').textContent(), 'このコメントの固定を解除');
+  await page.locator('#pin-comment').click(); await waitUnpinned(output);
+  assert.equal(await page.locator('#count').textContent(), count);
+  assert.deepEqual(await page.evaluate(() => window.spoken), []);
+  await pinComment(page); await waitPinned(output, first);
+  await output.reload(); await waitPinned(output, first);
+  await saveSetting(url, 'historyLimit', 1);
+  await page.waitForFunction(() => document.querySelectorAll('#comment-list .message').length === 1);
+  assert.equal(await page.locator('#pinned-text').textContent(), first, 'removed history does not release pin');
+  await page.locator('#unpin-comment').click(); await waitUnpinned(output);
+  await pinComment(page); const twitch = await page.locator('#pinned-text').textContent();
+  await page.locator('[data-platform="kick"]').click(); await pinComment(page);
+  const kick = await page.locator('#pinned-text').textContent();
+  await page.locator('[data-platform="twitch"]').click(); assert.equal(await page.locator('#pinned-text').textContent(), twitch);
+  await page.locator('[data-platform="kick"]').click(); assert.equal(await page.locator('#pinned-text').textContent(), kick);
+  await page.locator('[data-platform="twitch"]').click();
+  const user = await page.locator('#pinned-user').textContent();
+  await saveSetting(url, 'users', { twitch: { [user]: { hidden: true } }, kick: {} });
+  await waitUnpinned(page); await waitUnpinned(output);
+  await saveSetting(url, 'users', { twitch: {}, kick: {} });
+  await page.waitForFunction(() => document.querySelectorAll('#comment-list .message').length === 1);
+  await waitUnpinned(page);
+  for (const width of [1440, 300, 150]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await pinComment(page);
+    const home = await page.locator('#pinned-status').evaluate(element => {
+      const rect = element.getBoundingClientRect(), button = element.querySelector('button').getBoundingClientRect();
+      return { fits: element.scrollWidth <= element.clientWidth + 1 && rect.left >= 0 && rect.right <= innerWidth + 1, button: button.width > 0 && button.right <= innerWidth + 1 };
+    });
+    assert.deepEqual(home, { fits: true, button: true }, String(width));
+    await page.locator('#unpin-comment').click(); await waitUnpinned(page);
+    await pinComment(page); await page.locator('#enter-talk').click();
+    await page.locator('#stage-unpin-comment').focus();
+    const talk = await page.locator('#talk-controls').evaluate(element => {
+      const rect = element.getBoundingClientRect(), button = element.querySelector('#stage-unpin-comment').getBoundingClientRect();
+      return { fits: element.scrollWidth <= element.clientWidth + 1 && rect.left >= 0 && rect.right <= innerWidth + 1, button: button.width > 0 && button.right <= innerWidth + 1 };
+    });
+    assert.deepEqual(talk, { fits: true, button: true }, String(width));
+    await page.locator('#stage-unpin-comment').click(); await waitUnpinned(output);
+    await page.keyboard.press('Escape');
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await pinComment(page); await page.reload(); await appReady(page); await waitUnpinned(page); await waitUnpinned(output);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('pin survives speech and output expiry, but hiding, clearing and connection initialization release it', async t => {
+  const { page, context, url, errors } = await fixture(t, { initScript: mockSpeechAndConnection, clock: true });
+  await page.locator('#auto-speech').uncheck();
+  await pinComment(page);
+  const fixed = await page.locator('#pinned-text').textContent();
+  const output = await context.newPage(); await output.goto(url + '/output.html'); await waitPinned(output, fixed);
+  await page.locator('#comment-list .message').nth(1).click(); await page.locator('#read-selected').click();
+  await output.waitForFunction(() => document.querySelector('.stage-speech').dataset.speaking === 'true');
+  await waitPinned(output, fixed);
+  const spoken = await page.evaluate(() => window.spoken);
+  await pinComment(page, 2); const replacement = await page.locator('#pinned-text').textContent();
+  assert.deepEqual(await page.evaluate(() => window.spoken), spoken, 'pin does not enqueue audio');
+  await waitPinned(output, replacement);
+  await page.evaluate(() => window.speechSynthesis.last.onend());
+  await context.clock.runFor(5100); await waitPinned(output, replacement);
+  await saveStudio(url, { holdSeconds: 5, maxVisible: 1, newestPosition: 'top', commentMaxLines: 2, commentLabel: false });
+  await output.waitForFunction(() => document.querySelector('#talk-stage').dataset.commentMaxLines === '2');
+  assert.equal(await output.locator('.stage-pinned h2').isVisible(), true, 'the dedicated pinned heading identifies the card');
+  await context.clock.runFor(6000);
+  await output.waitForFunction(() => document.querySelectorAll('#stage-chat-list .stage-comment').length === 0);
+  await waitPinned(output, replacement);
+  await page.locator('#comment-list .message').nth(2).click(); await page.locator('#hide-comment').click();
+  await waitUnpinned(page); await waitUnpinned(output);
+  await pinComment(page);
+  await page.locator('#comment-list .message').first().click(); await page.locator('#hide-user').click();
+  await waitUnpinned(page); await waitUnpinned(output);
+  await pinComment(page);
+  let confirmation = '';
+  page.once('dialog', dialog => { confirmation = dialog.message(); dialog.dismiss(); });
+  await page.locator('#clear').click(); assert.match(confirmation, /固定も解除します/);
+  assert.equal(await page.locator('#pinned-empty').isVisible(), false);
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#clear').click(); await waitUnpinned(page); await waitUnpinned(output);
+  await page.locator('#demo').click(); await page.locator('#demo').click(); await pinComment(page);
+  await page.evaluate(() => { document.querySelector('#twitch-channel').value = 'qa_channel'; document.querySelector('#twitch-connect-form').requestSubmit(); });
+  await page.waitForFunction(() => window.testSockets.length === 1);
+  await waitUnpinned(page); await waitUnpinned(output);
+  assert.deepEqual(errors, []);
+});
+
 
 browserTest('preview clipping follows direction, scrolling, frame size and CSS changes without hiding tall cards', async t => {
   const { page, errors } = await fixture(t, { maxVisible: null });

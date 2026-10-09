@@ -16,6 +16,7 @@ export function renderStageAppearance(stage, studio, defaultImage = './speech-ba
   // Preserve saved themes that override the comment size directly.
   stage.style.setProperty('--stage-font-size', `${studio.fontSize}px`);
   $('stage-chat-list').dataset.commentStyle = studio.commentStyle;
+  $('stage-pinned-list').dataset.commentStyle = studio.commentStyle;
   renderCommentLook(stage, studio);
   $('stage-speech-user').hidden = studio.commentStyle === 'anonymous';
   stage.style.setProperty('--speech-font-size', `${studio.speechFontSize}px`);
@@ -178,6 +179,11 @@ export function markClippedComments(list) {
     const clipped = rect.height <= list.clientHeight && (rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1);
     comment.classList.toggle('stage-comment-clipped', clipped);
   }
+}
+
+export function renderPinnedComment(stage, pinned, studio) {
+  stage.querySelector('.stage-pinned').hidden = !pinned;
+  renderStageComments(stage.querySelector('#stage-pinned-list'), pinned ? [pinned] : [], studio);
 }
 
 export const TALK_PANEL_SELECTORS = Object.freeze({ header: '.stage-header', chat: '.stage-chat', speech: '.stage-speech', actor: '.stage-actor', footer: '.stage-footer' });

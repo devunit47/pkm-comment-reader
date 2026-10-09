@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { renderStageAppearance, renderOverlays } from '../src/browser/stage-appearance.js';
+import { renderStageAppearance, renderOverlays, renderPinnedComment } from '../src/browser/stage-appearance.js';
 import { DEFAULT_STUDIO, normalizeStudio, THEME_ACCENTS, applyCommentPreset } from '../src/shared/studio.js';
 import { normalizeOverlays, createOverlay } from '../src/shared/overlay-model.js';
 import { normalizeActorImage } from '../src/shared/design-model.js';
@@ -70,10 +70,11 @@ class FakeDocument {
 }
 function fixture(ownerDocument = new FakeDocument()) {
   const stage = ownerDocument.createElement('section');
-  for (const id of ['stage-chat-list', 'stage-speech-user', 'stage-title', 'stage-subtitle', 'stage-footer-text', 'stage-speech-title', 'actor-image', 'actor-placeholder', 'actor-caption']) {
+  for (const id of ['stage-chat-list', 'stage-pinned-list', 'stage-speech-user', 'stage-title', 'stage-subtitle', 'stage-footer-text', 'stage-speech-title', 'actor-image', 'actor-placeholder', 'actor-caption']) {
     const node = ownerDocument.createElement(id === 'actor-image' ? 'img' : 'div'); node.id = id; stage.append(node);
   }
   const speech = ownerDocument.createElement('div'); speech.className = 'stage-speech'; stage.append(speech);
+  const pinned = ownerDocument.createElement('section'); pinned.className = 'stage-pinned'; stage.append(pinned);
   stage.querySelector('#actor-placeholder').append(ownerDocument.createElement('small'));
   return { stage, ownerDocument, get: id => stage.querySelector(`#${id}`) };
 }
@@ -314,4 +315,18 @@ test('comment look writes only the attributes and variables it needs and removes
   renderStageAppearance(stage, normalizeStudio());
   assert.deepEqual(stage.dataset, baseline.dataset);
   assert.deepEqual(new Map(stage.style.values), baseline.style);
+});
+
+
+test('pinned cards use raw text safely and remove the entire panel when released', () => {
+  const { stage, get } = fixture();
+  const message = { id: 'fixed', user: '<viewer>', text: '<script> https://example.test/' + '本文'.repeat(100) };
+  withoutGlobals(() => renderPinnedComment(stage, message, normalizeStudio({ commentStyle: 'anonymous', maxVisible: 1, holdSeconds: 5 })));
+  assert.equal(stage.querySelector('.stage-pinned').hidden, false);
+  assert.equal(get('stage-pinned-list').children.length, 1);
+  assert.equal(get('stage-pinned-list').querySelector('p').textContent, message.text);
+  assert.equal(get('stage-pinned-list').querySelector('strong').textContent, message.user);
+  withoutGlobals(() => renderPinnedComment(stage, null, normalizeStudio()));
+  assert.equal(stage.querySelector('.stage-pinned').hidden, true);
+  assert.equal(get('stage-pinned-list').children.length, 0);
 });
