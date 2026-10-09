@@ -38,6 +38,10 @@ export function parseTwitchMessage(line, channel) {
   if (notice) {
     // Notices copied from Shared Chat are outside this feature's scope.
     if (tags['source-room-id'] && tags['source-room-id'] !== tags['room-id']) return null;
+    // Twitch's 2018 launch notice lists anon msg-ids and AnAnonymousGifter (274598607).
+    // Recognize both to avoid treating the pseudo-account or channel owner as the gifter.
+    // https://discuss.dev.twitch.com/t/anonymous-sub-gifting-to-launch-11-15-launch-details/18683
+    // These documented historical forms do not establish current anonymous IRC delivery.
     const kinds = { sub: 'sub', resub: 'resub', subgift: 'gift', submysterygift: 'giftBomb', anonsubgift: 'gift', anonsubmysterygift: 'giftBomb' };
     if (!Object.hasOwn(kinds, tags['msg-id'])) return null;
     const kind = kinds[tags['msg-id']];
