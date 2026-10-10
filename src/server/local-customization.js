@@ -93,8 +93,6 @@ async function readCustomization(root, kind, name) {
 
 export function createLocalCustomizationHandler(directory = DEFAULT_CUSTOMIZATION_DIRECTORY) {
   const root = directoryPath(directory);
-  // Initialize when the server is created; retain failure without an unhandled rejection.
-  const initialized = ensureCustomizationDirectories(root).then(() => true, () => false);
   return async function handleLocalCustomization(req, res, url) {
     const json = (status, data) => {
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -111,7 +109,6 @@ export function createLocalCustomizationHandler(directory = DEFAULT_CUSTOMIZATIO
       json(403, { error: 'このアプリから接続してください。' }); return;
     }
     if (req.method !== 'GET') { res.setHeader('Allow', 'GET'); json(405, { error: '読み取りのみ利用できます。' }); return; }
-    await initialized;
     try { await ensureCustomizationDirectories(root); } catch {
       json(503, { error: 'customizationフォルダーを利用できません。通常のフォルダーか、アクセス権を確認してください。' }); return;
     }
