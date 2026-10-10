@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { temporaryDataDirectory } from './browser-support.js';
 
@@ -47,4 +51,21 @@ test('lookup errors have usable messages without exposing upstream content', asy
   const response = await fetch(`${base}/api/kick/channel/missing`);
   assert.equal(response.status, 404);
   assert.match((await response.json()).error, /見つかりません/);
+});
+
+// A server that is closed right away must leave no background folder work behind,
+// so the folders appear with the first request that needs them.
+test('creating a server writes no customization folders until a request needs them', async t => {
+  const folder = await mkdtemp(join(tmpdir(), 'pokome-lazy-customization-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
+  const customizationDirectory = join(folder, 'customization');
+  const server = createServer({ customizationDirectory, dataDirectory: await temporaryDataDirectory(t) });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  assert.equal((await fetch(`${base}/api/settings`)).status, 200);
+  assert.equal(existsSync(customizationDirectory), false, 'settings requests leave customization untouched');
+  assert.equal((await fetch(`${base}/api/design/current`)).status, 200);
+  for (const kind of ['styles', 'images', 'current']) assert.equal(existsSync(join(customizationDirectory, kind)), true, kind);
 });
