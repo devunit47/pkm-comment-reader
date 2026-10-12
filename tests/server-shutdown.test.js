@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { createTwitchAuthHandler } from '../src/server/twitch-auth.js';
+import { fakeClock } from './auth-support.js';
 import { createDesignStorage } from '../src/server/design-storage.js';
 import { createSettingsStorage } from '../src/server/settings-storage.js';
 
@@ -43,7 +43,7 @@ async function listen(t, server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-for (const [kind, createStorage] of [['design', createDesignStorage], ['settings', createSettingsStorage], ['auth/twitch', directory => createTwitchAuthHandler(directory)]]) {
+for (const [kind, createStorage] of [['design', createDesignStorage], ['settings', createSettingsStorage]]) {
 test(`${kind} server close completes when a late SSE request arrives on an active keep-alive connection`, { timeout: 7000 }, async t => {
   const directory = await temporary(t);
   const server = createServer({ customizationDirectory: join(directory, 'customization'), dataDirectory: join(directory, 'data') });
@@ -123,3 +123,19 @@ test(`${kind} SSE heartbeats stop on request or response disconnect and shutdown
   }
 });
 }
+
+test('server shutdown closes the settings auth stream and stops pending login timers', async t => {
+  const directory = await temporary(t), clock = fakeClock(); let calls = 0;
+  const server = createServer({ customizationDirectory: join(directory, 'customization'), dataDirectory: join(directory, 'data'), twitchClientId: 'test-client', authPlatform: 'linux', authClock: clock,
+    fetchImpl: async () => { calls++; return { ok: true, status: 200, json: async () => ({ device_code: 'private-code', user_code: 'USER-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 }) }; } });
+  const base = await listen(t, server), abort = new AbortController();
+  t.after(() => abort.abort());
+  const stream = await fetch(`${base}/api/settings/events`, { signal: abort.signal });
+  const reader = stream.body.getReader(); await reader.read();
+  await fetch(`${base}/api/auth/twitch`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: base, 'Sec-Fetch-Site': 'same-origin' }, body: '{"action":"start"}' });
+  assert.ok(clock.size > 0);
+  await within(new Promise(resolve => server.close(resolve)), 'auth shutdown kept the settings stream open');
+  while (!(await reader.read()).done) { /* Drain the final auth notification before EOF. */ }
+  assert.equal(clock.size, 0);
+  await clock.tick(600000); assert.equal(calls, 1);
+});

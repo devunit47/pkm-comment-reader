@@ -86,7 +86,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
     unsubscribeAuth();
     design.closeEvents();
     settings.closeEvents();
-    const stopped = auth.closeEvents();
+    const stopped = auth.close();
     const result = close(error => {
       stopped.then(() => callback?.(error), () => callback?.(error || new Error('Unable to close authentication storage')));
     });

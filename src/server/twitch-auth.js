@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuthStorage } from './auth-storage.js';
-import { createEventStream, failure, readAllowed, readBody, writeAllowed } from './storage-utils.js';
+import { failure, readAllowed, readBody, writeAllowed } from './storage-utils.js';
 
 const systemClock = { now: Date.now, setTimeout, clearTimeout };
 const reasons = {
@@ -294,15 +294,13 @@ export function createTwitchAuthHandler(directory, options = {}) {
     directories.set(key, shared);
   }
   shared.users++;
-  const streams = createEventStream(); let revision = 0, closed = false;
-  const unsubscribe = shared.auth.subscribe(() => streams.broadcast(++revision));
+  let closed = false;
   async function handle(req, res, url) {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     const json = (status, data) => { if (!res.headersSent) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(data)); } };
     try {
       if (req.method === 'GET') {
         if (!readAllowed(req)) throw failure(403, 'このアプリから接続してください。');
-        if (url.pathname === '/api/auth/twitch/events') { streams.events(req, res); return; }
         if (url.pathname !== '/api/auth/twitch') throw failure(404, '見つかりません。');
         await shared.auth.ready; json(200, shared.auth.status()); return;
       }
@@ -319,10 +317,10 @@ export function createTwitchAuthHandler(directory, options = {}) {
       res.setHeader('Allow', 'GET, POST'); throw failure(405, 'この操作には対応していません。');
     } catch (error) { json(error.status || 503, { error: error.status ? error.message : 'ログイン情報を処理できません。data フォルダーのアクセス権を確認してください。' }); }
   }
-  async function closeEvents() {
+  async function close() {
     if (closed) return;
-    closed = true; streams.closeEvents(); unsubscribe(); shared.users--;
+    closed = true; shared.users--;
     if (!shared.users) { directories.delete(key); await shared.auth.close(); await shared.storage.close(); }
   }
-  return { handle, closeEvents, subscribe: shared.auth.subscribe };
+  return { handle, close, subscribe: shared.auth.subscribe };
 }
