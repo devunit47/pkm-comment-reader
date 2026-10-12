@@ -35,7 +35,7 @@ const callCount = (calls, suffix) => calls.filter(call => call.url.endsWith(suff
 
 for (const operation of ['poll', 'validate', 'sync']) {
   test(`background ${operation} converts a storage read failure into recoverable status`, async t => {
-    const { auth, clock, storage } = await fixture(t);
+    const { auth, clock, storage, calls } = await fixture(t);
     await auth.start();
     if (operation !== 'poll') await clock.tick(5000);
     const load = storage.load;
@@ -50,6 +50,7 @@ for (const operation of ['poll', 'validate', 'sync']) {
     assert.equal(clock.size, 0);
     storage.load = load;
     await auth.logout(); assert.equal(auth.status().status, 'signed-out');
+    assert.equal(callCount(calls, '/revoke'), operation === 'poll' ? 0 : 1);
     await auth.start(); assert.equal(auth.status().status, 'pending');
   });
 }

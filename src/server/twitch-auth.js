@@ -154,7 +154,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     return exclusive(async () => {
       if (stopping || !enabled) return;
       const saved = await storage.load('twitch');
-      if (stopping || saved.revision === revision) return;
+      if (stopping || (saved.revision === revision && record?.reason !== 'storage')) return;
       invalidate(); revision = saved.revision;
       record = saved.unreadable ? { status: 'reauth', reason: 'unreadable' } : normalizeRecord(saved.value, clientId);
       if (saved.value && !record) record = { status: 'reauth', reason: 'unreadable' };
