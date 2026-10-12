@@ -360,3 +360,18 @@ for (const code of [400, 401]) {
     assert.equal((await storage.load('twitch')).value.session, undefined);
   });
 }
+
+test('restart clears saved device authorization without polling and permits a new code', async t => {
+  const { auth, clock, storage } = await fixture(t);
+  await auth.start(); await auth.close();
+  let polls = 0;
+  const restored = createTwitchAuth({ storage, clock, clientId: 'test-client', fetchImpl: async url => {
+    if (url.endsWith('/token')) { polls++; return response(400, { message: 'authorization_pending' }); }
+    if (url.endsWith('/device')) return response(200, { device_code: 'new-private-code', user_code: 'NEW-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 });
+    throw new Error('Unexpected request');
+  } });
+  t.after(() => restored.close()); await restored.ready;
+  assert.equal(restored.status().status, 'signed-out'); assert.equal((await storage.load('twitch')).value, null);
+  await clock.tick(600000); assert.equal(polls, 0);
+  assert.equal((await restored.start()).user_code, 'NEW-CODE');
+});

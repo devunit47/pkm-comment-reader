@@ -47,7 +47,14 @@ async function fixture(t, options = {}, ports = 1) {
     await page.goto(base); await appReady(page);
     return page;
   }
-  return { bases, open, errors };
+  async function restart() {
+    await Promise.all(servers.filter(server => server.listening).map(server => new Promise(resolve => server.close(resolve))));
+    const server = createServer({ ...options, dataDirectory: join(folder, 'data'), customizationDirectory: join(folder, 'customization') });
+    servers.push(server);
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    return `http://127.0.0.1:${server.address().port}`;
+  }
+  return { bases, open, errors, restart };
 }
 const stateIs = (page, status) => page.locator(`#twitch-login[data-status="${status}"]`).waitFor();
 async function snapshot(page, name) {
@@ -271,5 +278,29 @@ browserTest('temporary Twitch validation failures keep the account logged in and
   }
   assert.equal(fake.calls.filter(call => call.url.endsWith('/device')).length, 1);
   assert.equal(fake.calls.filter(call => call.url.endsWith('/token')).length, 1, 'temporary validation failures do not refresh tokens');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('restarting a server during device authorization clears the stale code and lets a new login start', async t => {
+  const fake = fakeTwitchSession();
+  const { bases, open, errors, restart } = await fixture(t, fake.options);
+  const page = await open();
+  await stateIs(page, 'signed-out');
+  await page.locator('#twitch-login-start').click(); await stateIs(page, 'pending');
+  assert.equal(await page.locator('#twitch-login-code').textContent(), 'CODE-0001');
+  const base = await restart();
+  assert.notEqual(base, bases[0], 'restart uses another port and the same private folders');
+  await page.goto(base); await appReady(page);
+  assert.equal((await (await fetch(`${base}/api/auth/twitch`)).json()).status, 'signed-out');
+  await stateIs(page, 'signed-out');
+  assert.equal(await page.locator('#twitch-login-start').isVisible(), true);
+  assert.equal(await page.locator('#twitch-login-start').isDisabled(), false);
+  assert.equal(await page.locator('#twitch-login-pending').isVisible(), false);
+  assert.equal(await page.locator('#twitch-login-code').textContent(), '');
+  await fake.clock.tick(5000);
+  assert.equal(fake.calls.filter(call => call.url.endsWith('/token')).length, 0, 'old authorization is never resumed');
+  await page.locator('#twitch-login-start').click(); await stateIs(page, 'pending');
+  assert.equal(await page.locator('#twitch-login-code').textContent(), 'CODE-0002');
+  assert.equal(fake.devices, 2);
   assert.deepEqual(errors, []);
 });

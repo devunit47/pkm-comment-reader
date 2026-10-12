@@ -165,8 +165,9 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
       revision = saved.revision;
       record = saved.unreadable ? { status: 'reauth', reason: 'unreadable' } : normalizeRecord(saved.value, clientId);
       if (saved.value && !record) record = { status: 'reauth', reason: 'unreadable' };
-      schedule();
+      if (record?.status !== 'pending') schedule();
     });
+    if (record?.status === 'pending') await persist(null, generation, record.id);
     if (record?.status === 'signed-in') await validate();
   })();
 
