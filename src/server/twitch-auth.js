@@ -296,5 +296,5 @@ export function createTwitchAuthHandler(directory, options = {}) {
     closed = true; streams.closeEvents(); unsubscribe(); shared.users--;
     if (!shared.users) { directories.delete(key); await shared.auth.close(); await shared.storage.close(); }
   }
-  return { handle, closeEvents };
+  return { handle, closeEvents, subscribe: shared.auth.subscribe };
 }

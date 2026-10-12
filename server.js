@@ -19,6 +19,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   const design = createDesignStorage(resolve(customizationDirectory instanceof URL ? fileURLToPath(customizationDirectory) : customizationDirectory));
   const settings = createSettingsStorage(dataDirectory);
   const auth = createTwitchAuthHandler(dataDirectory, { clientId: twitchClientId, fetchImpl, clock: authClock, platform: authPlatform, protect: authProtect, unprotect: authUnprotect });
+  const unsubscribeAuth = auth.subscribe(() => settings.authChanged());
   const server = http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     let url;
@@ -82,6 +83,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   // Open event streams would otherwise keep close() waiting forever.
   const close = server.close.bind(server);
   server.close = callback => {
+    unsubscribeAuth();
     design.closeEvents();
     settings.closeEvents();
     const stopped = auth.closeEvents();

@@ -127,3 +127,22 @@ test('a protected save response refreshes the warning and refuses later writes',
   assert.equal(store.settings.historyLimit, 300);
   await assert.rejects(store.set('setupComplete', true), /設定ファイル/);
 });
+
+test('authentication notifications share the settings stream, catch up on reconnect and unsubscribe on close', async () => {
+  const server = fakeServer();
+  const store = await createSettingsStore({ fetchImpl: server.fetchImpl, EventSourceClass: Events });
+  let changes = 0;
+  const unsubscribe = store.subscribeAuth(() => { changes++; });
+  const before = server.requests.length;
+  Events.last.emit('auth', { revision: 0 });
+  assert.equal(changes, 1);
+  assert.equal(server.requests.length, before, 'auth notifications do not reload operating settings');
+  Events.last.emit('open'); await tick();
+  assert.equal(changes, 2, 'reconnection catches up auth changes missed while disconnected');
+  unsubscribe(); Events.last.emit('auth');
+  assert.equal(changes, 2);
+  store.subscribeAuth(() => { changes++; });
+  store.close(); Events.last.emit('auth');
+  assert.equal(changes, 2);
+  assert.equal(Events.last.closed, true);
+});

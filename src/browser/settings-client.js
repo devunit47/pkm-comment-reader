@@ -9,7 +9,7 @@ async function failure(response, fallback) {
 export async function createSettingsStore({ fetchImpl = (...args) => globalThis.fetch(...args), EventSourceClass = globalThis.EventSource, watch = true } = {}) {
   let confirmed = normalizeSettings(), revision = 'default', available = false, writable = false, warning = '';
   let queue = Promise.resolve(), events;
-  const pending = [], listeners = new Set();
+  const pending = [], listeners = new Set(), authListeners = new Set();
   const visible = () => normalizeSettings({ ...confirmed, ...Object.fromEntries(pending.map(edit => [edit.field, edit.value])) });
   const emit = (before, detail = {}) => {
     const after = visible();
@@ -81,7 +81,8 @@ export async function createSettingsStore({ fetchImpl = (...args) => globalThis.
       });
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    close() { events?.close(); listeners.clear(); },
+    subscribeAuth(listener) { authListeners.add(listener); return () => authListeners.delete(listener); },
+    close() { events?.close(); listeners.clear(); authListeners.clear(); },
   };
   if (watch && typeof EventSourceClass === 'function') {
     events = new EventSourceClass('/api/settings/events');
@@ -90,8 +91,9 @@ export async function createSettingsStore({ fetchImpl = (...args) => globalThis.
       try { announced = JSON.parse(event.data).revision; } catch { return; }
       if (announced !== revision) reload();
     });
+    events.addEventListener('auth', () => { for (const listener of authListeners) listener(); });
     // Also cover changes between the initial GET and the first stream opening.
-    events.addEventListener('open', () => { reload(); });
+    events.addEventListener('open', () => { reload(); for (const listener of authListeners) listener(); });
   }
   return store;
 }

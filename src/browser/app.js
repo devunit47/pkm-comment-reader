@@ -21,8 +21,6 @@ import { initializeTalkView } from './talk-view.js';
 import { initializeTheme } from '../shared/theme.js';
 import { initializeTwitchLogin } from './twitch-login.js';
 
-initializeTwitchLogin(document.getElementById('twitch-login'));
-
 const talkStage = document.getElementById('talk-stage');
 const $ = id => document.getElementById(id) ?? (id === 'talk-stage' ? talkStage : talkStage.querySelector(`#${id}`));
 const names = { twitch: 'Twitch', kick: 'Kick' };
@@ -38,6 +36,7 @@ if (!enabledPlatforms.includes('kick')) {
 let session = 0;
 // Personal operating settings and the shareable appearance stay separate.
 const settingsStore = await createSettingsStore();
+initializeTwitchLogin(document.getElementById('twitch-login'), { subscribe: settingsStore.subscribeAuth });
 const savedSettings = settingsStore.settings;
 const savedConnections = readSavedConnections(savedSettings);
 const savedAutoSpeech = readSavedAutoSpeech(savedSettings);

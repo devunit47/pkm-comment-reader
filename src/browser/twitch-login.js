@@ -15,7 +15,7 @@ function normalizeState(value) {
   return result;
 }
 
-export function initializeTwitchLogin(root) {
+export function initializeTwitchLogin(root, { subscribe } = {}) {
   if (!root) return;
   const find = id => root.querySelector(`#twitch-login-${id}`);
   const status = find('status'), pending = find('pending'), code = find('code'), link = find('link'), remaining = find('remaining');
@@ -90,13 +90,11 @@ export function initializeTwitchLogin(root) {
   }
   const actions = [[start, () => command('start')], [cancel, () => command('cancel')], [logout, () => command('logout')], [retry, reload]];
   for (const [button, action] of actions) button.addEventListener('click', action);
-  const events = new EventSource(`${endpoint}/events`);
-  events.addEventListener('change', reload);
-  // Reconnecting also covers changes while the page had no event stream.
-  events.addEventListener('open', reload);
+  // Share settings' stream to leave HTTP connection slots for other pages.
+  const unsubscribe = subscribe?.(reload);
   function close() {
     if (closed) return;
-    closed = true; controller.abort(); events.close(); clearInterval(timer);
+    closed = true; controller.abort(); unsubscribe?.(); clearInterval(timer);
     for (const [button, action] of actions) button.removeEventListener('click', action);
     window.removeEventListener('pagehide', close);
   }

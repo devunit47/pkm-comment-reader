@@ -18,6 +18,7 @@ async function fixture(t, options = {}, ports = 1) {
     await rm(folder, { recursive: true, force: true });
   });
   browser = await chromium.launch({ headless: true, executablePath });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const bases = [];
   for (const server of servers) {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -25,10 +26,15 @@ async function fixture(t, options = {}, ports = 1) {
   }
   const errors = [];
   async function open(base = bases[0], prepare) {
-    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    const page = await context.newPage();
     page.setDefaultTimeout(8000);
     await page.addInitScript(() => {
       window.testSockets = [];
+      window.testStreams = [];
+      const NativeEventSource = window.EventSource;
+      window.EventSource = class extends NativeEventSource {
+        constructor(url, options) { super(url, options); window.testStreams.push(url); }
+      };
       window.WebSocket = class {
         constructor(url) { this.url = url; this.sent = []; window.testSockets.push(this); }
         send(text) { this.sent.push(text); }
@@ -65,7 +71,7 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
     await page.addInitScript(() => {
       const NativeEventSource = window.EventSource;
       window.EventSource = class extends NativeEventSource {
-        constructor(url, options) { super(url, options); if (url === '/api/auth/twitch/events') window.loginEvents = this; }
+        constructor(url, options) { super(url, options); if (url === '/api/settings/events') window.loginEvents = this; }
       };
     });
     await page.route('**/api/auth/twitch', route => route.fulfill({ json: state }));
@@ -73,7 +79,7 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
   await stateIs(page, 'disabled');
   for (const { status, width, colorScheme } of matrixCases({ status: Object.keys(states), width: [1440, 150], colorScheme: ['dark', 'light'] })) {
     state = states[status];
-    await page.evaluate(() => window.loginEvents.dispatchEvent(new MessageEvent('change', { data: '{"revision":"changed"}' })));
+    await page.evaluate(() => window.loginEvents.dispatchEvent(new MessageEvent('auth', { data: '{"revision":0}' })));
     await stateIs(page, status);
     await page.emulateMedia({ colorScheme });
     const palette = colorScheme === 'light'
@@ -201,6 +207,7 @@ browserTest('fake Twitch login, cancellation, reauthentication and logout synchr
   const pages = [await open(bases[0]), await open(bases[0]), await open(bases[1])];
   const all = status => Promise.all(pages.map(page => stateIs(page, status)));
   await all('signed-out');
+  for (const page of pages) assert.deepEqual((await page.evaluate(() => window.testStreams)).sort(), ['/api/design/events', '/api/settings/events']);
   await pages[0].locator('#twitch-login-start').click(); await all('pending');
   await pages[1].locator('#twitch-login-cancel').click(); await all('signed-out');
   await pages[0].locator('#twitch-login-start').click(); await all('pending');
