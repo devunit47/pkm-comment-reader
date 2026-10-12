@@ -19,6 +19,9 @@ import { enabledPlatforms } from '../shared/app-config.js';
 import { initializeWorkspace } from './workspace.js';
 import { initializeTalkView } from './talk-view.js';
 import { initializeTheme } from '../shared/theme.js';
+import { initializeTwitchLogin } from './twitch-login.js';
+
+initializeTwitchLogin(document.getElementById('twitch-login'));
 
 const talkStage = document.getElementById('talk-stage');
 const $ = id => document.getElementById(id) ?? (id === 'talk-stage' ? talkStage : talkStage.querySelector(`#${id}`));
