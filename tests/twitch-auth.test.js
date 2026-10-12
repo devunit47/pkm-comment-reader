@@ -109,6 +109,53 @@ test('device pending and slow_down obey polling intervals then login saves a tok
   }
 });
 
+for (const failure of ['network', 503, 429]) {
+  test(`device polling retries ${failure} at the current interval and then signs in`, async t => {
+    let polls = 0;
+    const { auth, clock, calls, storage } = await fixture(t, { fetch(url) {
+      if (!url.endsWith('/token')) return;
+      if (++polls === 1) return response(400, { error: 'slow_down' });
+      if (polls === 2) {
+        if (failure === 'network') throw new Error('private-network-failure');
+        return response(failure, { error: 'private-upstream-failure' });
+      }
+    } });
+    await auth.start(); await clock.tick(5000); await clock.tick(10000);
+    assert.equal(auth.status().status, 'pending');
+    assert.equal((await storage.load('twitch')).value.status, 'pending');
+    assert.doesNotMatch(JSON.stringify(auth.status()), /private-/);
+    await clock.tick(9999); assert.equal(polls, 2);
+    await clock.tick(1); assert.equal(auth.status().status, 'signed-in');
+    assert.deepEqual(calls.filter(call => call.url.endsWith('/token')).map(call => call.at), [1005000, 1015000, 1025000]);
+  });
+}
+
+test('device polling network failures stop at the original code expiry', async t => {
+  const { auth, clock, calls, storage } = await fixture(t, { fetch(url) {
+    if (url.endsWith('/device')) return response(200, { device_code: 'private-device', user_code: 'ABCD-EFGH', verification_uri: 'https://www.twitch.tv/activate', expires_in: 12, interval: 5 });
+    if (url.endsWith('/token')) throw new Error('private-network-failure');
+  } });
+  await auth.start(); await clock.tick(10000);
+  assert.equal(auth.status().status, 'pending'); assert.equal(callCount(calls, '/token'), 2);
+  await clock.tick(2000);
+  assert.equal(auth.status().status, 'reauth'); assert.match(auth.status().reason, /期限/);
+  assert.equal((await storage.load('twitch')).value.session, undefined);
+  await clock.tick(10000); assert.equal(callCount(calls, '/token'), 2); assert.equal(clock.size, 0);
+});
+
+for (const endpoint of ['validate', 'users']) {
+  test(`initial ${endpoint} network failure discards the unverified device token pair`, async t => {
+    const { auth, clock, storage } = await fixture(t, { fetch(url) {
+      if (url.endsWith(`/${endpoint}`)) throw new Error('access-one refresh-one private-device');
+    } });
+    await auth.start(); await clock.tick(5000);
+    assert.equal(auth.status().status, 'reauth');
+    assert.equal((await storage.load('twitch')).value.session, undefined);
+    assert.doesNotMatch(JSON.stringify(auth.status()), /access-one|refresh-one|private-device/);
+    assert.equal(clock.size, 0);
+  });
+}
+
 for (const [error, reason] of [['expired_token', /期限/], ['access_denied', /拒否/], ['invalid device code', /期限/]]) {
   test(`device ${error} becomes reauth with a safe reason`, async t => {
     const { auth, clock } = await fixture(t, { fetch: url => url.endsWith('/token') ? response(400, { message: error }) : undefined });

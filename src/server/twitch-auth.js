@@ -212,24 +212,34 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     if (!await current(epoch, id) || record?.status !== 'pending') return;
     const pending = record.pending;
     if (pending.expiresAt <= clock.now()) { await fail('expired', epoch, id); return; }
-    try {
-      const response = await oauth('token', { scopes: '', device_code: pending.device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
-      if (!await current(epoch, id)) return;
-      if (!response.ok) {
-        const error = response.data?.message || response.data?.error;
-        if (error === 'authorization_pending' || error === 'slow_down') {
-          if (error === 'slow_down') pending.interval += 5000;
-          pollTimer = timer(() => poll(epoch, id), pending.interval); return;
-        }
-        await fail(error === 'access_denied' ? 'denied' : ['expired_token', 'invalid device code'].includes(error) ? 'expired' : 'invalid', epoch, id); return;
+    const retry = () => { pollTimer = timer(() => poll(epoch, id), pending.interval); };
+    let response;
+    try { response = await oauth('token', { scopes: '', device_code: pending.device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' }); }
+    catch {
+      if (await current(epoch, id)) retry();
+      return;
+    }
+    if (!await current(epoch, id)) return;
+    if (response.status === 429 || response.status >= 500) { retry(); return; }
+    if (!response.ok) {
+      const error = response.data?.message || response.data?.error;
+      if (error === 'authorization_pending' || error === 'slow_down') {
+        if (error === 'slow_down') pending.interval += 5000;
+        retry(); return;
       }
-      const pair = tokenPair(response.data, clock.now()), identity = await identify(pair);
-      if (!await current(epoch, id)) return;
+      await fail(error === 'access_denied' ? 'denied' : ['expired_token', 'invalid device code'].includes(error) ? 'expired' : 'invalid', epoch, id); return;
+    }
+    let pair, identity, user;
+    try {
+      pair = tokenPair(response.data, clock.now()); identity = await identify(pair);
+    } catch { await fail('network', epoch, id); return; }
+    if (!await current(epoch, id)) return;
+    try {
       const profile = await request('https://api.twitch.tv/helix/users', null, { Authorization: `Bearer ${pair.accessToken}`, 'Client-Id': clientId });
-      const user = profile.data?.data?.[0];
+      user = profile.data?.data?.[0];
       if (!profile.ok || user?.id !== identity.userId || user?.login !== identity.login || !displayName(user?.display_name)) throw new Error('Invalid profile');
-      await persist({ id: randomUUID(), clientId, status: 'signed-in', session: { ...pair, ...identity, displayName: user.display_name } }, epoch, id);
-    } catch { await fail('network', epoch, id); }
+    } catch { await fail('network', epoch, id); return; }
+    await persist({ id: randomUUID(), clientId, status: 'signed-in', session: { ...pair, ...identity, displayName: user.display_name } }, epoch, id);
   }
   async function refresh() {
     if (refreshPromise) return refreshPromise;
