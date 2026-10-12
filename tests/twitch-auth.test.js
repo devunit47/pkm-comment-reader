@@ -55,6 +55,34 @@ for (const operation of ['poll', 'validate', 'sync']) {
   });
 }
 
+for (const operation of ['load', 'save']) {
+  test(`a storage ${operation} failure after token rotation becomes recoverable storage reauth`, async t => {
+    let validations = 0;
+    const { auth, clock, storage, calls } = await fixture(t, { fetch(url, init) {
+      if (url.endsWith('/validate') && ++validations === 2) return response(401, {});
+      if (url.endsWith('/token') && new URLSearchParams(init.body).get('grant_type') === 'refresh_token') return response(200, tokens('rotated'));
+    } });
+    await auth.start(); await clock.tick(5000);
+    const load = storage.load, save = storage.save;
+    storage.load = async service => {
+      const saved = await load(service);
+      if (operation === 'load' && saved.value?.session?.accessToken === 'access-rotated') throw new Error('private-storage-failure');
+      return saved;
+    };
+    storage.save = async (service, value, condition) => {
+      if (operation === 'save' && value.session?.accessToken === 'access-rotated' && value.session.expiresAt > 0) throw new Error('private-storage-failure');
+      return save(service, value, condition);
+    };
+    await clock.tick(3600000);
+    assert.equal(auth.status().status, 'reauth'); assert.match(auth.status().reason, /保存できません/);
+    assert.equal(await auth.getAccessToken(), null); assert.equal(clock.size, 0);
+    assert.equal((await load('twitch')).value.session.refreshToken, 'refresh-rotated');
+    storage.load = load; storage.save = save;
+    await auth.logout(); assert.equal(auth.status().status, 'signed-out');
+    assert.equal(calls.find(call => call.url.endsWith('/revoke')).form.get('token'), 'access-rotated');
+  });
+}
+
 for (const shape of ['empty', 'null', 'missing']) {
   test(`scope-free ${shape} responses support login, periodic validation and refresh`, async t => {
     const scopeField = key => shape === 'missing' ? {} : { [key]: shape === 'null' ? null : [] };

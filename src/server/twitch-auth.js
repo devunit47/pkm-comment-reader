@@ -71,7 +71,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   const exclusive = task => { const result = queue.then(task, task); queue = result.catch(() => {}); return result; };
   function storageFailure(epoch = generation, id, accessToken) {
     if (stopping || epoch !== generation || (id && record?.id !== id) || (accessToken && record?.session?.accessToken !== accessToken)) return;
-    record = { status: 'reauth', reason: 'storage' }; clearTimers(); notify();
+    invalidate(); record = { status: 'reauth', reason: 'storage' }; notify();
   }
   function background(task) {
     const epoch = generation, id = record?.id, accessToken = record?.session?.accessToken;
@@ -124,7 +124,9 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   const oauth = (path, form, parse = true) => request(`https://id.twitch.tv/oauth2/${path}`, { client_id: clientId, ...form }, {}, parse);
   async function current(epoch, id, accessToken) {
     if (stopping || epoch !== generation || (id && record?.id !== id) || (accessToken && record?.session?.accessToken !== accessToken)) return false;
-    const saved = await storage.load('twitch');
+    let saved;
+    try { saved = await storage.load('twitch'); }
+    catch { storageFailure(epoch, id, accessToken); return false; }
     return !stopping && epoch === generation && saved.revision === revision && (!accessToken || record?.session?.accessToken === accessToken);
   }
   async function persist(next, epoch, id, accessToken) {
@@ -135,7 +137,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
         const condition = { expectedRevision: revision };
         result = next ? await storage.save('twitch', next, condition) : await storage.remove('twitch', condition);
       } catch (error) {
-        if (error.status !== 409) throw error;
+        if (error.status !== 409) { storageFailure(epoch, id, accessToken); return false; }
         // Reload after releasing this queue; an external operation owns the state.
         queueMicrotask(() => { background(sync); });
         return false;
@@ -153,8 +155,9 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   async function sync() {
     return exclusive(async () => {
       if (stopping || !enabled) return;
+      const epoch = generation;
       const saved = await storage.load('twitch');
-      if (stopping || (saved.revision === revision && record?.reason !== 'storage')) return;
+      if (stopping || epoch !== generation || (saved.revision === revision && record?.reason !== 'storage')) return;
       invalidate(); revision = saved.revision;
       record = saved.unreadable ? { status: 'reauth', reason: 'unreadable' } : normalizeRecord(saved.value, clientId);
       if (saved.value && !record) record = { status: 'reauth', reason: 'unreadable' };
