@@ -85,6 +85,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     }
   }
   async function request(url, form, headers = {}, parse = true) {
+    if (stopping) throw new Error('Authentication stopped');
     const controller = new AbortController(); requests.add(controller);
     try {
       const response = await fetchImpl(url, {
@@ -105,16 +106,26 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   async function persist(next, epoch, id, accessToken) {
     return exclusive(async () => {
       if (!await current(epoch, id, accessToken)) return false;
-      const result = next ? await storage.save('twitch', next) : await storage.remove('twitch');
-      if (stopping || epoch !== generation) return false;
+      let result;
+      try {
+        const condition = { expectedRevision: revision };
+        result = next ? await storage.save('twitch', next, condition) : await storage.remove('twitch', condition);
+      } catch (error) {
+        if (error.status !== 409) throw error;
+        // Reload after releasing this queue; an external operation owns the state.
+        queueMicrotask(() => { sync().catch(() => {}); });
+        return false;
+      }
+      // A later cancel/logout is queued behind this write and must remove it.
       revision = result?.revision ?? (await storage.load('twitch')).revision;
+      if (stopping || epoch !== generation) return false;
       record = next; schedule(); notify(); return true;
     });
   }
-  async function fail(reason, epoch = generation, id = record?.id) {
-    try { await persist({ id: randomUUID(), clientId, status: 'reauth', reason }, epoch, id); }
+  async function fail(reason, epoch = generation, id = record?.id, accessToken) {
+    try { await persist({ id: randomUUID(), clientId, status: 'reauth', reason }, epoch, id, accessToken); }
     catch {
-      if (!stopping && epoch === generation) { record = { status: 'reauth', reason: 'storage' }; clearTimers(); notify(); }
+      if (!stopping && epoch === generation && (!accessToken || record?.session?.accessToken === accessToken)) { record = { status: 'reauth', reason: 'storage' }; clearTimers(); notify(); }
     }
   }
   async function sync() {
@@ -131,12 +142,15 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   const unsubscribe = enabled ? storage.subscribe('twitch', () => { sync().catch(() => {}); }) : () => {};
   const ready = (async () => {
     if (!enabled) return;
-    const saved = await storage.load('twitch');
-    if (stopping) return;
-    revision = saved.revision;
-    record = saved.unreadable ? { status: 'reauth', reason: 'unreadable' } : normalizeRecord(saved.value, clientId);
-    if (saved.value && !record) record = { status: 'reauth', reason: 'unreadable' };
-    schedule();
+    // File notifications must follow the initial read, including slow decryption.
+    await exclusive(async () => {
+      const saved = await storage.load('twitch');
+      if (stopping) return;
+      revision = saved.revision;
+      record = saved.unreadable ? { status: 'reauth', reason: 'unreadable' } : normalizeRecord(saved.value, clientId);
+      if (saved.value && !record) record = { status: 'reauth', reason: 'unreadable' };
+      schedule();
+    });
     if (record?.status === 'signed-in') await validate();
   })();
 
@@ -179,10 +193,11 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
         await fail(error === 'access_denied' ? 'denied' : ['expired_token', 'invalid device code'].includes(error) ? 'expired' : 'invalid', epoch, id); return;
       }
       const pair = tokenPair(response.data, clock.now()), identity = await identify(pair);
+      if (!await current(epoch, id)) return;
       const profile = await request('https://api.twitch.tv/helix/users', null, { Authorization: `Bearer ${pair.accessToken}`, 'Client-Id': clientId });
       const user = profile.data?.data?.[0];
       if (!profile.ok || user?.id !== identity.userId || user?.login !== identity.login || !displayName(user?.display_name)) throw new Error('Invalid profile');
-      await persist({ id, clientId, status: 'signed-in', session: { ...pair, ...identity, displayName: user.display_name } }, epoch, id);
+      await persist({ id: randomUUID(), clientId, status: 'signed-in', session: { ...pair, ...identity, displayName: user.display_name } }, epoch, id);
     } catch { await fail('network', epoch, id); }
   }
   async function refresh() {
@@ -192,6 +207,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     refreshPromise = (async () => {
       try {
         const response = await oauth('token', { grant_type: 'refresh_token', refresh_token: session.refreshToken });
+        if (!await current(epoch, before.id)) return null;
         if (!response.ok) { await fail('invalid', epoch, before.id); return null; }
         const pair = tokenPair(response.data, clock.now());
         const identity = await identify(pair, session.userId);
@@ -211,14 +227,16 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
         if (!await current(epoch, before.id, before.session.accessToken)) return;
         if (checked.status === 401) { await refresh(); return; }
         const user = checked.data;
-        if (!checked.ok || user?.client_id !== clientId || user?.user_id !== before.session.userId || !loginName(user?.login) || !emptyScopes(user?.scopes) || !seconds(user?.expires_in)) { await fail('invalid', epoch, before.id); return; }
+        if (!checked.ok || user?.client_id !== clientId || user?.user_id !== before.session.userId || !loginName(user?.login) || !emptyScopes(user?.scopes) || !seconds(user?.expires_in)) { await fail('invalid', epoch, before.id, before.session.accessToken); return; }
         await persist({ ...before, session: { ...before.session, login: user.login, expiresAt: clock.now() + user.expires_in * 1000 } }, epoch, before.id, before.session.accessToken);
-      } catch { if (await current(epoch, before.id, before.session.accessToken)) await fail('network', epoch, before.id); }
+      } catch { await fail('network', epoch, before.id, before.session.accessToken); }
     })().finally(() => { validationPromise = null; });
     return validationPromise;
   }
   async function cancel() {
-    await ready; invalidate(); const epoch = generation;
+    await ready;
+    if (record?.status === 'signed-in') return status();
+    invalidate(); const epoch = generation;
     await persist(null, epoch); return status();
   }
   async function logout() {

@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createAuthStorage } from '../src/server/auth-storage.js';
+import { atomicWrite } from '../src/server/storage-utils.js';
 
 const tokens = { accessToken: 'private-access', refreshToken: 'private-refresh', account: { login: 'sample' } };
 const crypt = {
@@ -152,4 +153,46 @@ test('Windows DPAPI CurrentUser encrypts and decrypts auth with real PowerShell'
   const raw = await readFile(path, 'utf8'); assert.ok(!raw.includes('private-access')); assert.ok(!raw.includes('private-refresh'));
   const other = createAuthStorage(directory); t.after(() => other.close());
   assert.deepEqual((await other.load('twitch')).value, tokens);
+});
+
+test('conditional saves preserve files externally replaced or deleted during encryption', async t => {
+  for (const action of ['replace', 'delete']) {
+    const started = Promise.withResolvers(), release = Promise.withResolvers(); let holding = false;
+    const { storage, path, directory } = await setup(t, { ...crypt, protect: async bytes => {
+      if (holding) { started.resolve(); await release.promise; } return crypt.protect(bytes);
+    } });
+    const before = await storage.save('twitch', tokens); holding = true;
+    const saving = storage.save('twitch', { ...tokens, accessToken: 'new-access' }, { expectedRevision: before.revision });
+    await started.promise;
+    if (action === 'replace') await writeFile(path, 'externally-replaced'); else await unlink(path);
+    release.resolve();
+    await assert.rejects(saving, error => error.status === 409 && !error.message.includes('private'));
+    if (action === 'replace') assert.equal(await readFile(path, 'utf8'), 'externally-replaced');
+    else await assert.rejects(stat(path), { code: 'ENOENT' });
+    assert.deepEqual(await readdir(join(directory, 'auth')), action === 'replace' ? ['twitch.json'] : []);
+  }
+});
+
+test('conditional saves and removals reject stale revisions on disk and in memory', async t => {
+  for (const options of [crypt, { platform: 'linux' }]) {
+    const { storage } = await setup(t, options);
+    const before = await storage.save('twitch', tokens, { expectedRevision: 'default' });
+    const after = await storage.save('twitch', { status: 'pending' }, { expectedRevision: before.revision });
+    await assert.rejects(() => storage.save('twitch', tokens, { expectedRevision: before.revision }), { status: 409 });
+    await assert.rejects(() => storage.remove('twitch', { expectedRevision: before.revision }), { status: 409 });
+    assert.deepEqual(await storage.load('twitch'), after);
+    await storage.remove('twitch', { expectedRevision: after.revision });
+    assert.equal((await storage.load('twitch')).value, null);
+  }
+});
+
+test('a conflict at atomic replacement preserves the target and removes the temporary file', async t => {
+  const { folder } = await setup(t);
+  const path = join(folder, 'replacement.json'); await writeFile(path, 'original');
+  const conflict = Object.assign(new Error('外部で変更されました。'), { status: 409 });
+  await assert.rejects(() => atomicWrite(path, 'new-content', folder, async () => {}, async () => {
+    await writeFile(path, 'external-content'); throw conflict;
+  }), { status: 409 });
+  assert.equal(await readFile(path, 'utf8'), 'external-content');
+  assert.deepEqual(await readdir(folder), ['replacement.json']);
 });

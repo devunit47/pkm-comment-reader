@@ -93,8 +93,28 @@ export function createAuthStorage(directory = defaultDirectory, { platform = pro
     }
   }
   async function load(service) { return read(serviceEntry(service)); }
-  async function save(service, value) {
+  // Compare ciphertext bytes without starting another DPAPI process.
+  async function rawRevision(entry) {
+    if (!disk) return entry.revision;
+    try {
+      const check = await guardDirectory(dirname(root), auth);
+      try {
+        const raw = (await readStable(entry.path, maxFileBytes)).bytes;
+        await check(); return revisionOf(raw);
+      } catch (error) { await check(); throw error; }
+    } catch (error) { return error.code === 'ENOENT' ? 'default' : 'unreadable'; }
+  }
+  function condition(entry, expectedRevision) {
+    if (expectedRevision !== undefined && (typeof expectedRevision !== 'string' || !/^(?:default|unreadable|[a-f0-9]{32})$/.test(expectedRevision))) throw failure(400, '認証情報の更新条件が正しくありません。');
+    const conflict = failure(409, 'ログイン情報が別の操作で変更されました。状態を確認してください。');
+    const check = async () => {
+      if (expectedRevision !== undefined && await rawRevision(entry) !== expectedRevision) throw conflict;
+    };
+    return { check, conflict };
+  }
+  async function save(service, value, { expectedRevision } = {}) {
     const entry = serviceEntry(service);
+    const expected = condition(entry, expectedRevision);
     let bytes, copied;
     try {
       if (!isObject(value)) throw storageError();
@@ -105,6 +125,7 @@ export function createAuthStorage(directory = defaultDirectory, { platform = pro
     } catch { throw storageError(); }
     return exclusive(entry, async () => {
       try {
+        await expected.check();
         if (!disk) {
           entry.value = copied;
           const revision = revisionOf(bytes); notify(entry, revision);
@@ -114,6 +135,7 @@ export function createAuthStorage(directory = defaultDirectory, { platform = pro
         if (!Buffer.isBuffer(encrypted) || !encrypted.length) throw storageError();
         const content = JSON.stringify({ format: 'pokome-auth', version: 1, encrypted: encrypted.toString('base64') });
         if (Buffer.byteLength(content) > maxFileBytes) throw storageError();
+        await expected.check();
         const checkParent = await guardDirectory(dirname(root), dirname(root));
         await safeDirectory(root, true); await checkParent();
         const checkRoot = await guardDirectory(dirname(root), root);
@@ -123,24 +145,28 @@ export function createAuthStorage(directory = defaultDirectory, { platform = pro
           const info = await lstat(entry.path);
           if (!info.isFile() || info.isSymbolicLink()) throw storageError();
         } catch (error) { if (error.code !== 'ENOENT') throw error; }
-        await atomicWrite(entry.path, content, auth, check);
+        await atomicWrite(entry.path, content, auth, check, expected.check);
         const revision = revisionOf(Buffer.from(content)); notify(entry, revision);
         return { value: structuredClone(copied), revision };
-      } catch { throw storageError(); }
+      } catch (error) { throw error === expected.conflict ? error : storageError(); }
     });
   }
-  async function remove(service) {
+  async function remove(service, { expectedRevision } = {}) {
     const entry = serviceEntry(service);
+    const expected = condition(entry, expectedRevision);
     return exclusive(entry, async () => {
-      if (disk) {
-        try {
-          const check = await guardDirectory(dirname(root), auth);
-          const info = await lstat(entry.path);
-          if (!info.isFile() || info.isSymbolicLink()) throw storageError();
-          await check(); await unlink(entry.path);
-        } catch (error) { if (error.code !== 'ENOENT') throw storageError(); }
-      }
-      entry.value = null; notify(entry, 'default'); return empty();
+      try {
+        await expected.check();
+        if (disk) {
+          try {
+            const check = await guardDirectory(dirname(root), auth);
+            const info = await lstat(entry.path);
+            if (!info.isFile() || info.isSymbolicLink()) throw storageError();
+            await expected.check(); await check(); await unlink(entry.path);
+          } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        }
+        entry.value = null; notify(entry, 'default'); return empty();
+      } catch (error) { throw error === expected.conflict ? error : storageError(); }
     });
   }
   function subscribe(service, callback) {

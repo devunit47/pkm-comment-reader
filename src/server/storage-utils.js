@@ -66,7 +66,7 @@ export async function retryTransient(task, { attempts = 20, codes = ['EPERM', 'E
 export const renameWithRetry = (from, to, { renameFile = rename, ...options } = {}) => retryTransient(() => renameFile(from, to), options);
 export const readStable = (path, maxBytes) => retryTransient(() => readRegularFile(path, maxBytes), { codes: ['EPERM', 'EBUSY', 'EACCES', 'ECHANGED'] });
 
-export async function atomicWrite(path, content, root = dirname(path), checkAncestor = async () => {}) {
+export async function atomicWrite(path, content, root = dirname(path), checkAncestor = async () => {}, beforeReplace = async () => {}) {
   await checkAncestor();
   const checkLocal = await guardDirectory(root, dirname(path));
   const check = async () => { await checkAncestor(); await checkLocal(); };
@@ -78,7 +78,11 @@ export async function atomicWrite(path, content, root = dirname(path), checkAnce
     await check();
     await handle.writeFile(content);
     await handle.close(); handle = null;
-    await renameWithRetry(temporary, path, { renameFile: async (from, to) => { await check(); return rename(from, to); } });
+    await renameWithRetry(temporary, path, { renameFile: async (from, to) => {
+      await check(); await beforeReplace();
+      // The replacement condition may await I/O while an ancestor changes.
+      await check(); return rename(from, to);
+    } });
   } catch (error) {
     if (handle) await handle.close().catch(() => {});
     await check().then(() => unlink(temporary)).catch(() => {});
