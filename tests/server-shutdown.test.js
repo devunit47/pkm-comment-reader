@@ -7,6 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
+import { createTwitchAuthHandler } from '../src/server/twitch-auth.js';
 import { createDesignStorage } from '../src/server/design-storage.js';
 import { createSettingsStorage } from '../src/server/settings-storage.js';
 
@@ -42,7 +43,7 @@ async function listen(t, server) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-for (const [kind, createStorage] of [['design', createDesignStorage], ['settings', createSettingsStorage]]) {
+for (const [kind, createStorage] of [['design', createDesignStorage], ['settings', createSettingsStorage], ['auth/twitch', directory => createTwitchAuthHandler(directory)]]) {
 test(`${kind} server close completes when a late SSE request arrives on an active keep-alive connection`, { timeout: 7000 }, async t => {
   const directory = await temporary(t);
   const server = createServer({ customizationDirectory: join(directory, 'customization'), dataDirectory: join(directory, 'data') });

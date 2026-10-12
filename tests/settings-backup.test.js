@@ -8,6 +8,13 @@ const legacy = () => ({ format: 'pokome-settings', version: 1, settings: {
   'pokome-voices': '{}', 'pokome-speech-engines': '{}', 'pokome-speech-options': '{}', 'pokome-users-v2': '{}',
 } });
 
+test('authentication fields never enter operating settings or a backup roundtrip', () => {
+  const contaminated = { connections: { twitch: 'example' }, auth: { twitch: { accessToken: 'private-access', refreshToken: 'private-refresh', device_code: 'private-device' } } };
+  const backup = exportSettings(contaminated);
+  assert.doesNotMatch(JSON.stringify(backup), /private-|accessToken|refreshToken|device_code|"auth"/);
+  assert.deepEqual(Object.keys(parseSettings(JSON.stringify(backup))), SETTINGS_FIELDS);
+});
+
 test('backup roundtrip restores normalized operating settings through item saves', async () => {
   const source = normalizeSettings({ connections: { twitch: 'example' }, historyLimit: 42, users: { twitch: { viewer: { hidden: true } } },
     setupComplete: true, output: { background: 'key', key: 'ff00ff' } });

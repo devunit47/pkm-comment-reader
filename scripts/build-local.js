@@ -2,6 +2,7 @@ import { LOCAL_FILES } from '../src/server/asset-manifest.js';
 import { ensureCustomizationDirectories, safeDirectory } from '../src/server/local-customization.js';
 import { mkdir, readdir, copyFile, writeFile, readFile, unlink } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
+import { twitchClientId } from '../src/shared/app-config.js';
 
 // The asset-only phase is also testable on non-Windows hosts. Never copy user files
 // from the source customization or data directory into the distributable.
@@ -28,7 +29,7 @@ export async function stageLocalFiles(destination = new URL('../dist-local/', im
   for (const directory of directories) await safeDirectory(new URL(directory + '/', destination), true);
   for (const file of files) await copyFile(new URL('../' + file, import.meta.url), new URL(file, destination));
   await unlink(new URL('src/browser/kick.js', destination)).catch(error => { if (error.code !== 'ENOENT') throw error; });
-  await writeFile(new URL('src/shared/app-config.js', destination), "export const enabledPlatforms = Object.freeze(['twitch']);\n");
+  await writeFile(new URL('src/shared/app-config.js', destination), `export const enabledPlatforms = Object.freeze(['twitch']);\r\nexport const twitchClientId = ${JSON.stringify(twitchClientId)};\r\n`);
   const html = await readFile(new URL('index.html', destination), 'utf8');
   await writeFile(new URL('index.html', destination), html.replaceAll('data-service="kick"', 'data-service="kick" hidden'));
 }
