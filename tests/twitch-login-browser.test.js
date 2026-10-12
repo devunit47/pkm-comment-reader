@@ -221,3 +221,55 @@ browserTest('fake Twitch login, cancellation, reauthentication and logout synchr
   for (const page of pages) assert.doesNotMatch(await page.locator('#twitch-login').textContent(), /private-(access|refresh|device)/);
   assert.deepEqual(errors, []);
 });
+
+function fakeTwitchSession() {
+  let now = Date.now(), next = 0;
+  const timers = new Map(), calls = [];
+  const clock = { now: () => now, setTimeout(fn, ms) { const id = ++next; timers.set(id, { at: now + ms, fn }); return id; }, clearTimeout: id => timers.delete(id),
+    async tick(ms) { const end = now + ms; for (;;) { const entry = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at)[0]; if (!entry) break; timers.delete(entry[0]); now = entry[1].at; await entry[1].fn(); } now = end; } };
+  const json = (status, data) => new Response(JSON.stringify(data), { status });
+  const fake = { clock, calls, validation: 'ok', devices: 0 };
+  fake.options = { twitchClientId: 'browser-test-client', authClock: clock, authPlatform: 'win32',
+    authProtect: async bytes => Buffer.from(bytes).map(byte => byte ^ 91),
+    authUnprotect: async bytes => Buffer.from(bytes).map(byte => byte ^ 91),
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith('/device')) return json(200, { device_code: `private-device-${++fake.devices}`, user_code: `CODE-000${fake.devices}`, verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 });
+      if (url.endsWith('/token')) return json(200, { access_token: 'private-access', refresh_token: 'private-refresh', expires_in: 14400, scope: [], token_type: 'bearer' });
+      if (url.endsWith('/validate')) {
+        if (fake.validation === 'network') throw new Error('Simulated connection failure');
+        if (fake.validation === '503') return json(503, { message: 'Temporary service failure' });
+        return json(200, { client_id: 'browser-test-client', login: 'test_login', user_id: '123', scopes: [], expires_in: 14400 });
+      }
+      if (url.endsWith('/users')) return json(200, { data: [{ id: '123', login: 'test_login', display_name: '確認アカウント' }] });
+      throw new Error('Unexpected fake Twitch endpoint');
+    } };
+  return fake;
+}
+
+browserTest('temporary Twitch validation failures keep the account logged in and recover after five minutes', async t => {
+  const fake = fakeTwitchSession();
+  const { bases, open, errors } = await fixture(t, fake.options);
+  const page = await open();
+  await stateIs(page, 'signed-out');
+  await page.locator('#twitch-login-start').click(); await stateIs(page, 'pending');
+  await fake.clock.tick(5000); await stateIs(page, 'signed-in');
+  const validations = () => fake.calls.filter(call => call.url.endsWith('/validate')).length;
+  for (const failure of ['503', 'network']) {
+    fake.validation = failure;
+    const before = validations();
+    await fake.clock.tick(3600000);
+    assert.equal(validations(), before + 1);
+    assert.equal((await (await fetch(`${bases[0]}/api/auth/twitch`)).json()).status, 'signed-in', `${failure} retains the account`);
+    await page.reload(); await appReady(page); await stateIs(page, 'signed-in');
+    assert.match(await page.locator('#twitch-login-status').textContent(), /ログイン中：確認アカウント/);
+    await fake.clock.tick(299999); assert.equal(validations(), before + 1);
+    fake.validation = 'ok'; await fake.clock.tick(1);
+    assert.equal(validations(), before + 2, 'validation retries once after five minutes');
+    await stateIs(page, 'signed-in');
+    assert.equal(await page.locator('#twitch-login-start').isVisible(), false);
+  }
+  assert.equal(fake.calls.filter(call => call.url.endsWith('/device')).length, 1);
+  assert.equal(fake.calls.filter(call => call.url.endsWith('/token')).length, 1, 'temporary validation failures do not refresh tokens');
+  assert.deepEqual(errors, []);
+});

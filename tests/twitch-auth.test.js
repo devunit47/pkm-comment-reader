@@ -286,3 +286,77 @@ test('external logout during the initial credential read takes precedence over i
   assert.equal(restored.status().status, 'signed-out');
   assert.equal(await restored.getAccessToken(), null);
 });
+
+test('offline startup preserves saved credentials and retries every five minutes until hourly validation resumes', async t => {
+  const { auth, clock, storage } = await fixture(t);
+  await auth.start(); await clock.tick(5000); await auth.close();
+  const before = await storage.load('twitch'); let offline = true, validations = 0;
+  const restored = createTwitchAuth({ storage, clock, clientId: 'test-client', fetchImpl: async () => {
+    validations++; if (offline) throw new TypeError('private-network-error'); return response(200, account);
+  } });
+  t.after(() => restored.close()); await restored.ready;
+  assert.equal(restored.status().status, 'signed-in'); assert.deepEqual(await storage.load('twitch'), before);
+  await clock.tick(299999); assert.equal(validations, 1);
+  await clock.tick(1); assert.equal(validations, 2);
+  assert.deepEqual(await storage.load('twitch'), before);
+  offline = false; await clock.tick(300000); assert.equal(validations, 3);
+  await clock.tick(3599999); assert.equal(validations, 3);
+  await clock.tick(1); assert.equal(validations, 4);
+  await restored.close(); assert.equal(clock.size, 0);
+});
+
+for (const code of [503, 429]) {
+  test(`hourly validate ${code} keeps the token pair and retries until recovery`, async t => {
+    let outage = false, validations = 0;
+    const { auth, clock, storage } = await fixture(t, { fetch(url) {
+      if (url.endsWith('/validate')) { validations++; if (outage) return response(code, { message: 'private-response' }); }
+    } });
+    await auth.start(); await clock.tick(5000); const before = await storage.load('twitch');
+    outage = true; await clock.tick(3600000);
+    assert.equal(auth.status().status, 'signed-in'); assert.deepEqual(await storage.load('twitch'), before);
+    await clock.tick(300000); assert.equal(validations, 3); assert.deepEqual(await storage.load('twitch'), before);
+    outage = false; await clock.tick(300000); assert.equal(validations, 4);
+    assert.equal((await storage.load('twitch')).value.session.refreshToken, 'refresh-one');
+    await clock.tick(3600000); assert.equal(validations, 5);
+  });
+}
+
+for (const failure of ['503', '429', 'network', 'timeout']) {
+  test(`expired-token refresh ${failure} returns null, retains login and recovers on retry`, async t => {
+    let expired = false, outage = true, refreshes = 0;
+    const { auth, clock, storage } = await fixture(t, { fetch(url, init) {
+      if (expired && url.endsWith('/validate') && init.headers.Authorization === 'OAuth access-one') return response(401, {});
+      if (url.endsWith('/token') && new URLSearchParams(init.body).get('grant_type') === 'refresh_token') {
+        refreshes++;
+        if (outage) {
+          if (failure === 'network') throw new TypeError('private-network-error');
+          if (failure === 'timeout') throw new DOMException('private-timeout', 'TimeoutError');
+          return response(Number(failure), {});
+        }
+        return response(200, tokens('recovered'));
+      }
+    } });
+    await auth.start(); await clock.tick(5000); const before = (await storage.load('twitch')).value;
+    expired = true; await storage.save('twitch', { ...before, session: { ...before.session, expiresAt: clock.now() - 1 } });
+    await new Promise(setImmediate); const retained = await storage.load('twitch');
+    assert.equal(await auth.getAccessToken(), null);
+    assert.equal(auth.status().status, 'signed-in'); assert.deepEqual(await storage.load('twitch'), retained);
+    await clock.tick(300000); assert.equal(refreshes, 2); assert.deepEqual(await storage.load('twitch'), retained);
+    outage = false; await clock.tick(300000); assert.equal(refreshes, 3);
+    assert.equal(await auth.getAccessToken(), 'access-recovered');
+    assert.equal((await storage.load('twitch')).value.session.refreshToken, 'refresh-recovered');
+    await auth.close(); assert.equal(clock.size, 0);
+  });
+}
+
+for (const code of [400, 401]) {
+  test(`refresh rejection ${code} requires reauthentication even with an empty response`, async t => {
+    const { auth, clock, storage } = await fixture(t, { fetch(url, init) {
+      if (url.endsWith('/token') && new URLSearchParams(init.body).get('grant_type') === 'refresh_token') return { ...response(code), json: async () => { throw new SyntaxError('empty'); } };
+    } });
+    await auth.start(); await clock.tick(5000);
+    assert.equal(await auth.getAccessToken({ forceRefresh: true }), null);
+    assert.equal(auth.status().status, 'reauth'); assert.match(auth.status().reason, /有効性/);
+    assert.equal((await storage.load('twitch')).value.session, undefined);
+  });
+}

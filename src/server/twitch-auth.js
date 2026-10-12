@@ -84,6 +84,17 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
       expiryTimer = timer(() => fail('expired', epoch, id), record.pending.expiresAt - clock.now());
     }
   }
+  async function retryValidation(epoch, before) {
+    await exclusive(async () => {
+      if (!await current(epoch, before.id, before.session.accessToken)) return;
+      clock.clearTimeout(validationTimer);
+      validationTimer = timer(() => validate(), 300000);
+    });
+  }
+  const identityMismatch = (user, expectedUserId) =>
+    (typeof user?.client_id === 'string' && user.client_id !== clientId) ||
+    (userId(user?.user_id) && expectedUserId && user.user_id !== expectedUserId) ||
+    !emptyScopes(user?.scopes);
   async function request(url, form, headers = {}, parse = true) {
     if (stopping) throw new Error('Authentication stopped');
     const controller = new AbortController(); requests.add(controller);
@@ -94,7 +105,12 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
         ...(form ? { body: new URLSearchParams(form).toString() } : {}),
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
       });
-      return { ok: response.ok, status: response.status, data: parse ? await response.json() : null };
+      let data = null;
+      if (parse) {
+        try { data = await response.json(); }
+        catch (error) { if (response.ok) throw error; }
+      }
+      return { ok: response.ok, status: response.status, data };
     } finally { requests.delete(controller); }
   }
   const oauth = (path, form, parse = true) => request(`https://id.twitch.tv/oauth2/${path}`, { client_id: clientId, ...form }, {}, parse);
@@ -174,7 +190,8 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   async function identify(pair, expectedUserId) {
     const checked = await request('https://id.twitch.tv/oauth2/validate', null, { Authorization: `OAuth ${pair.accessToken}` });
     const user = checked.data;
-    if (!checked.ok || user?.client_id !== clientId || !userId(user?.user_id) || !loginName(user?.login) || !emptyScopes(user?.scopes) || !seconds(user?.expires_in) || (expectedUserId && user.user_id !== expectedUserId)) throw new Error('Invalid identity');
+    if (checked.ok && identityMismatch(user, expectedUserId)) throw Object.assign(new Error('Invalid identity'), { invalidIdentity: true });
+    if (!checked.ok || user?.client_id !== clientId || !userId(user?.user_id) || !loginName(user?.login) || !seconds(user?.expires_in)) throw new Error('Invalid identity response');
     return { userId: user.user_id, login: user.login, expiresAt: clock.now() + user.expires_in * 1000 };
   }
   async function poll(epoch, id) {
@@ -207,13 +224,21 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     refreshPromise = (async () => {
       try {
         const response = await oauth('token', { grant_type: 'refresh_token', refresh_token: session.refreshToken });
-        if (!await current(epoch, before.id)) return null;
-        if (!response.ok) { await fail('invalid', epoch, before.id); return null; }
+        if (!await current(epoch, before.id, session.accessToken)) return null;
+        if (!response.ok) {
+          if ([400, 401].includes(response.status)) await fail('invalid', epoch, before.id, session.accessToken);
+          else await retryValidation(epoch, before);
+          return null;
+        }
         const pair = tokenPair(response.data, clock.now());
         const identity = await identify(pair, session.userId);
-        const saved = await persist({ ...before, session: { ...session, ...pair, ...identity } }, epoch, before.id);
+        const saved = await persist({ ...before, session: { ...session, ...pair, ...identity } }, epoch, before.id, session.accessToken);
         return saved ? pair.accessToken : null;
-      } catch { await fail('network', epoch, before.id); return null; }
+      } catch (error) {
+        if (error.invalidIdentity) await fail('invalid', epoch, before.id, session.accessToken);
+        else await retryValidation(epoch, before);
+        return null;
+      }
     })().finally(() => { refreshPromise = null; });
     return refreshPromise;
   }
@@ -226,10 +251,12 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
         const checked = await request('https://id.twitch.tv/oauth2/validate', null, { Authorization: `OAuth ${before.session.accessToken}` });
         if (!await current(epoch, before.id, before.session.accessToken)) return;
         if (checked.status === 401) { await refresh(); return; }
+        if (!checked.ok) { await retryValidation(epoch, before); return; }
         const user = checked.data;
-        if (!checked.ok || user?.client_id !== clientId || user?.user_id !== before.session.userId || !loginName(user?.login) || !emptyScopes(user?.scopes) || !seconds(user?.expires_in)) { await fail('invalid', epoch, before.id, before.session.accessToken); return; }
+        if (identityMismatch(user, before.session.userId)) { await fail('invalid', epoch, before.id, before.session.accessToken); return; }
+        if (user?.client_id !== clientId || user?.user_id !== before.session.userId || !loginName(user?.login) || !seconds(user?.expires_in)) { await retryValidation(epoch, before); return; }
         await persist({ ...before, session: { ...before.session, login: user.login, expiresAt: clock.now() + user.expires_in * 1000 } }, epoch, before.id, before.session.accessToken);
-      } catch { await fail('network', epoch, before.id, before.session.accessToken); }
+      } catch { await retryValidation(epoch, before); }
     })().finally(() => { validationPromise = null; });
     return validationPromise;
   }
