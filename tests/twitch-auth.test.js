@@ -33,6 +33,32 @@ async function fixture(t, overrides = {}) {
 }
 const callCount = (calls, suffix) => calls.filter(call => call.url.endsWith(suffix)).length;
 
+for (const shape of ['empty', 'null', 'missing']) {
+  test(`scope-free ${shape} responses support login, periodic validation and refresh`, async t => {
+    const scopeField = key => shape === 'missing' ? {} : { [key]: shape === 'null' ? null : [] };
+    const { auth, clock, storage } = await fixture(t, { fetch(url) {
+      if (url.endsWith('/token')) { const { scope, ...pair } = tokens(); return response(200, { ...pair, ...scopeField('scope') }); }
+      if (url.endsWith('/validate')) { const { scopes, ...identity } = account; return response(200, { ...identity, ...scopeField('scopes') }); }
+    } });
+    await auth.start(); await clock.tick(5000); assert.equal(auth.status().status, 'signed-in');
+    await clock.tick(3600000); assert.equal(auth.status().status, 'signed-in');
+    assert.equal(await auth.getAccessToken({ forceRefresh: true }), 'access-one');
+    assert.equal((await storage.load('twitch')).value.session.refreshToken, 'refresh-one');
+  });
+}
+
+for (const endpoint of ['token', 'validate']) {
+  test(`a nonempty scope in ${endpoint} is rejected`, async t => {
+    let scoped = endpoint === 'token';
+    const { auth, clock, storage } = await fixture(t, { fetch(url) {
+      if (scoped && url.endsWith(`/${endpoint}`)) return response(200, endpoint === 'token' ? { ...tokens(), scope: ['user:read:email'] } : { ...account, scopes: ['user:read:email'] });
+    } });
+    await auth.start(); await clock.tick(5000);
+    if (endpoint === 'validate') { assert.equal(auth.status().status, 'signed-in'); scoped = true; await clock.tick(3600000); }
+    assert.equal(auth.status().status, 'reauth'); assert.equal((await storage.load('twitch')).value.session, undefined);
+  });
+}
+
 test('empty client ID disables login without upstream communication or timers', async t => {
   const { auth, calls, clock } = await fixture(t, { clientId: '' });
   assert.deepEqual(auth.status(), { status: 'disabled' });

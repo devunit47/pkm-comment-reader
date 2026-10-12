@@ -18,7 +18,7 @@ const seconds = value => Number.isSafeInteger(value) && value > 0 && value <= 60
 const loginName = value => typeof value === 'string' && /^[a-z0-9_]{1,25}$/.test(value);
 const userId = value => typeof value === 'string' && /^\d{1,30}$/.test(value);
 const displayName = value => typeof value === 'string' && value.length > 0 && value.length <= 100 && !/[\x00-\x1f\x7f]/.test(value);
-const emptyScopes = value => Array.isArray(value) && value.length === 0;
+const emptyScopes = value => value == null || (Array.isArray(value) && value.length === 0);
 
 function pendingData(value, now) {
   if (!secret(value?.device_code) || !/^[A-Z0-9-]{1,32}$/.test(value?.user_code) || !seconds(value?.expires_in) || !seconds(value?.interval)) throw new Error('Invalid device response');
