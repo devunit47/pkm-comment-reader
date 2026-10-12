@@ -222,6 +222,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     if (refreshPromise) return refreshPromise;
     if (record?.status !== 'signed-in' || stopping) return null;
     const epoch = generation, before = record, session = before.session;
+    let retained = before;
     refreshPromise = (async () => {
       try {
         const response = await oauth('token', { grant_type: 'refresh_token', refresh_token: session.refreshToken });
@@ -232,12 +233,17 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
           return null;
         }
         const pair = tokenPair(response.data, clock.now());
+        // Refresh tokens may be consumed; save the new pair before further I/O,
+        // but keep its access token expired until its identity is verified.
+        const pending = { ...before, session: { ...session, ...pair, expiresAt: 0 } };
+        if (!await persist(pending, epoch, before.id, session.accessToken)) return null;
+        retained = pending;
         const identity = await identify(pair, session.userId);
-        const saved = await persist({ ...before, session: { ...session, ...pair, ...identity } }, epoch, before.id, session.accessToken);
+        const saved = await persist({ ...pending, session: { ...pending.session, ...identity } }, epoch, before.id, pair.accessToken);
         return saved ? pair.accessToken : null;
       } catch (error) {
-        if (error.invalidIdentity) await fail('invalid', epoch, before.id, session.accessToken);
-        else await retryValidation(epoch, before);
+        if (error.invalidIdentity) await fail('invalid', epoch, retained.id, retained.session.accessToken);
+        else await retryValidation(epoch, retained);
         return null;
       }
     })().finally(() => { refreshPromise = null; });

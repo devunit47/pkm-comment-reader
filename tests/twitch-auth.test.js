@@ -401,3 +401,26 @@ test('restart clears saved device authorization without polling and permits a ne
   await clock.tick(600000); assert.equal(polls, 0);
   assert.equal((await restored.start()).user_code, 'NEW-CODE');
 });
+
+test('a rotated token pair survives failed validation and recovers without reusing the consumed refresh token', async t => {
+  let outage = false, exchanged = false;
+  const { auth, clock, storage, calls } = await fixture(t, { fetch(url, init) {
+    if (url.endsWith('/token') && new URLSearchParams(init.body).get('grant_type') === 'refresh_token') {
+      if (exchanged) return response(400, {});
+      exchanged = true; return response(200, tokens('rotated'));
+    }
+    if (url.endsWith('/validate') && outage) throw new TypeError('private-network-error');
+  } });
+  await auth.start(); await clock.tick(5000); outage = true;
+  assert.equal(await auth.getAccessToken({ forceRefresh: true }), null);
+  assert.equal(auth.status().status, 'signed-in');
+  const saved = (await storage.load('twitch')).value;
+  assert.equal(saved.session.refreshToken, 'refresh-rotated');
+  assert.ok(saved.session.expiresAt <= clock.now());
+  await clock.tick(300000); assert.equal(auth.status().status, 'signed-in');
+  outage = false; await clock.tick(300000);
+  assert.equal(await auth.getAccessToken(), 'access-rotated');
+  assert.equal(calls.filter(call => call.form?.get('grant_type') === 'refresh_token').length, 1);
+  await clock.tick(3599999); assert.equal(callCount(calls, '/validate'), 4);
+  await clock.tick(1); assert.equal(callCount(calls, '/validate'), 5);
+});
