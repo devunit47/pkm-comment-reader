@@ -1,5 +1,6 @@
 import { DEVELOPMENT_ASSETS } from './src/server/asset-manifest.js';
-import { enabledPlatforms } from './src/shared/app-config.js';
+import { enabledPlatforms, twitchClientId as defaultTwitchClientId } from './src/shared/app-config.js';
+import { createTwitchAuthHandler } from './src/server/twitch-auth.js';
 import { handleLocalSpeech } from './src/server/local-speech.js';
 import { createLocalCustomizationHandler, DEFAULT_CUSTOMIZATION_DIRECTORY } from './src/server/local-customization.js';
 import { createDesignStorage } from './src/server/design-storage.js';
@@ -13,14 +14,17 @@ import { validChannel } from './src/shared/connections.js';
 const files = Object.fromEntries(DEVELOPMENT_ASSETS.map(file => [file === 'index.html' ? '/' : '/' + file, file]));
 const types = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' };
 
-export function createServer({ fetchImpl = globalThis.fetch, customizationDirectory = DEFAULT_CUSTOMIZATION_DIRECTORY, dataDirectory = DEFAULT_DATA_DIRECTORY } = {}) {
+export function createServer({ fetchImpl = globalThis.fetch, customizationDirectory = DEFAULT_CUSTOMIZATION_DIRECTORY, dataDirectory = DEFAULT_DATA_DIRECTORY, twitchClientId = defaultTwitchClientId, authClock, authPlatform, authProtect, authUnprotect } = {}) {
   const handleLocalCustomization = createLocalCustomizationHandler(customizationDirectory);
   const design = createDesignStorage(resolve(customizationDirectory instanceof URL ? fileURLToPath(customizationDirectory) : customizationDirectory));
   const settings = createSettingsStorage(dataDirectory);
+  const auth = createTwitchAuthHandler(dataDirectory, { clientId: twitchClientId, fetchImpl, clock: authClock, platform: authPlatform, protect: authProtect, unprotect: authUnprotect });
+  const unsubscribeAuth = auth.subscribe(() => settings.authChanged());
   const server = http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end('Bad request'); return; }
+    if (url.pathname === '/api/auth/twitch' || url.pathname.startsWith('/api/auth/twitch/')) { await auth.handle(req, res, url); return; }
     if (url.pathname === '/api/customizations' || url.pathname.startsWith('/api/customizations/')) { await handleLocalCustomization(req, res, url); return; }
     if (url.pathname.startsWith('/api/design/')) { await design.handle(req, res, url); return; }
     if (url.pathname === '/api/settings' || url.pathname.startsWith('/api/settings/')) { await settings.handle(req, res, url); return; }
@@ -79,9 +83,13 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   // Open event streams would otherwise keep close() waiting forever.
   const close = server.close.bind(server);
   server.close = callback => {
+    unsubscribeAuth();
     design.closeEvents();
     settings.closeEvents();
-    const result = close(callback);
+    const stopped = auth.close();
+    const result = close(error => {
+      stopped.then(() => callback?.(error), () => callback?.(error || new Error('Unable to close authentication storage')));
+    });
     server.closeIdleConnections();
     return result;
   };

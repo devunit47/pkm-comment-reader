@@ -111,5 +111,5 @@ export function createSettingsStorage(directory = DEFAULT_DATA_DIRECTORY) {
     shared.watch = () => { load().then(value => notify(value.revision)).catch(() => {}); };
     watchFile(path, { persistent: false, interval: 200 }, shared.watch);
   }
-  return { handle, load, save, closeEvents };
+  return { handle, load, save, closeEvents, authChanged() { streams.broadcast(0, 'auth'); } };
 }

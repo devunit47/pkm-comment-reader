@@ -262,3 +262,15 @@ body.pokome-talk{margin:0;width:100%;height:100%;overflow:hidden}
 .stage-pinned{flex:0 1 auto;max-height:30%}
 #user-actions #pin-comment{font-size:11px}
 .pinned-details{padding:16px;min-width:0;overflow-wrap:anywhere}.pinned-details p{margin:0 0 12px;line-height:1.7}.pinned-details strong{display:block;margin-bottom:8px}.pinned-details button{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere}
+
+.platform-tabs:has(#twitch-login){align-items:flex-start}
+.platform-control:has(#twitch-login){flex-wrap:wrap;background:var(--panel)}
+.twitch-login{flex-basis:100%;min-width:0;padding:10px 6px 4px;border-top:1px solid var(--line);font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+.twitch-login h2{margin:0 0 6px;font-size:12px}
+.platform-tabs .twitch-login p{margin:6px 0;font-size:12px;color:var(--text)}
+.platform-tabs .twitch-login .muted{color:var(--muted)}
+.twitch-login-code{display:block;margin:6px 0;font-size:18px;letter-spacing:.06em;user-select:all}
+.twitch-login a{color:var(--mint);text-underline-offset:3px;overflow-wrap:anywhere}
+.twitch-login a:focus-visible{outline:2px solid var(--mint);outline-offset:3px}
+.twitch-login-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.twitch-login .button{min-height:44px;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere}

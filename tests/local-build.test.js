@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { BROWSER_ASSETS, LOCAL_FILES } from '../src/server/asset-manifest.js';
 import { buildLocal, stageLocalFiles } from '../scripts/build-local.js';
+import { twitchClientId } from '../src/shared/app-config.js';
 
 async function output(t) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-local-build-'));
@@ -34,6 +35,12 @@ test('local asset staging packages the backend and empty user folders without co
   const config = await readFile(join(folder, 'src/shared/app-config.js'), 'utf8');
   assert.match(config, /enabledPlatforms = Object\.freeze\(\['twitch'\]\)/);
   assert.doesNotMatch(config, /kick/);
+  const stagedConfig = await import(pathToFileURL(join(folder, 'src/shared/app-config.js')));
+  assert.equal(stagedConfig.twitchClientId, twitchClientId);
+  for (const file of ['auth-storage.js', 'twitch-auth.js']) {
+    assert.ok(LOCAL_FILES.includes(`src/server/${file}`));
+    assert.ok(!BROWSER_ASSETS.includes(`src/server/${file}`));
+  }
   const html = await readFile(join(folder, 'index.html'), 'utf8');
   assert.equal((html.match(/data-service="kick" hidden/g) || []).length, 3);
   for (const file of ['style.css', 'src/shared/theme.js', 'src/shared/studio.js', 'speech-background.svg']) assert.deepEqual(await readFile(new URL('../' + file, import.meta.url)), await readFile(join(folder, file)), file);
