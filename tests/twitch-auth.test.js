@@ -33,6 +33,27 @@ async function fixture(t, overrides = {}) {
 }
 const callCount = (calls, suffix) => calls.filter(call => call.url.endsWith(suffix)).length;
 
+for (const operation of ['poll', 'validate', 'sync']) {
+  test(`background ${operation} converts a storage read failure into recoverable status`, async t => {
+    const { auth, clock, storage } = await fixture(t);
+    await auth.start();
+    if (operation !== 'poll') await clock.tick(5000);
+    const load = storage.load;
+    storage.load = async () => { throw new Error('private-storage-failure'); };
+    if (operation === 'sync') {
+      const saved = (await load('twitch')).value;
+      await storage.save('twitch', { ...saved, session: { ...saved.session, displayName: '更新名' } });
+      await new Promise(setImmediate);
+    } else await clock.tick(operation === 'poll' ? 5000 : 3600000);
+    assert.equal(auth.status().status, 'reauth'); assert.match(auth.status().reason, /保存できません/);
+    assert.doesNotMatch(JSON.stringify(auth.status()), /private-/);
+    assert.equal(clock.size, 0);
+    storage.load = load;
+    await auth.logout(); assert.equal(auth.status().status, 'signed-out');
+    await auth.start(); assert.equal(auth.status().status, 'pending');
+  });
+}
+
 for (const shape of ['empty', 'null', 'missing']) {
   test(`scope-free ${shape} responses support login, periodic validation and refresh`, async t => {
     const scopeField = key => shape === 'missing' ? {} : { [key]: shape === 'null' ? null : [] };

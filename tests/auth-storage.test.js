@@ -130,19 +130,19 @@ test('auth storage refuses linked data/auth directories and linked files without
   try { await symlink(outside, join(directory, 'auth'), 'junction'); } catch (error) {
     if (error.code === 'EPERM') { t.skip('This account cannot create directory links'); return; } throw error;
   }
-  assert.equal((await storage.load('twitch')).unreadable, true);
+  await assert.rejects(() => storage.load('twitch'), error => error.status === 503 && !error.message.includes(original));
   await assert.rejects(() => storage.save('twitch', tokens)); await assert.rejects(() => storage.remove('twitch'));
   assert.equal(await readFile(join(outside, 'twitch.json'), 'utf8'), original);
   const linkedRoot = join(folder, 'linked-data'); await symlink(outside, linkedRoot, 'junction');
   const rootStorage = createAuthStorage(linkedRoot, crypt); t.after(() => rootStorage.close());
-  assert.equal((await rootStorage.load('twitch')).unreadable, true);
+  await assert.rejects(() => rootStorage.load('twitch'), { status: 503 });
   await assert.rejects(() => rootStorage.save('twitch', tokens)); await assert.rejects(() => rootStorage.remove('twitch'));
   const fileRoot = join(folder, 'file-data'); await mkdir(join(fileRoot, 'auth'), { recursive: true });
   try { await symlink(join(outside, 'twitch.json'), join(fileRoot, 'auth', 'twitch.json')); } catch (error) {
     if (error.code === 'EPERM') { t.diagnostic('This account cannot create file links'); return; } throw error;
   }
   const fileStorage = createAuthStorage(fileRoot, crypt); t.after(() => fileStorage.close());
-  assert.equal((await fileStorage.load('twitch')).unreadable, true);
+  await assert.rejects(() => fileStorage.load('twitch'), { status: 503 });
   await assert.rejects(() => fileStorage.save('twitch', tokens)); await assert.rejects(() => fileStorage.remove('twitch'));
   assert.equal(await readFile(join(outside, 'twitch.json'), 'utf8'), original);
 });

@@ -75,11 +75,17 @@ export function createAuthStorage(directory = defaultDirectory, { platform = pro
   }
   async function read(entry) {
     if (!disk) return entry.value === null ? empty() : { value: structuredClone(entry.value), revision: entry.revision };
-    let revision = 'unreadable';
+    let raw;
     try {
       const check = await guardDirectory(dirname(root), auth);
-      const raw = (await readStable(entry.path, maxFileBytes)).bytes;
-      await check(); revision = revisionOf(raw);
+      raw = (await readStable(entry.path, maxFileBytes)).bytes;
+      await check();
+    } catch (error) {
+      if (error.code === 'ENOENT') return empty();
+      throw storageError();
+    }
+    const revision = revisionOf(raw);
+    try {
       const document = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(raw));
       if (document?.format !== 'pokome-auth' || document.version !== 1) throw storageError();
       const bytes = await unprotect(decodeBase64(document.encrypted));
@@ -87,8 +93,7 @@ export function createAuthStorage(directory = defaultDirectory, { platform = pro
       const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
       if (!isObject(value)) throw storageError();
       return { value, revision };
-    } catch (error) {
-      if (error.code === 'ENOENT') return empty();
+    } catch {
       return { value: null, unreadable: true, revision };
     }
   }

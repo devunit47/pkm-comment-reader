@@ -67,9 +67,17 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     if (record.status === 'signed-in') return { status: 'signed-in', displayName: record.session.displayName, login: record.session.login };
     return { status: 'reauth', reason: reasons[record.reason] };
   };
-  const notify = () => { for (const listener of listeners) listener(); };
+  const notify = () => { for (const listener of listeners) { try { listener(); } catch { /* A subscriber must not interrupt authentication. */ } } };
   const exclusive = task => { const result = queue.then(task, task); queue = result.catch(() => {}); return result; };
-  const timer = (task, delay) => { const handle = clock.setTimeout(task, Math.max(0, delay)); handle?.unref?.(); return handle; };
+  function storageFailure(epoch = generation, id, accessToken) {
+    if (stopping || epoch !== generation || (id && record?.id !== id) || (accessToken && record?.session?.accessToken !== accessToken)) return;
+    record = { status: 'reauth', reason: 'storage' }; clearTimers(); notify();
+  }
+  function background(task) {
+    const epoch = generation, id = record?.id, accessToken = record?.session?.accessToken;
+    return (async () => task())().catch(() => storageFailure(epoch, id, accessToken));
+  }
+  const timer = (task, delay) => { const handle = clock.setTimeout(() => background(task), Math.max(0, delay)); handle?.unref?.(); return handle; };
   function clearTimers() { for (const handle of [pollTimer, validationTimer, expiryTimer]) clock.clearTimeout(handle); pollTimer = validationTimer = expiryTimer = undefined; }
   function invalidate() {
     generation++; clearTimers();
@@ -129,7 +137,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
       } catch (error) {
         if (error.status !== 409) throw error;
         // Reload after releasing this queue; an external operation owns the state.
-        queueMicrotask(() => { sync().catch(() => {}); });
+        queueMicrotask(() => { background(sync); });
         return false;
       }
       // A later cancel/logout is queued behind this write and must remove it.
@@ -140,9 +148,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   }
   async function fail(reason, epoch = generation, id = record?.id, accessToken) {
     try { await persist({ id: randomUUID(), clientId, status: 'reauth', reason }, epoch, id, accessToken); }
-    catch {
-      if (!stopping && epoch === generation && (!accessToken || record?.session?.accessToken === accessToken)) { record = { status: 'reauth', reason: 'storage' }; clearTimers(); notify(); }
-    }
+    catch { storageFailure(epoch, id, accessToken); }
   }
   async function sync() {
     return exclusive(async () => {
@@ -155,8 +161,8 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
       schedule(); notify();
     });
   }
-  const unsubscribe = enabled ? storage.subscribe('twitch', () => { sync().catch(() => {}); }) : () => {};
-  const ready = (async () => {
+  const unsubscribe = enabled ? storage.subscribe('twitch', () => { background(sync); }) : () => {};
+  const ready = background(async () => {
     if (!enabled) return;
     // File notifications must follow the initial read, including slow decryption.
     await exclusive(async () => {
@@ -169,10 +175,17 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     });
     if (record?.status === 'pending') await persist(null, generation, record.id);
     if (record?.status === 'signed-in') await validate();
-  })();
+  });
+
+  async function prepare() {
+    await ready;
+    if (record?.reason !== 'storage') return true;
+    try { await sync(); return true; }
+    catch { storageFailure(); return false; }
+  }
 
   async function start() {
-    await ready;
+    if (!await prepare()) return status();
     if (!enabled || stopping) throw failure(503, 'このビルドでは Twitch のログインを使えません');
     if (record?.status === 'signed-in') return status();
     invalidate(); const epoch = generation;
@@ -268,13 +281,14 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     return validationPromise;
   }
   async function cancel() {
-    await ready;
+    if (!await prepare()) return status();
     if (record?.status === 'signed-in') return status();
     invalidate(); const epoch = generation;
     await persist(null, epoch); return status();
   }
   async function logout() {
-    await ready; const token = record?.session?.accessToken;
+    if (!await prepare()) return status();
+    const token = record?.session?.accessToken;
     invalidate(); const epoch = generation;
     try { if (token) await oauth('revoke', { token }, false); } catch { /* Local logout must succeed even if Twitch is unavailable. */ }
     await persist(null, epoch); return status();
