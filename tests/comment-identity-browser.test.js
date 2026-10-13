@@ -268,11 +268,16 @@ browserTest('L2 delayed Helix lists update live and output pins without replay a
       for (const selector of ['#stage-chat-list', '#stage-pinned-list']) {
         const list = scene.locator(selector);
         await list.locator('.pokome-comment__badge-image').first().waitFor({ state: 'attached' });
-        const boxes = await list.locator('.pokome-comment__badge-image').evaluateAll(images => Promise.all(images.map(async image => {
-          await image.decode(); const r = image.getBoundingClientRect(), css = getComputedStyle(image);
-          return { width: r.width, height: r.height, font: parseFloat(css.fontSize), authorFont: parseFloat(getComputedStyle(image.closest('strong')).fontSize), square: Math.abs(r.width - r.height) < .1 };
-        })));
-        assert.ok(boxes.every(box => box.square && box.font === box.authorFont), `${theme}/${scheme}/${ratio}/${font}`);
+        const boxes = await list.evaluate(async list => {
+          await Promise.all([...list.querySelectorAll('.pokome-comment__badge-image')].map(image => image.decode()));
+          // Redraws during decoding can replace the nodes whose styles we measure.
+          return [...list.querySelectorAll('.pokome-comment__badge-image')].map(image => {
+            const r = image.getBoundingClientRect(), css = getComputedStyle(image);
+            return { width: r.width, height: r.height, font: parseFloat(css.fontSize), authorFont: parseFloat(getComputedStyle(image.closest('strong')).fontSize), square: Math.abs(r.width - r.height) < .1 };
+          });
+        });
+        assert.ok(boxes.length > 0, `${theme}/${scheme}/${ratio}/${font}: current images exist`);
+        assert.ok(boxes.every(box => box.square && box.font === box.authorFont), `${theme}/${scheme}/${ratio}/${font}: ${JSON.stringify(boxes)}`);
         dims.push(boxes.length);
       }
     }
