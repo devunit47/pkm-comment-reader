@@ -141,8 +141,10 @@ test('an older logout cannot restore the badge session while a newer logout stil
   const first = auth.logout(); await new Promise(setImmediate);
   const second = auth.logout(); await new Promise(setImmediate);
   pending[0](response(200, {})); await first;
-  const during = auth.sessionId(); pending[1](response(200, {})); await second;
+  const during = auth.sessionId(), state = auth.status(); pending[1](response(200, {})); await second;
   assert.equal(during, '');
+  assert.deepEqual(state, { status: 'signing-out' });
+  assert.deepEqual(auth.status(), { status: 'signed-out' });
 });
 
 test('device pending and slow_down obey polling intervals then login saves a token pair', async t => {
@@ -255,10 +257,10 @@ for (const action of ['cancel', 'logout']) {
   });
 }
 
-test('logout clears local storage despite revoke failure and discards late refresh', async t => {
+for (const failure of ['network', 'timeout']) test(`logout clears local storage despite revoke ${failure} and discards late refresh`, async t => {
   const delayed = Promise.withResolvers(), started = Promise.withResolvers();
   const { auth, clock, storage } = await fixture(t, { fetch(url, init) {
-    if (url.endsWith('/revoke')) throw new Error('access-one refresh-one private-device');
+    if (url.endsWith('/revoke')) throw failure === 'timeout' ? new DOMException('private-timeout', 'TimeoutError') : new Error('access-one refresh-one private-device');
     if (url.endsWith('/token') && new URLSearchParams(init.body).get('grant_type') === 'refresh_token') { started.resolve(); return delayed.promise; }
   } });
   await auth.start(); await clock.tick(5000);

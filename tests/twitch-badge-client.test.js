@@ -37,9 +37,10 @@ test('arrival updates retained selection and evicted pins without counts, first 
   assert.equal(f.state.selected.badges[0].url, url); assert.equal(f.state.pinned.badges[0].url, url);
   assert.equal(f.state.pinned.receivedAt, 42); assert.equal(f.state.selected.first, true); assert.equal(other.badges[0].url, '');
   assert.equal(JSON.stringify({ ...f.state, selected: null, pinned: null }), before);
-  f.client.setAuth({ status: 'signed-out' }); assert.equal(f.state.pinned.badges[0].url, ''); assert.equal(f.state.selected.badges[0].version, '0');
+  f.client.setAuth({ status: 'signing-out' }); assert.equal(f.state.pinned.badges[0].url, ''); assert.equal(f.state.selected.badges[0].version, '0');
+  f.client.setAuth({ status: 'signed-out' }); assert.equal(f.pending.length, 1, 'logout states do not request a new list');
 });
-for (const operation of ['disconnect', 'reconnect', 'clear', 'logout', 'disable']) {
+for (const operation of ['disconnect', 'reconnect', 'clear', 'logout', 'signing-out', 'disable']) {
   test(`late list after ${operation} cannot update the current state`, async () => {
     const f = fixture();
     f.client.connect(); f.client.setRoomId('1'); f.client.setEnabled(true); f.client.setAuth({ status: 'signed-in', login: 'viewer' });
@@ -48,6 +49,7 @@ for (const operation of ['disconnect', 'reconnect', 'clear', 'logout', 'disable'
     if (operation === 'reconnect') { f.client.disconnect(); f.client.connect(); f.client.setRoomId('1'); }
     if (operation === 'clear') { clearMessages(f.state); f.client.clear(); }
     if (operation === 'logout') f.client.setAuth({ status: 'signed-out' });
+    if (operation === 'signing-out') f.client.setAuth({ status: 'signing-out' });
     if (operation === 'disable') f.client.setEnabled(false);
     await f.deliver('1', 0); assert.equal(message.badges[0].url, ''); assert.equal(f.changed.length, 0);
     f.client.close();

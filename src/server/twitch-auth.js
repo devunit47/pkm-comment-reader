@@ -61,6 +61,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
   const enabled = typeof clientId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(clientId);
   const status = () => {
     if (!enabled) return { status: 'disabled' };
+    if (logoutGeneration === generation) return { status: 'signing-out' };
     if (!record) return { status: 'signed-out' };
     if (record.status === 'pending') {
       const { user_code, verification_uri, expiresAt } = record.pending;
@@ -69,7 +70,7 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     if (record.status === 'signed-in') return { status: 'signed-in', displayName: record.session.displayName, login: record.session.login };
     return { status: 'reauth', reason: reasons[record.reason] };
   };
-  const notify = () => { for (const listener of listeners) { try { listener(); } catch { /* A subscriber must not interrupt authentication. */ } } };
+  const notify = () => { for (const listener of listeners) { try { listener(status()); } catch { /* A subscriber must not interrupt authentication. */ } } };
   const exclusive = task => { const result = queue.then(task, task); queue = result.catch(() => {}); return result; };
   function storageFailure(epoch = generation, id, accessToken) {
     if (stopping || epoch !== generation || (id && record?.id !== id) || (accessToken && record?.session?.accessToken !== accessToken)) return;

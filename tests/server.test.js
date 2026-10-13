@@ -13,9 +13,11 @@ import { request as httpRequest } from 'node:http';
 test('Twitch auth API guards requests, shares state, and never returns private credentials in JSON or SSE', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-auth-api-')), clock = fakeClock();
   let calls = 0;
+  const revokeStarted = Promise.withResolvers(), revoke = Promise.withResolvers();
   const options = { dataDirectory: join(directory, 'data'), customizationDirectory: join(directory, 'customization'), twitchClientId: 'test-client', authPlatform: 'linux', authClock: clock,
     fetchImpl: async url => {
       calls++;
+      if (url.endsWith('/revoke')) { revokeStarted.resolve(); return revoke.promise; }
       const data = url.endsWith('/device') ? { device_code: 'private-device-code', user_code: 'USER-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 }
         : url.endsWith('/token') ? { access_token: 'private-access-token', refresh_token: 'private-refresh-token', expires_in: 3600, token_type: 'bearer', scope: [] }
         : url.endsWith('/validate') ? { client_id: 'test-client', user_id: '1', login: 'reader', expires_in: 3600, scopes: [] }
@@ -73,7 +75,16 @@ test('Twitch auth API guards requests, shares state, and never returns private c
   const settings = await (await fetch(`${bases[1]}/api/settings`)).text();
   assert.doesNotMatch(wire + settings + JSON.stringify(signedIn), /private-|access[_T]oken|refresh[_T]oken|device_code|USER-CODE/);
   assert.equal(JSON.parse(settings).auth, undefined);
-  await request({ action: 'logout' });
+  const loggingOut = request({ action: 'logout' });
+  try {
+    await revokeStarted.promise;
+    wire += new TextDecoder().decode((await reader.read()).value);
+    assert.match(wire, /event: auth\ndata: \{"revision":0,"status":"signing-out"\}/);
+    for (const address of bases) {
+      assert.deepEqual(await (await fetch(`${address}/api/auth/twitch`)).json(), { status: 'signing-out' });
+    }
+    assert.doesNotMatch(wire, /private-|access[_T]oken|refresh[_T]oken|device_code|Reader|reader/);
+  } finally { revoke.resolve({ ok: false, status: 503 }); await loggingOut; }
   assert.deepEqual(await (await fetch(`${bases[1]}/api/auth/twitch`)).json(), { status: 'signed-out' });
   abort.abort(); await reader.cancel().catch(() => {});
 });

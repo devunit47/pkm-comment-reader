@@ -71,6 +71,7 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
     'signed-out': { status: 'signed-out' },
     pending: { status: 'pending', user_code: 'ABCD-EFGH', verification_uri: 'https://www.twitch.tv/activate?device-code=ABCD-EFGH', expiresAt: Date.now() + 600000 },
     'signed-in': { status: 'signed-in', displayName: '<img src=x onerror=alert(1)>長い表示名', login: 'a_long_twitch_account_name' },
+    'signing-out': { status: 'signing-out' },
     reauth: { status: 'reauth', reason: '保存したログイン情報を読めません。別の PC や Windows ユーザーでは再ログインしてください。' },
   };
   let state = states.disabled;
@@ -121,6 +122,11 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
       assert.match(await page.locator('#twitch-login-status').textContent(), /別の PC/);
       assert.equal(await page.locator('#twitch-login-start').textContent(), '再ログイン');
     }
+    if (status === 'signing-out') {
+      assert.equal(await page.locator('#twitch-login-status').textContent(), 'ログアウトしています…');
+      assert.equal(await page.locator('#twitch-login-start').isVisible(), false);
+      assert.equal(await page.locator('#twitch-login-logout').isDisabled(), true);
+    }
     const issues = await page.locator('#twitch-login').evaluate(root => [root, ...root.querySelectorAll('*')]
       .filter(node => node.checkVisibility()).flatMap(node => {
         const box = node.getBoundingClientRect();
@@ -170,6 +176,44 @@ browserTest('login commands handle busy, cancel, failed operations, countdown an
   assert.equal(await page.locator('#twitch-login-link').getAttribute('href'), null);
   assert.deepEqual(actions, ['start', 'start', 'cancel']);
   assert.deepEqual(errors, []);
+});
+
+browserTest('queued stale reads cannot undo optimistic logout and failed POST restores the actual state', async t => {
+  const { open, errors } = await fixture(t);
+  const readStarted = Promise.withResolvers(), staleRead = Promise.withResolvers();
+  const postStarted = Promise.withResolvers(), failedPost = Promise.withResolvers();
+  let reads = 0;
+  const page = await open(undefined, async page => {
+    await page.addInitScript(() => {
+      const NativeEventSource = window.EventSource;
+      window.EventSource = class extends NativeEventSource {
+        constructor(url, options) { super(url, options); if (url === '/api/settings/events') window.loginEvents = this; }
+      };
+    });
+    await page.route('**/api/auth/twitch', async route => {
+      if (route.request().method() === 'POST') {
+        postStarted.resolve(); await failedPost.promise;
+        return route.fulfill({ status: 503, json: { error: 'private-failure' } });
+      }
+      if (++reads === 2) { readStarted.resolve(); await staleRead.promise; }
+      return route.fulfill({ json: { status: 'signed-in', login: 'viewer', displayName: '確認アカウント' } });
+    });
+  });
+  try {
+    await stateIs(page, 'signed-in');
+    await page.evaluate(() => window.loginEvents.dispatchEvent(new MessageEvent('auth', { data: '{"revision":0}' })));
+    await readStarted.promise;
+    await page.locator('#twitch-login-logout').click();
+    await stateIs(page, 'signing-out');
+    staleRead.resolve(); await postStarted.promise;
+    assert.equal(await page.locator('#twitch-login').getAttribute('data-status'), 'signing-out');
+    assert.equal(await page.locator('#twitch-login-logout').isDisabled(), true);
+    failedPost.resolve(); await stateIs(page, 'signed-in');
+    await page.locator('#twitch-login-error').filter({ hasText: '完了できません' }).waitFor();
+    assert.equal(await page.locator('#twitch-login-logout').isDisabled(), false);
+    assert.doesNotMatch(await page.locator('#twitch-login').textContent(), /private-failure/);
+    assert.deepEqual(errors, []);
+  } finally { staleRead.resolve(); failedPost.resolve(); }
 });
 
 browserTest('stalled or failed login requests leave app startup and anonymous Twitch reception working', async t => {

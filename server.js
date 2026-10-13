@@ -19,7 +19,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   const design = createDesignStorage(resolve(customizationDirectory instanceof URL ? fileURLToPath(customizationDirectory) : customizationDirectory));
   const settings = createSettingsStorage(dataDirectory);
   const auth = createTwitchAuthHandler(dataDirectory, { clientId: twitchClientId, fetchImpl, clock: authClock, platform: authPlatform, protect: authProtect, unprotect: authUnprotect });
-  const unsubscribeAuth = auth.subscribe(() => settings.authChanged());
+  const unsubscribeAuth = auth.subscribe(state => settings.authChanged(state));
   const server = http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     let url;

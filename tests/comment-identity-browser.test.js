@@ -131,6 +131,81 @@ browserTest('badge arrival preserves the playing speech preview while a differen
   assert.deepEqual(errors, []);
 });
 
+browserTest('logout removes badges from the initiating tab, another tab and output before revoke finishes', async t => {
+  const clock = fakeClock(), revokeStarted = Promise.withResolvers(), revoke = Promise.withResolvers();
+  const postStarted = Promise.withResolvers(), sendPost = Promise.withResolvers();
+  const badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/eb4a8a4c-eacd-4f5e-b9f2-394348310442/3';
+  const catalog = { data: ['broadcaster', 'moderator', 'vip', 'subscriber', 'bits'].map(set => ({
+    set_id: set, versions: [{ id: set === 'subscriber' ? '0' : set === 'bits' ? '100' : '1', image_url_4x: badgeUrl, title: set }],
+  })) };
+  const { context, page, base, errors } = await fixture(t, { commentBadges: true, commentEmotes: 'text' }, {
+    twitchClientId: 'test-client', authPlatform: 'linux', authClock: clock,
+    fetchImpl: async url => {
+      if (url.endsWith('/revoke')) { revokeStarted.resolve(); return revoke.promise; }
+      const data = url.endsWith('/device') ? { device_code: 'private-device', user_code: 'TEST-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 }
+        : url.endsWith('/token') ? { access_token: 'private-access', refresh_token: 'private-refresh', token_type: 'bearer', expires_in: 14400 }
+        : url.endsWith('/validate') ? { client_id: 'test-client', user_id: '1', login: 'viewer', scopes: null, expires_in: 14400 }
+        : url.endsWith('/badges/global') ? catalog : url.includes('/chat/badges?') ? { data: [] }
+        : { data: [{ id: '1', login: 'viewer', display_name: '確認アカウント' }] };
+      return new Response(JSON.stringify(data));
+    },
+  });
+  const other = await context.newPage(); other.setDefaultTimeout(8000);
+  const output = await context.newPage(); output.setDefaultTimeout(8000);
+  try {
+    await page.locator('#twitch-login[data-status="signed-out"]').waitFor();
+    await page.locator('#twitch-login-start').click(); await page.locator('#twitch-login[data-status="pending"]').waitFor();
+    await clock.tick(5000); await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+    await other.goto(base); await appReady(other); await other.locator('#twitch-login[data-status="signed-in"]').waitFor();
+    await other.locator('#twitch-connection-toggle').click();
+    await other.waitForFunction(() => window.testSockets.length === 1);
+    await other.evaluate(() => { const socket = window.testSockets[0]; socket.onopen(); socket.onmessage({ data: ':server 366 anon #qa_channel :End\r\n' }); });
+    for (const owner of [page, other]) {
+      await receive(owner, 'ログアウト中も保持する本文', 'room-id=123;badges=broadcaster/1,moderator/1,vip/1,subscriber/0,bits/100');
+      await owner.locator('#comment-list .message').last().click(); await owner.locator('#pin-comment').click();
+      await owner.locator('#enter-talk').click();
+      for (const list of ['#stage-chat-list', '#stage-pinned-list']) {
+        await talkStage(owner).locator(`${list} .pokome-comment__badge-image`).nth(4).waitFor({ state: 'attached' });
+      }
+      await owner.locator('#leave-talk').click();
+    }
+    await output.goto(base + '/output.html');
+    for (const list of ['#stage-chat-list', '#stage-pinned-list']) await output.locator(`${list} .pokome-comment__badge-image`).nth(4).waitFor();
+    const fallback = async owner => {
+      await owner.waitForFunction(() => {
+        const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+        return ['#stage-chat-list', '#stage-pinned-list'].every(selector => {
+          const list = doc.querySelector(selector);
+          return list?.textContent.includes('ログアウト中も保持する本文') && list.querySelectorAll('.pokome-comment__badge').length === 4 && !list.querySelector('img');
+        });
+      });
+    };
+    await page.route('**/api/auth/twitch', async route => {
+      if (route.request().method() === 'POST' && route.request().postDataJSON().action === 'logout') {
+        postStarted.resolve(); await sendPost.promise;
+      }
+      await route.continue();
+    });
+    await page.locator('#twitch-login-logout').click();
+    await page.locator('#twitch-login[data-status="signing-out"]').waitFor();
+    await page.waitForFunction(() => !document.getElementById('talk-frame').contentDocument.querySelector('.pokome-comment__badge-image'));
+    await page.locator('#enter-talk').click(); await fallback(page);
+    await postStarted.promise; sendPost.resolve(); await revokeStarted.promise;
+    await other.locator('#twitch-login[data-status="signing-out"]').waitFor();
+    await other.locator('#enter-talk').click();
+    await fallback(other); await fallback(output);
+    for (const owner of [page, other]) {
+      assert.equal(await owner.locator('#twitch-login-status').textContent(), 'ログアウトしています…');
+      assert.equal(await owner.locator('#twitch-login-logout').isDisabled(), true);
+      assert.equal(await owner.locator('#count').textContent(), '1 件');
+      assert.equal(await owner.locator('#twitch-status').textContent(), '接続済み');
+    }
+    revoke.resolve(new Response('{}'));
+    for (const owner of [page, other]) await owner.locator('#twitch-login[data-status="signed-out"]').waitFor({ state: 'attached' });
+    await fallback(output); assert.deepEqual(errors, []);
+  } finally { sendPost.resolve(); revoke.resolve(new Response('{}')); await output.close(); await other.close(); }
+});
+
 browserTest('L2 delayed Helix lists update live and output pins without replay and badge images match preview across representative scenes', async t => {
   const clock = fakeClock(), pending = [], calls = [];
   let nextLookup;
