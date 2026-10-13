@@ -10,6 +10,15 @@ const textPart = text => ({ type: 'text', text });
 const emote = (id, name) => ({ type: 'emote', id, name });
 const badge = (set, version = '1', url = '', title = '') => ({ set, version, url, title });
 
+test('badge URLs allow only the exact lowercase CDN format', () => {
+  const url = 'https://static-cdn.jtvnw.net/badges/v1/eb4a8a4c-eacd-4f5e-b9f2-394348310442/3';
+  assert.equal(normalizeBadges([badge('vip', '1', url)])[0].url, url);
+  for (const invalid of [url.replace('https', 'HTTPS'), url.replace('static-cdn.jtvnw.net', 'STATIC-CDN.JTVNW.NET'),
+    url.replace('badges/v1', 'BADGES/V1'), url.replace('eb4a8a4c', 'EB4A8A4C')]) {
+    assert.equal(normalizeBadges([badge('vip', '1', invalid)])[0].url, '', invalid);
+  }
+});
+
 test('badges preserve versions and receiver rooms while rejecting unsafe metadata and old strings', () => {
   const message = parse('本文', 'room-id=123;source-room-id=456;source-badges=vip/1;badge-info=subscriber/30;badges=subscriber/0,subscriber/12,world/Horde,bits/100');
   assert.equal(message.roomId, '123');

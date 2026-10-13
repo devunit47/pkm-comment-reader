@@ -2,7 +2,7 @@ export const COMMENT_LIMIT = 2000;
 export const EMOTE_LIMIT = 100;
 export const normalizeRoomId = value => typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value) ? value : '';
 export const validBadgeId = value => typeof value === 'string' && value.length > 0 && value.length <= 64 && !/[\s\x00-\x1f\x7f/,]/.test(value);
-export const normalizeBadgeUrl = value => typeof value === 'string' && /^https:\/\/static-cdn\.jtvnw\.net\/badges\/v1\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/3$/i.test(value) ? value : '';
+export const normalizeBadgeUrl = value => typeof value === 'string' && /^https:\/\/static-cdn\.jtvnw\.net\/badges\/v1\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/3$/.test(value) ? value : '';
 export const validEmoteId = value => typeof value === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(value);
 export const normalizeNameColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
 export function normalizeBadges(value) {
