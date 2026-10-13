@@ -70,7 +70,7 @@ test('history counts code points and never retains half of an emote at its limit
 });
 
 test('output sync retains identity while dropping URLs, invalid IDs, colors and inconsistent parts', () => {
-  const packet = identity => ({ v: 2, type: 'append', controllerId: 'safe', seq: 1, message: { id: 'one', user: 'viewer', text: 'Kappa', ...identity } });
+  const packet = identity => ({ v: 3, type: 'append', controllerId: 'safe', seq: 1, message: { id: 'one', user: 'viewer', text: 'Kappa', ...identity } });
   assert.equal(normalizeOutputMessage({ ...packet({}), v: 1 }), null);
   const valid = normalizeOutputMessage(packet({ color: '#abcdef', badges: [badge('subscriber'), badge('vip'), badge('vip'), badge('unknown')], parts: [{ ...emote('25', 'Kappa'), url: 'https://evil.example/image' }], url: 'https://evil.example' }));
   assert.equal(valid.message.color, '#abcdef');

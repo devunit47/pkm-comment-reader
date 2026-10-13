@@ -98,7 +98,7 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
     assert.equal(await page.locator('.platform-control:has(#twitch-login)').evaluate(element => getComputedStyle(element).backgroundColor), palette.computedPanel);
     await page.setViewportSize({ width, height: 1000 });
     assert.equal(await page.locator('#twitch-login').isVisible(), true, 'login is directly visible on home');
-    assert.match(await page.locator('#twitch-login').textContent(), /今後のバッジ画像のため。コメントの受信には不要/);
+    assert.match(await page.locator('#twitch-login').textContent(), /バッジ画像を使うため。コメントの受信には不要/);
     if (status === 'disabled') {
       assert.match(await page.locator('#twitch-login-status').textContent(), /このビルドでは Twitch のログインを使えません/);
       assert.equal(await page.locator('#twitch-login-start').isDisabled(), true);

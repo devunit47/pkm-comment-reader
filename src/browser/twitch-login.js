@@ -15,7 +15,7 @@ function normalizeState(value) {
   return result;
 }
 
-export function initializeTwitchLogin(root, { subscribe } = {}) {
+export function initializeTwitchLogin(root, { subscribe, onChange = () => {} } = {}) {
   if (!root) return;
   const find = id => root.querySelector(`#twitch-login-${id}`);
   const status = find('status'), pending = find('pending'), code = find('code'), link = find('link'), remaining = find('remaining');
@@ -65,7 +65,7 @@ export function initializeTwitchLogin(root, { subscribe } = {}) {
       ...(action ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) } : {}) });
     if (!response.ok) throw new Error('Login request failed');
     const next = normalizeState(await response.json());
-    if (!closed) { state = next; warning = ''; }
+    if (!closed) { state = next; warning = ''; onChange(state); }
   }
   // Reads and commands share a queue so a late GET cannot undo a command.
   function enqueue(operation) {
