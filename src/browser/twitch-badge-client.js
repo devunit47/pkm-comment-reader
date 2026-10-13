@@ -36,17 +36,15 @@ export function createTwitchBadgeClient({ state, onChange = () => {}, fetchImpl 
         nextRefreshAt = Number.isFinite(data.nextRefreshAt) && data.nextRefreshAt > now() ? data.nextRefreshAt : now() + 300000;
         update(room, catalog);
       } catch { if (current()) nextRefreshAt = now() + 300000; }
-      finally { if (pending === request) pending = null; }
-    })();
+    })().finally(() => { if (epoch === generation) pending = null; });
     pending = request;
   }
   return {
     setAuth(value) {
       const next = value?.status === 'signed-in' ? value.login : '';
-      if (next !== account) { account = next; invalidate(); catalog = new Map(); nextRefreshAt = 0; update('', catalog); }
-      ensure();
+      if (next !== account) { account = next; invalidate(); catalog = new Map(); nextRefreshAt = 0; update('', catalog); ensure(); }
     },
-    setEnabled(value) { if (enabled !== !!value) { enabled = !!value; invalidate(); } ensure(); },
+    setEnabled(value) { if (enabled !== !!value) { enabled = !!value; invalidate(); ensure(); } },
     connect() { invalidate(); connected = true; roomId = ''; catalog = new Map(); nextRefreshAt = 0; },
     disconnect() { invalidate(); connected = false; roomId = ''; catalog = new Map(); nextRefreshAt = 0; },
     clear() { invalidate(); nextRefreshAt = 0; },

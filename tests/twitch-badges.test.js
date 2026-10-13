@@ -10,7 +10,7 @@ const response = (status, data, headers = {}) => new Response(JSON.stringify(dat
 function fixture(t, fetchImpl) {
   let time = 1000, identity = 'one', token = 'secret-one', refreshes = 0;
   const listeners = new Set(), calls = [];
-  const auth = { status: () => ({ status: identity ? 'signed-in' : 'signed-out', login: identity }),
+  const auth = { sessionId: () => identity,
     getAccessToken: async ({ forceRefresh = false, rejectedToken } = {}) => {
       if (!identity) return null;
       if (forceRefresh && (!rejectedToken || rejectedToken === token)) { refreshes++; token = 'secret-two'; }
@@ -22,7 +22,7 @@ function fixture(t, fetchImpl) {
   } });
   t.after(() => badges.close());
   return { badges, calls, advance: ms => { time += ms; }, refreshes: () => refreshes,
-    change: value => { identity = value; for (const fn of listeners) fn(); }, rotate: () => { token = 'secret-two'; } };
+    change: value => { identity = value; for (const fn of listeners) fn(); } };
 }
 
 test('lists share in-flight fetches, channel versions win, and cache expires after one hour', async t => {
@@ -80,4 +80,16 @@ test('invalid inputs, malformed JSON, excessive bodies and unsafe image URLs nev
   }
   const huge = fixture(t, () => new Response(' '.repeat(1024 * 1024 + 1)));
   assert.equal((await huge.badges.get('1')).global, 'failed');
+});
+
+test('eight pending channel slots never evict an in-flight lookup and duplicate its request', async t => {
+  const pending = [];
+  const f = fixture(t, () => new Promise(resolve => pending.push(resolve)));
+  const work = Array.from({ length: 9 }, (_, i) => f.badges.get(String(i + 1)));
+  await new Promise(setImmediate);
+  work.push(f.badges.get('1')); await new Promise(setImmediate);
+  const first = f.calls.filter(call => call.destination.endsWith('broadcaster_id=1')).length;
+  for (const resolve of pending) resolve(response(200, helix())); await Promise.all(work);
+  assert.equal(first, 1);
+  assert.equal(f.calls.filter(call => call.destination.includes('broadcaster_id=')).length, 8);
 });

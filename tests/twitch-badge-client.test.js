@@ -20,7 +20,10 @@ test('only enabled signed-in connections with rooms request lists, and reception
   for (let i = 0; i < 10; i++) f.client.resolve({ roomId: '1', badges: [badge] });
   assert.equal(f.pending.length, 1); await f.deliver();
   assert.equal(f.client.resolve({ roomId: '1', badges: [badge] }).badges[0].url, url);
-  f.advance(3600000); f.client.resolve({ roomId: '1', badges: [badge] }); assert.equal(f.pending.length, 2);
+  f.advance(3600000);
+  f.client.setAuth({ status: 'signed-in', login: 'viewer' }); f.client.setEnabled(true);
+  assert.equal(f.pending.length, 1, 'unchanged auth notifications or unrelated design saves do not trigger lookup');
+  f.client.resolve({ roomId: '1', badges: [badge] }); assert.equal(f.pending.length, 2);
   f.client.close();
 });
 test('arrival updates retained selection and evicted pins without counts, first flags, timestamps or new messages', async () => {
@@ -50,3 +53,11 @@ for (const operation of ['disconnect', 'reconnect', 'clear', 'logout', 'disable'
     f.client.close();
   });
 }
+test('a synchronously failing fetch is contained and retried after the failure interval', async () => {
+  let calls = 0, now = 1000;
+  const client = createTwitchBadgeClient({ state: createChatState(), now: () => now, fetchImpl() { calls++; throw new Error('offline'); } });
+  client.connect(); client.setEnabled(true); client.setAuth({ status: 'signed-in', login: 'viewer' }); client.setRoomId('1');
+  await new Promise(setImmediate); client.resolve({ roomId: '1', badges: [badge] }); assert.equal(calls, 1);
+  now += 300000; client.resolve({ roomId: '1', badges: [badge] }); await new Promise(setImmediate); assert.equal(calls, 2);
+  client.close();
+});

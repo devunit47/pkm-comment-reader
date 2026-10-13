@@ -64,7 +64,7 @@ let currentSpeech = null;
 let stageCredit = '';
 let outputPanel;
 const outputPublisher = new OutputPublisher({ onStatus: status => outputPanel?.setStatus(status) });
-const twitchBadges = createTwitchBadgeClient({ state: states.twitch, onChange() { if (active === 'twitch') { renderSelection(); render(); } } });
+const twitchBadges = createTwitchBadgeClient({ state: states.twitch, onChange() { if (active === 'twitch') renderStageChat(); } });
 twitchBadges.setEnabled(studio.commentBadges);
 initializeTwitchLogin(document.getElementById('twitch-login'), { subscribe: settingsStore.subscribeAuth, onChange: state => twitchBadges.setAuth(state) });
 // null means the preview shows a selection; a string snapshots played audio.

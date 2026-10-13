@@ -56,6 +56,7 @@ function normalizeRecord(value, clientId) {
 export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThis.fetch, clock = systemClock }) {
   let record = null, revision = 'default', generation = 0, stopping = false, pollTimer, validationTimer, expiryTimer;
   let refreshPromise = null, validationPromise = null, queue = Promise.resolve();
+  let logoutGeneration = -1;
   const listeners = new Set(), requests = new Set();
   const enabled = typeof clientId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(clientId);
   const status = () => {
@@ -304,17 +305,20 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     if (!await prepare()) return status();
     const token = record?.session?.accessToken;
     invalidate(); const epoch = generation;
+    logoutGeneration = epoch; notify();
     try { if (token) await oauth('revoke', { token }, false); } catch { /* Local logout must succeed even if Twitch is unavailable. */ }
-    await persist(null, epoch); return status();
+    try { await persist(null, epoch); }
+    finally { if (logoutGeneration === epoch) { logoutGeneration = -1; notify(); } }
+    return status();
   }
   async function getAccessToken({ forceRefresh = false, rejectedToken } = {}) {
     await ready;
-    if (stopping || record?.status !== 'signed-in') return null;
+    if (stopping || logoutGeneration === generation || record?.status !== 'signed-in') return null;
     if ((forceRefresh && (!rejectedToken || rejectedToken === record.session.accessToken)) || record.session.expiresAt <= clock.now() + 60000) return refresh();
     return record.session.accessToken;
   }
   async function close() { if (stopping) return queue; stopping = true; invalidate(); unsubscribe(); listeners.clear(); await queue; }
-  return { ready, status, start, cancel, logout, getAccessToken, validate, close, sessionId: () => !stopping && record?.status === 'signed-in' ? record.id : '', subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
+  return { ready, status, start, cancel, logout, getAccessToken, validate, close, sessionId: () => !stopping && logoutGeneration !== generation && record?.status === 'signed-in' ? record.id : '', subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
 }
 
 const directories = new Map();

@@ -15,6 +15,17 @@ function publisher(overrides = {}) {
   return { instance, advance: ms => { now += ms; } };
 }
 const comment = (id, text = `text ${id}`) => ({ id, user: `user${id}`, text, receivedAt: id });
+test('badge replacement resends a snapshot with original timestamps and counts', () => {
+  const { instance } = publisher(); const view = createOutputView();
+  const original = { ...comment(1), roomId: '123', badges: [{ set: 'subscriber', version: '0' }] };
+  instance.update({ platform: 'twitch', received: 1, messages: [original] });
+  replay(view, FakeChannel.sent);
+  const resolved = { ...original, badges: [{ set: 'subscriber', version: '0', url: 'https://static-cdn.jtvnw.net/badges/v1/eb4a8a4c-eacd-4f5e-b9f2-394348310442/3', title: 'Subscriber' }] };
+  instance.update({ platform: 'twitch', received: 1, messages: [resolved] });
+  assert.equal(FakeChannel.sent.length, 2); assert.equal(FakeChannel.sent.at(-1).type, 'snapshot');
+  replay(view, FakeChannel.sent.slice(-1)); assert.equal(view.received, 1); assert.equal(view.messages[0].receivedAt, 1);
+  assert.equal(view.messages[0].badges[0].url, resolved.badges[0].url); instance.close();
+});
 
 test('v3 events survive snapshot, unchanged-count append, pin, remove and resync', () => {
   const { instance } = publisher(); const view = createOutputView();

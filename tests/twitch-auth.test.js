@@ -122,6 +122,28 @@ test('Helix rejection of an already rotated token reuses the current token witho
   assert.equal(await auth.getAccessToken({ forceRefresh: true, rejectedToken: 'access-old' }), 'access-rotated');
   assert.equal(callCount(calls, '/token'), 1);
 });
+test('logout invalidates the badge session before a delayed revoke completes', async t => {
+  let release, started;
+  const revokeStarted = new Promise(resolve => { started = resolve; });
+  const { auth, clock } = await fixture(t, { fetch(url) {
+    if (url.endsWith('/revoke')) { started(); return new Promise(resolve => { release = resolve; }); }
+  } });
+  await auth.start(); await clock.tick(5000);
+  const session = auth.sessionId(); const logout = auth.logout(); await revokeStarted;
+  const during = auth.sessionId(), token = await auth.getAccessToken();
+  release(response(200, {})); await logout;
+  assert.ok(session); assert.equal(during, ''); assert.equal(token, null);
+});
+test('an older logout cannot restore the badge session while a newer logout still awaits revoke', async t => {
+  const pending = [];
+  const { auth, clock } = await fixture(t, { fetch(url) { if (url.endsWith('/revoke')) return new Promise(resolve => pending.push(resolve)); } });
+  await auth.start(); await clock.tick(5000);
+  const first = auth.logout(); await new Promise(setImmediate);
+  const second = auth.logout(); await new Promise(setImmediate);
+  pending[0](response(200, {})); await first;
+  const during = auth.sessionId(); pending[1](response(200, {})); await second;
+  assert.equal(during, '');
+});
 
 test('device pending and slow_down obey polling intervals then login saves a token pair', async t => {
   let polls = 0;

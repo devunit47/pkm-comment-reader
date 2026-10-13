@@ -179,9 +179,11 @@ export class OutputPublisher {
   update({ platform, received, messages, pinned = null }) {
     const list = messages.map(normalizeComment).filter(Boolean);
     const fixed = normalizeComment(pinned);
+    const previous = new Map(this.state.messages.map(message => [message.id, message]));
+    const badgesChanged = list.some(message => previous.has(message.id) && JSON.stringify(previous.get(message.id).badges) !== JSON.stringify(message.badges));
     this.state = { ...this.state, platform, received, messages: list, pinned: fixed };
     if (!this.channel) return;
-    if (this.sentIds === null || platform !== this.sentPlatform) { this.snapshot(); return; }
+    if (this.sentIds === null || platform !== this.sentPlatform || badgesChanged) { this.snapshot(); return; }
     const ids = list.map(message => message.id), current = new Set(ids);
     const removed = this.sentIds.filter(id => !current.has(id));
     const kept = this.sentIds.filter(id => current.has(id));

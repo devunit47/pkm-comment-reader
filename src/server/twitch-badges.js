@@ -35,7 +35,7 @@ export function createTwitchBadges({ auth, clientId, fetchImpl = globalThis.fetc
   const entry = () => ({ data: new Map(), expiresAt: 0, retryAt: 0, status: 'failed', pending: null });
   let global = entry(), epoch = 0, stopped = false;
   const channels = new Map(), controllers = new Set();
-  const identity = () => auth.sessionId?.() ?? (auth.status().status === 'signed-in' ? auth.status().login : '');
+  const identity = () => auth.sessionId();
   let account = identity();
   function reset() {
     epoch++; global = entry(); channels.clear();
@@ -51,7 +51,8 @@ export function createTwitchBadges({ auth, clientId, fetchImpl = globalThis.fetc
       const controller = new AbortController(); controllers.add(controller);
       try {
         let token = await auth.getAccessToken();
-        if (!token || !current()) return;
+        if (!current()) return;
+        if (!token) throw new Error('Authentication unavailable');
         let response;
         for (let attempt = 0; attempt < 2; attempt++) {
           if (!current()) return;
@@ -90,7 +91,9 @@ export function createTwitchBadges({ auth, clientId, fetchImpl = globalThis.fetc
     let channel = channels.get(broadcasterId);
     if (!channel) {
       if (channels.size >= 8) {
-        const oldest = channels.keys().next().value;
+        const oldest = [...channels].find(([, cache]) => !cache.pending)?.[0];
+        // Keep in-flight promises addressable; a later trigger can retry a ninth room.
+        if (!oldest) return empty;
         channels.delete(oldest);
       }
       channel = entry();
