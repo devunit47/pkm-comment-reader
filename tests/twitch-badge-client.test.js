@@ -61,3 +61,22 @@ test('a synchronously failing fetch is contained and retried after the failure i
   now += 300000; client.resolve({ roomId: '1', badges: [badge] }); await new Promise(setImmediate); assert.equal(calls, 2);
   client.close();
 });
+
+test('busy channel capacity keeps badges unresolved only until the next trigger without a cooldown', async () => {
+  const f = fixture();
+  f.client.connect(); f.client.setRoomId('9'); f.client.setEnabled(true); f.client.setAuth({ status: 'signed-in', login: 'viewer' });
+  const message = addMessage(f.state, 'viewer', '本文', 1, 0, 'viewer', { roomId: '9', badges: [badge] });
+  f.pending[0]({ ok: true, json: async () => ({ broadcasterId: '9', badges: [], channel: 'busy', global: 'unavailable', nextRefreshAt: 1000 }) });
+  await new Promise(setImmediate);
+  assert.equal(message.badges[0].url, ''); assert.equal(f.changed.length, 0);
+  f.client.resolve({ roomId: '9', badges: [badge] });
+  assert.equal(f.pending.length, 2, 'next reception retries without advancing the clock');
+  await f.deliver('9');
+  assert.equal(message.badges[0].url, url); assert.equal(f.state.received, 1);
+  f.advance(3600000); f.client.setRoomId('9');
+  f.pending[2]({ ok: true, json: async () => ({ broadcasterId: '9', badges: [], channel: 'busy', nextRefreshAt: 3601000 }) });
+  await new Promise(setImmediate);
+  assert.equal(message.badges[0].url, url, 'capacity does not erase the previous catalog');
+  f.client.setRoomId('9'); assert.equal(f.pending.length, 4);
+  await f.deliver('9'); f.client.close();
+});

@@ -87,9 +87,16 @@ test('eight pending channel slots never evict an in-flight lookup and duplicate 
   const f = fixture(t, () => new Promise(resolve => pending.push(resolve)));
   const work = Array.from({ length: 9 }, (_, i) => f.badges.get(String(i + 1)));
   await new Promise(setImmediate);
+  const busy = await work[8];
   work.push(f.badges.get('1')); await new Promise(setImmediate);
   const first = f.calls.filter(call => call.destination.endsWith('broadcaster_id=1')).length;
   for (const resolve of pending) resolve(response(200, helix())); await Promise.all(work);
   assert.equal(first, 1);
   assert.equal(f.calls.filter(call => call.destination.includes('broadcaster_id=')).length, 8);
+  assert.equal(busy.channel, 'busy', 'capacity is distinct from an empty or failed list');
+  assert.equal(busy.nextRefreshAt, 1000, 'capacity does not impose a failure cooldown');
+  const retry = f.badges.get('9'); await new Promise(setImmediate);
+  assert.equal(f.calls.filter(call => call.destination.endsWith('broadcaster_id=9')).length, 1);
+  pending.at(-1)(response(200, helix(channelUrl)));
+  assert.equal((await retry).badges[0].url, channelUrl);
 });

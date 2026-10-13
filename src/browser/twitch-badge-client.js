@@ -26,6 +26,8 @@ export function createTwitchBadgeClient({ state, onChange = () => {}, fetchImpl 
         const data = await response.json();
         if (!current()) return;
         if (data?.broadcasterId !== room || !Array.isArray(data.badges) || data.badges.length > 10000) throw new Error('Invalid list');
+        // Capacity is temporary; keep the catalog and retry on the next trigger.
+        if (data.channel === 'busy') return;
         const next = new Map();
         // Each catalog entry is normalized independently; comment limits do not limit a catalog.
         for (const value of data.badges) {

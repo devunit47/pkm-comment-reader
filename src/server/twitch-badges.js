@@ -93,7 +93,7 @@ export function createTwitchBadges({ auth, clientId, fetchImpl = globalThis.fetc
       if (channels.size >= 8) {
         const oldest = [...channels].find(([, cache]) => !cache.pending)?.[0];
         // Keep in-flight promises addressable; a later trigger can retry a ninth room.
-        if (!oldest) return empty;
+        if (!oldest) return { ...empty, channel: 'busy', nextRefreshAt: now() };
         channels.delete(oldest);
       }
       channel = entry();
