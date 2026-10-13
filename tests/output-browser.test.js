@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
+import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -13,7 +13,7 @@ async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [],
   const directory = await mkdtemp(join(tmpdir(), 'pokome-output-browser-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   });
@@ -835,7 +835,7 @@ browserTest('reading a five-panel saved design supplements only pinned and never
   await writeFile(path, raw);
   const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory() });
   const browser = await chromium.launch({ headless: true, executablePath });
-  t.after(async () => { await browser.close(); if (server.listening) await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await closeBrowser(browser); if (server.listening) await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`, page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await blockExternalFonts(page); await page.goto(url); await appReady(page);

@@ -20,6 +20,20 @@ export const executablePath = [process.env.BROWSER_EXECUTABLE, chromium?.executa
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].filter(Boolean).find(existsSync);
 export const browserAvailable = process.env.SKIP_BROWSER_TESTS !== '1' && !!chromium && !!executablePath;
 
+export async function closeBrowser(browser) {
+  if (!browser) return;
+  // Close each target before disposing its process.
+  const contexts = await Promise.allSettled(browser.contexts().map(async context => {
+    const pages = await Promise.allSettled(context.pages().map(page => page.close()));
+    await context.close();
+    const failed = pages.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
+  }));
+  await browser.close();
+  const failed = contexts.find(result => result.status === 'rejected');
+  if (failed) throw failed.reason;
+}
+
 // Remove private fixtures after individual tests have closed their pages and
 // servers; deleting a watched file during a test could trigger another save.
 const settingsDirectories = [];

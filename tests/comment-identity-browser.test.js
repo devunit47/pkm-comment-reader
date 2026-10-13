@@ -7,14 +7,14 @@ import { createServer } from '../server.js';
 import { fakeClock } from './auth-support.js';
 import { defaultTalkLayout, withTalk } from '../src/shared/design-model.js';
 import { saveDesign, waitForDesign } from './browser-support.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
+import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, studio = {}, options = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-identity-'));
   const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(), ...options });
-  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   await saveStudio(base, studio);

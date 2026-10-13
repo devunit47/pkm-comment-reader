@@ -6,14 +6,14 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultDesign } from '../src/shared/design-model.js';
 import { fixtureDesign, fixtureFiles, actorRef } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, saveDesign, readDesign, uploadDesignImage, waitForDesign, appReady, blockExternalFonts, temporaryDataDirectory, readSettings, talkStage } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, saveDesign, readDesign, uploadDesignImage, waitForDesign, appReady, blockExternalFonts, temporaryDataDirectory, readSettings, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 const panel = '#design-presets', preview = '#design-preview-editor';
 async function fixture(t) {
   const browser = await chromium.launch({ headless: true, executablePath });
   let server, directory;
-  t.after(async () => { await browser.close(); if (server?.listening) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await closeBrowser(browser); if (server?.listening) await new Promise(resolve => server.close(resolve)); if (directory) await rm(directory, { recursive: true, force: true }); });
   directory = await mkdtemp(join(tmpdir(), 'pokome-presets-browser-'));
   server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;

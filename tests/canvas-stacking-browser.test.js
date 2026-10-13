@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { chromium, executablePath, browserAvailable, saveDesign, readDesign, waitForDesign, appReady, blockExternalFonts, closeEditor, editorTarget, uploadDesignImage, temporaryDataDirectory, talkStage } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, saveDesign, readDesign, waitForDesign, appReady, blockExternalFonts, closeEditor, editorTarget, uploadDesignImage, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const ids = ['header', 'chat', 'speech', 'actor', 'footer'];
 // Hit testing reports the actual browser paint order, including ancestor
@@ -33,7 +33,7 @@ test('panels and additions share paint order in the canvas, talk and reloaded ou
   const directory = await mkdtemp(join(tmpdir(), 'pokome-stacking-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   });
