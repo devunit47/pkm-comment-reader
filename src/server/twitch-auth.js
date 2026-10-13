@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createTwitchBadges } from './twitch-badges.js';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuthStorage } from './auth-storage.js';
@@ -306,14 +307,14 @@ export function createTwitchAuth({ storage, clientId = '', fetchImpl = globalThi
     try { if (token) await oauth('revoke', { token }, false); } catch { /* Local logout must succeed even if Twitch is unavailable. */ }
     await persist(null, epoch); return status();
   }
-  async function getAccessToken({ forceRefresh = false } = {}) {
+  async function getAccessToken({ forceRefresh = false, rejectedToken } = {}) {
     await ready;
     if (stopping || record?.status !== 'signed-in') return null;
-    if (forceRefresh || record.session.expiresAt <= clock.now() + 60000) return refresh();
+    if ((forceRefresh && (!rejectedToken || rejectedToken === record.session.accessToken)) || record.session.expiresAt <= clock.now() + 60000) return refresh();
     return record.session.accessToken;
   }
   async function close() { if (stopping) return queue; stopping = true; invalidate(); unsubscribe(); listeners.clear(); await queue; }
-  return { ready, status, start, cancel, logout, getAccessToken, validate, close, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
+  return { ready, status, start, cancel, logout, getAccessToken, validate, close, sessionId: () => !stopping && record?.status === 'signed-in' ? record.id : '', subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
 }
 
 const directories = new Map();
@@ -324,6 +325,7 @@ export function createTwitchAuthHandler(directory, options = {}) {
   if (!shared) {
     const storage = createAuthStorage(directory, { platform: options.platform, protect: options.protect, unprotect: options.unprotect });
     shared = { storage, auth: createTwitchAuth({ storage, clientId: options.clientId, fetchImpl: options.fetchImpl, clock: options.clock }), users: 0 };
+    shared.badges = createTwitchBadges({ auth: shared.auth, clientId: options.clientId, fetchImpl: options.fetchImpl, now: options.clock?.now });
     directories.set(key, shared);
   }
   shared.users++;
@@ -353,7 +355,7 @@ export function createTwitchAuthHandler(directory, options = {}) {
   async function close() {
     if (closed) return;
     closed = true; shared.users--;
-    if (!shared.users) { directories.delete(key); await shared.auth.close(); await shared.storage.close(); }
+    if (!shared.users) { directories.delete(key); shared.badges.close(); await shared.auth.close(); await shared.storage.close(); }
   }
-  return { handle, close, subscribe: shared.auth.subscribe };
+  return { handle, close, handleBadges: shared.badges.handle, subscribe: shared.auth.subscribe };
 }

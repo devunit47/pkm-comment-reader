@@ -116,6 +116,13 @@ test('empty client ID disables login without upstream communication or timers', 
   assert.equal(calls.length, 0); assert.equal(clock.size, 0);
 });
 
+test('Helix rejection of an already rotated token reuses the current token without another refresh', async t => {
+  const { auth, clock, calls } = await fixture(t, { fetch(url) { if (url.endsWith('/token')) return response(200, tokens('rotated')); } });
+  await auth.start(); await clock.tick(5000);
+  assert.equal(await auth.getAccessToken({ forceRefresh: true, rejectedToken: 'access-old' }), 'access-rotated');
+  assert.equal(callCount(calls, '/token'), 1);
+});
+
 test('device pending and slow_down obey polling intervals then login saves a token pair', async t => {
   let polls = 0;
   const { auth, calls, clock, storage } = await fixture(t, { fetch(url) {

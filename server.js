@@ -25,6 +25,7 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end('Bad request'); return; }
     if (url.pathname === '/api/auth/twitch' || url.pathname.startsWith('/api/auth/twitch/')) { await auth.handle(req, res, url); return; }
+    if (url.pathname === '/api/twitch/badges') { await auth.handleBadges(req, res, url); return; }
     if (url.pathname === '/api/customizations' || url.pathname.startsWith('/api/customizations/')) { await handleLocalCustomization(req, res, url); return; }
     if (url.pathname.startsWith('/api/design/')) { await design.handle(req, res, url); return; }
     if (url.pathname === '/api/settings' || url.pathname.startsWith('/api/settings/')) { await settings.handle(req, res, url); return; }

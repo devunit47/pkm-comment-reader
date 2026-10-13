@@ -39,6 +39,16 @@ test('Twitch auth API guards requests, shares state, and never returns private c
   assert.equal((await request({ action: 'unknown' })).status, 400);
   assert.equal((await request({ action: 'start', device_code: 'injected' })).status, 400);
   assert.equal(calls, 0);
+  for (const headers of [{ Host: 'evil.example' }, { Origin: 'https://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Site': 'same-site' }]) {
+    const code = await new Promise((resolve, reject) => {
+      const req = httpRequest(`${base}/api/twitch/badges?broadcasterId=1`, { headers }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(code, 403);
+  }
+  assert.equal((await fetch(`${base}/api/twitch/badges?broadcasterId=0`)).status, 400);
+  assert.deepEqual((await (await fetch(`${base}/api/twitch/badges?broadcasterId=1`)).json()).badges, []);
+  assert.equal(calls, 0);
   for (const subpath of ['events', 'unknown']) {
     const controller = new AbortController();
     const response = await fetch(`${base}/api/auth/twitch/${subpath}`, { signal: controller.signal });
