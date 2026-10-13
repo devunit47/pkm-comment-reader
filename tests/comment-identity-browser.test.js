@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { fakeClock } from './auth-support.js';
+import { defaultTalkLayout, withTalk } from '../src/shared/design-model.js';
 import { saveDesign, waitForDesign } from './browser-support.js';
 import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
 
@@ -51,6 +52,63 @@ async function fixture(t, studio = {}, options = {}) {
 async function receive(page, text, tags = 'color=#ffffff;badges=vip/1;emotes=25:2-6') {
   await page.evaluate(({ text, tags }) => window.testSockets[0].onmessage({ data: `@${tags} :viewer!viewer@host PRIVMSG #qa_channel :${text}\r\n` }), { text, tags });
 }
+
+browserTest('badge images follow hidden panels across talk, preview and output ratio changes without another comment', async t => {
+  const badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/3';
+  const { context, page, base, requests, errors } = await fixture(t, { commentBadges: true, commentEmotes: 'text' }, { async prepare(context) {
+    await context.route('**/api/auth/twitch', route => route.fulfill({ json: { status: 'signed-in', login: 'viewer' } }));
+    await context.route('**/api/twitch/badges?*', route => route.fulfill({ json: {
+      broadcasterId: '123', badges: [{ set: 'vip', version: '1', url: badgeUrl, title: 'VIP' }], nextRefreshAt: Date.now() + 3600000,
+    } }));
+  } });
+  const hidden = defaultTalkLayout('9:16'); hidden.panels.chat.hidden = true; hidden.panels.pinned.hidden = true;
+  await saveDesign(base, design => withTalk(withTalk(design, '16:9', { layout: hidden }), '9:16', { layout: defaultTalkLayout('9:16') }));
+  const live = talkStage(page);
+  await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('.stage-chat').style.display === 'none');
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  const catalog = page.waitForResponse(response => response.url().includes('/api/twitch/badges?'));
+  await receive(page, '比率の切り替え', 'room-id=123;badges=vip/1'); await catalog;
+  await page.locator('#comment-list .message').last().click(); await page.locator('#pin-comment').click();
+  await page.locator('#enter-talk').click();
+  assert.equal(await live.locator('.pokome-comment__badge-image').count(), 0);
+  const output = await context.newPage(); await output.setViewportSize({ width: 1280, height: 720 }); await output.goto(base + '/output.html');
+  await output.locator('#stage-pinned-list').filter({ hasText: '比率の切り替え' }).waitFor({ state: 'attached' });
+  await output.waitForFunction(() => document.querySelector('.stage-chat').style.display === 'none');
+  assert.equal(await output.locator('.pokome-comment__badge-image').count(), 0);
+  const before = requests.length;
+  await page.setViewportSize({ width: 600, height: 1000 });
+  assert.equal(await live.locator('body').getAttribute('data-ratio'), '16:9', 'talk ratio follows output size, not window size');
+  await saveDesign(base, design => ({ ...design, outputSize: '1080x1920' }));
+  for (const list of ['#stage-chat-list', '#stage-pinned-list']) await live.locator(`${list} .pokome-comment__badge-image`).waitFor();
+  await output.setViewportSize({ width: 600, height: 1000 });
+  for (const list of ['#stage-chat-list', '#stage-pinned-list']) await output.locator(`${list} .pokome-comment__badge-image`).waitFor();
+  assert.ok(requests.length > before);
+  await saveDesign(base, design => ({ ...design, outputSize: '1280x720' }));
+  await live.locator('.stage-chat').waitFor({ state: 'hidden' });
+  await output.setViewportSize({ width: 1280, height: 720 });
+  await output.locator('.stage-chat').waitFor({ state: 'hidden' });
+  assert.equal(await live.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(await output.locator('.pokome-comment__badge-image').count(), 0);
+  const hiddenRequests = requests.length;
+  await page.locator('#stage-design-edit').click();
+  const editor = page.locator('#design-preview-editor');
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  const preview = page.frameLocator('#design-preview-editor #design-preview-frame');
+  await preview.locator('#stage-chat-list .stage-comment').first().waitFor({ state: 'attached' });
+  assert.equal(await preview.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(requests.length, hiddenRequests, 'hidden panels do not request badge images');
+  await editor.locator('#preview-ratio').selectOption('9:16');
+  await preview.locator('#stage-chat-list .pokome-comment__badge-image').last().waitFor();
+  await editorTarget(editor, 'chat'); await editor.locator('#panel-hidden').check();
+  assert.equal(await preview.locator('#stage-chat-list .pokome-comment__badge-image').count(), 0);
+  await editor.locator('#panel-hidden').uncheck();
+  await preview.locator('#stage-chat-list .pokome-comment__badge-image').last().waitFor();
+  await editor.locator('#preview-ratio').selectOption('16:9');
+  await preview.locator('.stage-chat').waitFor({ state: 'hidden' });
+  assert.equal(await preview.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(await page.locator('#count').textContent(), '1 件', 'no additional reception is needed');
+  assert.deepEqual(errors, []);
+});
 
 browserTest('badge arrival preserves the playing speech preview while a different comment stays selected', async t => {
   let badgeRequest;
