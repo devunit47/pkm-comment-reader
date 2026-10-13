@@ -69,14 +69,14 @@ test('Twitch auth API guards requests, shares state, and never returns private c
 });
 
 test('empty Twitch client ID cannot initiate an upstream request', async t => {
-  const base = await serve(t, () => { throw new Error('Must not contact Twitch'); });
+  const base = await serve(t, () => { throw new Error('Must not contact Twitch'); }, { twitchClientId: '' });
   assert.deepEqual(await (await fetch(`${base}/api/auth/twitch`)).json(), { status: 'disabled' });
   const response = await fetch(`${base}/api/auth/twitch`, { method: 'POST', body: '{"action":"start"}', headers: { 'Content-Type': 'application/json', Origin: base, 'Sec-Fetch-Site': 'same-origin' } });
   assert.equal(response.status, 503); assert.match((await response.json()).error, /使えません/);
 });
 
-async function serve(t, fetchImpl) {
-  const server = createServer({ fetchImpl, dataDirectory: await temporaryDataDirectory(t) });
+async function serve(t, fetchImpl, options = {}) {
+  const server = createServer({ fetchImpl, dataDirectory: await temporaryDataDirectory(t), ...options });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise(resolve => server.close(resolve)));
