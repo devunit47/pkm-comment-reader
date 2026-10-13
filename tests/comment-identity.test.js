@@ -1,5 +1,5 @@
 import test from 'node:test';
-import { normalizeCommentEvent, eventHeading, eventDetails } from '../src/shared/comment-model.js';
+import { normalizeCommentEvent, normalizeBadges, eventHeading, eventDetails } from '../src/shared/comment-model.js';
 import assert from 'node:assert/strict';
 import { parseTwitchMessage } from '../src/shared/connections.js';
 import { addMessage, createChatState } from '../src/browser/chat-state.js';
@@ -8,6 +8,18 @@ import { normalizeOutputMessage, OutputPublisher } from '../src/shared/output-pr
 const parse = (text, tags = '') => parseTwitchMessage(`@${tags} :viewer!viewer@host PRIVMSG #channel :${text}`, 'channel');
 const textPart = text => ({ type: 'text', text });
 const emote = (id, name) => ({ type: 'emote', id, name });
+const badge = (set, version = '1', url = '', title = '') => ({ set, version, url, title });
+
+test('badges preserve versions and receiver rooms while rejecting unsafe metadata and old strings', () => {
+  const message = parse('本文', 'room-id=123;source-room-id=456;source-badges=vip/1;badge-info=subscriber/30;badges=subscriber/0,subscriber/12,world/Horde,bits/100');
+  assert.equal(message.roomId, '123');
+  assert.deepEqual(message.badges, [badge('subscriber', '0'), badge('world', 'Horde'), badge('bits', '100')]);
+  assert.equal(parse('本文', 'room-id=0;badges=/1,vip/,vip/1/2').roomId, '');
+  assert.deepEqual(normalizeBadges(['vip', null, {}, badge('vip', ''), badge('vip', '1', 'https://evil.example'), badge('vip', '2')]), [badge('vip')]);
+  assert.equal(normalizeBadges(Array.from({ length: 20 }, (_, i) => badge(`set${i}`))).length, 8);
+  const state = createChatState();
+  assert.equal(addMessage(state, message.user, message.text, 1, 0, message.login, message).roomId, '123');
+});
 
 test('event normalization retains only kind-specific safe data and generates Japanese labels', () => {
   const event = normalizeCommentEvent({ kind: 'gift', recipient: '<b>Recipient</b>', giftMonths: 3, cumulativeMonths: 99, bits: 100, plan: '1000', systemMsg: 'DO_NOT_USE', image: 'https://evil.example' });
@@ -24,7 +36,7 @@ test('event normalization retains only kind-specific safe data and generates Jap
 test('Twitch identity preserves emoji offsets, repeated emotes and ordered roles', () => {
   const message = parse('😀 Kappa Kappa!', 'color=#AB1234;badges=vip/1,moderator/1,subscriber/42,broadcaster/1,vip/1,unknown/1;emotes=25:2-6,8-12');
   assert.equal(message.color, '#ab1234');
-  assert.deepEqual(message.badges, ['broadcaster', 'moderator', 'vip', 'subscriber']);
+  assert.deepEqual(message.badges, [badge('vip'), badge('moderator'), badge('subscriber', '42'), badge('broadcaster'), badge('unknown')]);
   assert.deepEqual(message.parts, [textPart('😀 '), emote('25', 'Kappa'), textPart(' '), emote('25', 'Kappa'), textPart('!')]);
   assert.equal(message.text, '😀 Kappa Kappa!');
 });
@@ -34,7 +46,7 @@ test('bad IRC metadata keeps the complete body as text', () => {
     const message = parse('Kappa Other', `${tags};color=red;badges=unknown/1`);
     assert.deepEqual(message.parts, [textPart('Kappa Other')], tags);
     assert.equal(message.color, '');
-    assert.deepEqual(message.badges, []);
+    assert.deepEqual(message.badges, [badge('unknown')]);
   }
 });
 
@@ -60,9 +72,9 @@ test('history counts code points and never retains half of an emote at its limit
 test('output sync retains identity while dropping URLs, invalid IDs, colors and inconsistent parts', () => {
   const packet = identity => ({ v: 2, type: 'append', controllerId: 'safe', seq: 1, message: { id: 'one', user: 'viewer', text: 'Kappa', ...identity } });
   assert.equal(normalizeOutputMessage({ ...packet({}), v: 1 }), null);
-  const valid = normalizeOutputMessage(packet({ color: '#abcdef', badges: ['subscriber', 'vip', 'vip', 'unknown'], parts: [{ ...emote('25', 'Kappa'), url: 'https://evil.example/image' }], url: 'https://evil.example' }));
+  const valid = normalizeOutputMessage(packet({ color: '#abcdef', badges: [badge('subscriber'), badge('vip'), badge('vip'), badge('unknown')], parts: [{ ...emote('25', 'Kappa'), url: 'https://evil.example/image' }], url: 'https://evil.example' }));
   assert.equal(valid.message.color, '#abcdef');
-  assert.deepEqual(valid.message.badges, ['vip', 'subscriber']);
+  assert.deepEqual(valid.message.badges, [badge('subscriber'), badge('vip'), badge('unknown')]);
   assert.deepEqual(valid.message.parts, [emote('25', 'Kappa')]);
   assert.equal(valid.message.url, undefined);
   for (const parts of [[emote('../bad', 'Kappa')], [emote('25', 'Other')], [{ type: 'image', url: 'https://evil.example' }]]) {
@@ -83,7 +95,7 @@ test('publisher sends normalized identity in snapshots and appended comments', (
   const appended = normalizeOutputMessage(packets.find(packet => packet.type === 'append'));
   for (const message of [snapshot.messages[0], appended.message]) {
     assert.equal(message.color, '#123456');
-    assert.deepEqual(message.badges, ['vip']);
+    assert.deepEqual(message.badges, [badge('vip')]);
     assert.deepEqual(message.parts, [emote('25', 'Kappa')]);
   }
   publisher.close();

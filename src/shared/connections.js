@@ -1,4 +1,4 @@
-import { normalizeCommentContent, normalizeCommentEvent, parseTwitchEmotes } from './comment-model.js';
+import { normalizeCommentContent, normalizeCommentEvent, normalizeRoomId, parseTwitchEmotes } from './comment-model.js';
 export function connectionPresentation(status) {
   if (status === '接続中') return { kind: 'connected', label: '接続済み', detail: 'コメント受信待機中' };
   if (status === '接続準備中') return { kind: 'connecting', label: '接続準備中', detail: '接続完了を待っています' };
@@ -57,23 +57,25 @@ export function parseTwitchMessage(line, channel) {
   const user = (event?.anonymous ? '' : tags['display-name'] || login).slice(0, 200);
   const body = match[5] || '';
   return { user, login, ...normalizeCommentContent({ text: body, color: tags.color,
-    badges: (tags.badges || '').split(',').map(badge => badge.split('/')[0]), parts: parseTwitchEmotes(body, tags.emotes) }),
+    roomId: tags['room-id'], badges: (tags.badges || '').split(',').map(badge => { const [set, version, extra] = badge.split('/'); return extra === undefined ? { set, version } : null; }), parts: parseTwitchEmotes(body, tags.emotes) }),
     ...(event ? { event } : {}), ...(tags.id ? { id: tags.id.slice(0, 200) } : {}) };
 }
 
 // Each instance owns one service's socket, lookup, timers and callbacks.
 export class ChatConnection {
-  constructor(platform, { onStatus, onMessage, onConnected, WebSocketClass = globalThis.WebSocket,
+  constructor(platform, { onStatus, onMessage, onConnected, onRoomId = () => {}, WebSocketClass = globalThis.WebSocket,
     fetchImpl = (...args) => globalThis.fetch(...args), timeoutMs = 15000 }) {
     this.platform = platform;
     this.onStatus = onStatus;
     this.onMessage = onMessage;
     this.onConnected = onConnected;
+    this.onRoomId = onRoomId;
     this.WebSocketClass = WebSocketClass;
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
     this.generation = 0;
     this.socket = null;
+    this.roomId = '';
   }
 
   disconnect(report = true) {
@@ -85,6 +87,7 @@ export class ChatConnection {
     clearTimeout(this.pongTimer);
     const old = this.socket;
     this.socket = null;
+    this.roomId = '';
     old?.close();
     if (report) this.onStatus('未接続', '');
   }
@@ -166,8 +169,15 @@ export class ChatConnection {
             joined = true;
             connected();
           }
+          const roomState = line.match(/^@([^ ]+) :[^ ]+ ROOMSTATE #([^ :]+)$/);
+          if (roomState && roomState[2].toLowerCase() === channel) {
+            const roomId = normalizeRoomId(roomState[1].split(';').find(tag => tag.startsWith('room-id='))?.slice(8));
+            if (roomId && roomId !== this.roomId) { this.roomId = roomId; this.onRoomId(roomId); }
+          }
           const message = parseTwitchMessage(line, channel);
           if (joined && message && (!message.id || !messageIds.has(message.id))) {
+            if (message.roomId && message.roomId !== this.roomId) { this.roomId = message.roomId; this.onRoomId(message.roomId); }
+            if (!message.roomId) message.roomId = this.roomId;
             if (message.id) {
               messageIds.add(message.id);
               if (messageIds.size > 300) messageIds.delete(messageIds.values().next().value);

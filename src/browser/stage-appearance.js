@@ -150,8 +150,9 @@ export function renderStageComments(list, messages, studio = {}) {
     const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = user;
     if (studio.commentBadges && content.badges.length) {
       author.textContent = '';
-      for (const role of content.badges) {
-        const [symbol, label] = ROLE_SYMBOLS[role];
+      for (const { set } of content.badges) {
+        if (!Object.hasOwn(ROLE_SYMBOLS, set)) continue;
+        const [symbol, label] = ROLE_SYMBOLS[set];
         const badge = doc.createElement('span'); badge.className = 'pokome-comment__badge'; badge.textContent = symbol;
         badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); badge.setAttribute('title', label);
         author.append(badge);

@@ -1,9 +1,22 @@
 export const COMMENT_LIMIT = 2000;
 export const EMOTE_LIMIT = 100;
-export const TWITCH_ROLES = Object.freeze(['broadcaster', 'moderator', 'vip', 'subscriber']);
+export const normalizeRoomId = value => typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value) ? value : '';
+export const validBadgeId = value => typeof value === 'string' && value.length > 0 && value.length <= 64 && !/[\s\x00-\x1f\x7f/,]/.test(value);
+export const normalizeBadgeUrl = value => typeof value === 'string' && /^https:\/\/static-cdn\.jtvnw\.net\/badges\/v1\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/3$/i.test(value) ? value : '';
 export const validEmoteId = value => typeof value === 'string' && /^[A-Za-z0-9_]{1,64}$/.test(value);
 export const normalizeNameColor = value => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : '';
-export const normalizeBadges = value => TWITCH_ROLES.filter(role => Array.isArray(value) && value.includes(role));
+export function normalizeBadges(value) {
+  const result = [], seen = new Set();
+  if (!Array.isArray(value)) return result;
+  for (const badge of value) {
+    if (!validBadgeId(badge?.set) || !validBadgeId(badge?.version) || seen.has(badge.set)) continue;
+    seen.add(badge.set);
+    result.push({ set: badge.set, version: badge.version, url: normalizeBadgeUrl(badge.url),
+      title: typeof badge.title === 'string' ? badge.title.replace(/[\x00-\x1f\x7f]/g, '').slice(0, 200) : '' });
+    if (result.length === 8) break;
+  }
+  return result;
+}
 
 const positive = value => Number.isSafeInteger(value) && value > 0;
 export function normalizeCommentEvent(value) {
@@ -109,5 +122,5 @@ export function normalizeCommentContent(value) {
     if (!remaining) break;
   }
   return { text: parts.map(part => part.type === 'text' ? part.text : part.name).join(''), parts,
-    color: normalizeNameColor(value?.color), badges: normalizeBadges(value?.badges) };
+    color: normalizeNameColor(value?.color), badges: normalizeBadges(value?.badges), roomId: normalizeRoomId(value?.roomId) };
 }
