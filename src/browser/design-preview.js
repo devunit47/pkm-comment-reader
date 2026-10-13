@@ -11,6 +11,9 @@ import { canvasOrder, layoutFromRects, moveCanvasTarget, copyTalkRatio, resetTal
 import { createDraftSession } from '../shared/design-draft.js';
 
 const clone = value => structuredClone(value);
+// The official Global Chat Badges example supplies this fixed VIP sample.
+const SAMPLE_BADGES = [{ set: 'vip', version: '1', url: 'https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/3', title: 'VIP' },
+  ...['broadcaster', 'moderator', 'subscriber'].map(set => ({ set, version: '1' }))];
 // Stable numbered samples reveal ordering without copying private chat.
 const SAMPLE_COMMENTS = Object.freeze([
   'こんにちは。表示の大きさを確認しています。', '文字と背景の組み合わせを試しています。',
@@ -22,11 +25,11 @@ const SAMPLE_COMMENTS = Object.freeze([
   if ((index === 0 || index === 9)) text += ' 😀 Kappa';
   const start = Array.from(text).length - 5;
   return { id: `sample-${index + 1}`, user: `サンプル${String(index + 1).padStart(2, '0')}`, receivedAt: index + 1,
-    ...normalizeCommentContent({ text, badges: (index === 0 || index === 9) ? ['broadcaster', 'moderator', 'vip', 'subscriber'].map(set => ({ set, version: '1' })) : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, (index === 0 || index === 9) ? `25:${start}-${start + 4}` : '') }) };
+    ...normalizeCommentContent({ text, badges: (index === 0 || index === 9) ? SAMPLE_BADGES : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, (index === 0 || index === 9) ? `25:${start}-${start + 4}` : '') }) };
 }));
 const SAMPLE_PINNED = Object.freeze({ id: 'sample-pinned', user: '固定のサンプル',
   ...normalizeCommentContent({ text: '取り上げたいコメントをここに固定できます。 😀 Kappa', color: '#ffffff',
-    badges: ['broadcaster', 'moderator', 'vip', 'subscriber'].map(set => ({ set, version: '1' })),
+    badges: SAMPLE_BADGES,
     parts: [{ type: 'text', text: '取り上げたいコメントをここに固定できます。 😀 ' }, { type: 'emote', id: '25', name: 'Kappa' }] }) });
 const SAMPLE_EVENTS = Object.freeze(Object.fromEntries([
   ['sub', 'サブスク', { kind: 'sub', plan: 'Prime', cumulativeMonths: 1 }],
@@ -36,7 +39,7 @@ const SAMPLE_EVENTS = Object.freeze(Object.fromEntries([
   ['bits', 'ビッツ', { kind: 'bits', bits: 100 }],
   ['anonymousGift', '匿名ギフト', { kind: 'gift', anonymous: true, plan: '1000', recipient: '匿名ギフトを受け取ったサンプルさん' }],
 ].map(([key, label, event]) => [key, { label, message: { id: `sample-event-${key}`, user: '表示の折り返しを確認する長い名前のサンプルさん', receivedAt: 11, event,
-  ...normalizeCommentContent({ text: ['resub', 'bits'].includes(key) ? 'いつも楽しい配信をありがとう！ 😀 Kappa' : '', color: '#9146ff', badges: [{ set: 'subscriber', version: '1' }] }) } }])));
+  ...normalizeCommentContent({ text: ['resub', 'bits'].includes(key) ? 'いつも楽しい配信をありがとう！ 😀 Kappa' : '', color: '#9146ff', badges: SAMPLE_BADGES }) } }])));
 const size = value => value.split('x').map(Number);
 // Panels and additions share the same canvas controls.
 const PANEL_TARGETS = Object.freeze([['screen', '画面全体'], ['header', 'ヘッダー（タイトル）'], ['chat', 'コメント欄'], ['speech', '読み上げ'], ['actor', '立ち絵'], ['footer', 'フッター'], ['pinned', '固定コメント']]);
@@ -287,15 +290,14 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
       renderedStudio = studio; renderedActorImage = actorImage; renderedRatio = ratio;
     }
     renderOverlays(previewStage, resolveOverlayAssets(state, imageScope()));
+    const themeStyle = frameDoc.getElementById('preview-theme');
+    if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
+    applyTalkLayout(previewStage, layout);
     const sample = SAMPLE_EVENTS[$('preview-comment-sample').value]?.message;
     const messages = sample ? [...SAMPLE_COMMENTS, sample] : SAMPLE_COMMENTS;
     renderStageComments(previewStage.querySelector('#stage-chat-list'), selectOutputComments(messages, studio, 0, false), studio);
     renderPinnedComment(previewStage, sample || SAMPLE_PINNED, studio);
     previewStage.querySelector('#stage-count').textContent = `${messages.length} COMMENTS`;
-    const themeStyle = frameDoc.getElementById('preview-theme');
-    if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
-    // The draft CSS can change the speech minimum, which moves the panels below it.
-    applyTalkLayout(previewStage, layout);
     positionHits(); drawGuides();
     // Match the live workspace's responsive speech minimum without changing its
     // saved desktop coordinates when previewing another resolution.

@@ -15,7 +15,7 @@ class Element {
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.text = ''; this.children = children; }
 }
-const message = { user: '<b>viewer</b>', text: '😀 Kappa hello', color: '#ffffff', badges: ['vip'], parts: [
+const message = { user: '<b>viewer</b>', text: '😀 Kappa hello', color: '#ffffff', badges: [{ set: 'vip', version: '1' }], parts: [
   { type: 'text', text: '😀 ' }, { type: 'emote', id: '25', name: 'Kappa', url: 'https://evil.example' }, { type: 'text', text: ' hello' },
 ] };
 const draw = studio => { const list = new Element('div'); renderStageComments(list, [message], normalizeStudio(studio)); return list.children[0]; };
@@ -66,14 +66,14 @@ test('speech removes Twitch emotes in both display modes and skips emote-only po
   assert.equal(prepareSpeechText('Kappa', DEFAULT_SPEECH_OPTIONS, 'kick', [{ type: 'emote', id: '25', name: 'Kappa' }]), 'Kappa');
 });
 
-test('role badges are opt-in, normalized and ordered, with Japanese labels and no external images', () => {
+test('unresolved badges keep receiver order and four Japanese role symbols', () => {
   assert.equal(normalizeStudio({}).commentBadges, false);
   assert.equal(normalizeStudio({ commentBadges: 'true' }).commentBadges, false);
   const list = new Element('div');
-  renderStageComments(list, [{ ...message, badges: ['subscriber', 'unknown', 'vip', 'moderator', 'broadcaster', 'vip'] }], normalizeStudio({ commentBadges: true, commentEmotes: 'text' }));
+  renderStageComments(list, [{ ...message, badges: ['subscriber', 'unknown', 'vip', 'moderator', 'broadcaster', 'vip'].map(set => ({ set, version: '1' })) }], normalizeStudio({ commentBadges: true, commentEmotes: 'text' }));
   const badges = descendants(list).filter(element => element.className === 'pokome-comment__badge');
-  assert.deepEqual(badges.map(element => element.attributes['aria-label']), ['配信者', 'モデレーター', 'VIP', 'サブスク']);
-  assert.deepEqual(badges.map(element => element.textContent), ['♛', '⚑', '◆', '★']);
+  assert.deepEqual(badges.map(element => element.attributes['aria-label']), ['サブスク', 'VIP', 'モデレーター', '配信者']);
+  assert.deepEqual(badges.map(element => element.textContent), ['★', '◆', '⚑', '♛']);
   assert.ok(badges.every(element => element.attributes.title === element.attributes['aria-label']));
   assert.equal(descendants(list).some(element => element.tag === 'img'), false);
   assert.equal(descendants(draw({})).some(element => element.className === 'pokome-comment__badge'), false);
