@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
+import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, uploadDesignImage, saveDesign, appReady, applyInEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, viewport = { width: 1280, height: 720 }) {
@@ -14,7 +14,7 @@ async function fixture(t, viewport = { width: 1280, height: 720 }) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-actor-image-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   });

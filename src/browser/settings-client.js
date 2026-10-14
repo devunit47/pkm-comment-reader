@@ -91,7 +91,11 @@ export async function createSettingsStore({ fetchImpl = (...args) => globalThis.
       try { announced = JSON.parse(event.data).revision; } catch { return; }
       if (announced !== revision) reload();
     });
-    events.addEventListener('auth', () => { for (const listener of authListeners) listener(); });
+    events.addEventListener('auth', event => {
+      let state;
+      try { if (JSON.parse(event.data)?.status === 'signing-out') state = { status: 'signing-out' }; } catch { /* Other notifications trigger a state read. */ }
+      for (const listener of authListeners) listener(state);
+    });
     // Also cover changes between the initial GET and the first stream opening.
     events.addEventListener('open', () => { reload(); for (const listener of authListeners) listener(); });
   }

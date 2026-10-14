@@ -94,6 +94,29 @@ function deepFreeze(value) {
   return value;
 }
 const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/3';
+test('badge images use safe literal descriptions and failed URLs fall back once across redraws', () => {
+  const { get, ownerDocument } = fixture(), list = get('stage-chat-list');
+  const message = { user: 'Viewer', text: '本文', badges: [{ set: 'vip', version: '1', url: badgeUrl, title: '<b>VIP</b>' }, { set: 'unknown', version: 'Horde', url: badgeUrl, title: '' }] };
+  renderStageComments(list, [message], { commentBadges: true });
+  const images = list.querySelectorAll('img'); assert.equal(images.length, 2); assert.equal(images[0].alt, '<b>VIP</b>');
+  images[0].onerror(); images[1].onerror();
+  assert.equal(list.querySelectorAll('img').length, 0); assert.equal(list.querySelectorAll('.pokome-comment__badge').length, 1);
+  assert.match(list.textContent, /◆Viewer/);
+  const count = ownerDocument.created.filter(element => element.tagName === 'img').length;
+  renderStageComments(list, [message], { commentBadges: true });
+  assert.equal(ownerDocument.created.filter(element => element.tagName === 'img').length, count);
+  renderStageComments(list, [{ ...message, badges: [{ ...message.badges[0], url: badgeUrl.replace('b817aba4', 'a817aba4') }] }], { commentBadges: true });
+  assert.equal(list.querySelectorAll('img').length, 1);
+});
+test('off, nameless and hidden badge targets create no images', () => {
+  const { get } = fixture(), list = get('stage-chat-list');
+  const message = { user: 'Viewer', text: '本文', badges: [{ set: 'vip', version: '1', url: badgeUrl }] };
+  for (const studio of [{ commentBadges: false }, { commentBadges: true, commentStyle: 'anonymous' }]) {
+    renderStageComments(list, [message], studio); assert.equal(list.querySelectorAll('img').length, 0);
+  }
+  list.hidden = true; renderStageComments(list, [message], { commentBadges: true }); assert.equal(list.querySelectorAll('img').length, 0);
+});
 const overlayState = (items, assets = {}) => normalizeOverlays({ version: 1, items, assets });
 const directOverlays = stage => stage.querySelectorAll(':scope > .pokome-overlay');
 

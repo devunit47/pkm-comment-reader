@@ -112,6 +112,22 @@ export function selectOutputComments(messages, { maxVisible = 0, holdSeconds = 0
 
 // The live stage and stream output share cards so themes apply identically.
 const ROLE_SYMBOLS = Object.freeze({ broadcaster: ['♛', '配信者'], moderator: ['⚑', 'モデレーター'], vip: ['◆', 'VIP'], subscriber: ['★', 'サブスク'] });
+const failedBadges = new WeakMap();
+function visibleBadgeTarget(list) {
+  for (let element = list; element; element = element.parentElement || element.ownerDocument?.defaultView?.frameElement) {
+    if (element.hidden || element.style?.display === 'none') return false;
+    const style = element.ownerDocument?.defaultView?.getComputedStyle(element);
+    if (style?.display === 'none' || style?.visibility === 'hidden') return false;
+  }
+  return true;
+}
+function badgeSymbol(doc, set) {
+  if (!Object.hasOwn(ROLE_SYMBOLS, set)) return null;
+  const [symbol, label] = ROLE_SYMBOLS[set], badge = doc.createElement('span');
+  badge.className = 'pokome-comment__badge'; badge.textContent = symbol;
+  badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); badge.setAttribute('title', label);
+  return badge;
+}
 
 function serviceNameColor(color, studio) {
   const background = ['light', 'dark'].includes(studio.commentItemBackground) ? studio.commentItemBackground : studio.commentPanel;
@@ -131,7 +147,10 @@ function serviceNameColor(color, studio) {
 
 export function renderStageComments(list, messages, studio = {}) {
   const doc = list.ownerDocument;
+  if (!failedBadges.has(doc)) failedBadges.set(doc, new Set());
+  const failures = failedBadges.get(doc), showBadges = studio.commentBadges && studio.commentStyle !== 'anonymous' && visibleBadgeTarget(list);
   list.replaceChildren(...messages.flatMap(message => {
+    if (message.hidden) return [];
     const content = normalizeCommentContent(message);
     const receivedEvent = normalizeCommentEvent(message.event);
     const event = studio.commentEvents === false ? null : receivedEvent;
@@ -148,13 +167,24 @@ export function renderStageComments(list, messages, studio = {}) {
       card.append(title);
     }
     const author = doc.createElement('strong'); author.className = 'pokome-comment__author'; author.textContent = user;
-    if (studio.commentBadges && content.badges.length) {
+    if (showBadges && content.badges.length) {
       author.textContent = '';
-      for (const role of content.badges) {
-        const [symbol, label] = ROLE_SYMBOLS[role];
-        const badge = doc.createElement('span'); badge.className = 'pokome-comment__badge'; badge.textContent = symbol;
-        badge.setAttribute('role', 'img'); badge.setAttribute('aria-label', label); badge.setAttribute('title', label);
-        author.append(badge);
+      for (const { set, url, title } of content.badges) {
+        if (url && !failures.has(url)) {
+          const piece = doc.createElement('span'), image = doc.createElement('img');
+          image.className = 'pokome-comment__badge pokome-comment__badge-image';
+          image.setAttribute('alt', title || set); image.setAttribute('title', title || set);
+          image.onload = () => markClippedComments(list);
+          image.onerror = () => {
+            failures.add(url);
+            const fallback = badgeSymbol(doc, set);
+            if (fallback) piece.replaceChildren(fallback); else piece.remove();
+            markClippedComments(list);
+          };
+          image.setAttribute('src', url); piece.append(image); author.append(piece);
+        } else {
+          const fallback = badgeSymbol(doc, set); if (fallback) author.append(fallback);
+        }
       }
       const name = doc.createElement('span'); name.textContent = user; author.append(name);
     }
@@ -200,6 +230,7 @@ export function markClippedComments(list) {
 
 export function renderPinnedComment(stage, pinned, studio) {
   const list = stage.querySelector('#stage-pinned-list');
+  stage.querySelector('.stage-pinned').hidden = !pinned;
   renderStageComments(list, pinned ? [pinned] : [], studio);
   stage.querySelector('.stage-pinned').hidden = !list.children.length;
 }

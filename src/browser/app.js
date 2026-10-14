@@ -20,6 +20,7 @@ import { initializeWorkspace } from './workspace.js';
 import { initializeTalkView } from './talk-view.js';
 import { initializeTheme } from '../shared/theme.js';
 import { initializeTwitchLogin } from './twitch-login.js';
+import { createTwitchBadgeClient } from './twitch-badge-client.js';
 
 const talkStage = document.getElementById('talk-stage');
 const $ = id => document.getElementById(id) ?? (id === 'talk-stage' ? talkStage : talkStage.querySelector(`#${id}`));
@@ -36,7 +37,6 @@ if (!enabledPlatforms.includes('kick')) {
 let session = 0;
 // Personal operating settings and the shareable appearance stay separate.
 const settingsStore = await createSettingsStore();
-initializeTwitchLogin(document.getElementById('twitch-login'), { subscribe: settingsStore.subscribeAuth });
 const savedSettings = settingsStore.settings;
 const savedConnections = readSavedConnections(savedSettings);
 const savedAutoSpeech = readSavedAutoSpeech(savedSettings);
@@ -64,6 +64,9 @@ let currentSpeech = null;
 let stageCredit = '';
 let outputPanel;
 const outputPublisher = new OutputPublisher({ onStatus: status => outputPanel?.setStatus(status) });
+const twitchBadges = createTwitchBadgeClient({ state: states.twitch, onChange() { if (active === 'twitch') renderStageChat(); } });
+twitchBadges.setEnabled(studio.commentBadges);
+initializeTwitchLogin(document.getElementById('twitch-login'), { subscribe: settingsStore.subscribeAuth, onChange: state => twitchBadges.setAuth(state) });
 // null means the preview shows a selection; a string snapshots played audio.
 let previewSpeechCredit = null;
 let speechDisplayTimer;
@@ -198,6 +201,7 @@ function render() {
 
 function add(platform, user, text, createdAt, login = user, readAutomatically = true, identity = {}) {
   const state = states[platform];
+  if (platform === 'twitch') identity = twitchBadges.resolve(identity);
   const message = addMessage(state, user, text, ++session, createdAt, login, identity);
   if (!message) return;
   message.receivedAt = Date.now();
@@ -574,7 +578,7 @@ if (supported) {
 }
 $('clear').onclick = () => {
   if ((!states[active].messages.length && !states[active].pinned) || !window.confirm(`${names[active]}のコメント履歴をすべて削除し、固定も解除します。元に戻せません。削除しますか？`)) return;
-  clearMessages(states[active]); stop(); renderSelection(); render();
+  clearMessages(states[active]); if (active === 'twitch') twitchBadges.clear(); stop(); renderSelection(); render();
 };
 
 function renderStageChat() {
@@ -745,11 +749,13 @@ for (const platform of enabledPlatforms) {
   $(`${platform}-channel`).value = savedConnections[platform];
   connections[platform] = new ChatConnection(platform, {
     onStatus(status, channel) {
+      if (platform === 'twitch') { if (status === '接続準備中') twitchBadges.connect(); else if (status !== '接続中') twitchBadges.disconnect(); }
       states[platform].status = status;
       states[platform].channel = channel;
       renderConnection();
     },
     onMessage(message) { add(platform, message.user, message.text, message.createdAt, message.login, true, platform === 'twitch' ? message : {}); },
+    onRoomId: roomId => { if (platform === 'twitch') twitchBadges.setRoomId(roomId); },
     onConnected(channel) {
       savedConnections[platform] = channel;
       saveSetting('connections', savedConnections);
@@ -851,6 +857,7 @@ reflectSettings({ fields: SETTINGS_FIELDS.filter(field => JSON.stringify(savedSe
 // Reflect only the confirmed design after a replacement or an external change.
 designStore.subscribe(detail => {
   studio = designStore.design.studio;
+  twitchBadges.setEnabled(studio.commentBadges);
   themeEditor.reflectTheme(designStore.design.theme);
   workspaceEditor.reload();
   designPreview.reload(detail);
@@ -859,6 +866,7 @@ designStore.subscribe(detail => {
 });
 if (designStore.warning) notify(designStore.warning);
 window.addEventListener('beforeunload', () => {
+  twitchBadges.close();
   settingsStore.close();
   outputPublisher.close();
   stop();

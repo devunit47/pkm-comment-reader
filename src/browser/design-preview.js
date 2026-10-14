@@ -11,6 +11,9 @@ import { canvasOrder, layoutFromRects, moveCanvasTarget, copyTalkRatio, resetTal
 import { createDraftSession } from '../shared/design-draft.js';
 
 const clone = value => structuredClone(value);
+// The official Global Chat Badges example supplies this fixed VIP sample.
+const SAMPLE_BADGES = [{ set: 'vip', version: '1', url: 'https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/3', title: 'VIP' },
+  ...['broadcaster', 'moderator', 'subscriber'].map(set => ({ set, version: '1' }))];
 // Stable numbered samples reveal ordering without copying private chat.
 const SAMPLE_COMMENTS = Object.freeze([
   'こんにちは。表示の大きさを確認しています。', '文字と背景の組み合わせを試しています。',
@@ -22,11 +25,11 @@ const SAMPLE_COMMENTS = Object.freeze([
   if ((index === 0 || index === 9)) text += ' 😀 Kappa';
   const start = Array.from(text).length - 5;
   return { id: `sample-${index + 1}`, user: `サンプル${String(index + 1).padStart(2, '0')}`, receivedAt: index + 1,
-    ...normalizeCommentContent({ text, badges: (index === 0 || index === 9) ? ['broadcaster', 'moderator', 'vip', 'subscriber'] : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, (index === 0 || index === 9) ? `25:${start}-${start + 4}` : '') }) };
+    ...normalizeCommentContent({ text, badges: (index === 0 || index === 9) ? SAMPLE_BADGES : [], color: ['#ffffff', '#000000', '#9146ff', '#23f995'][index % 4], parts: parseTwitchEmotes(text, (index === 0 || index === 9) ? `25:${start}-${start + 4}` : '') }) };
 }));
 const SAMPLE_PINNED = Object.freeze({ id: 'sample-pinned', user: '固定のサンプル',
   ...normalizeCommentContent({ text: '取り上げたいコメントをここに固定できます。 😀 Kappa', color: '#ffffff',
-    badges: ['broadcaster', 'moderator', 'vip', 'subscriber'],
+    badges: SAMPLE_BADGES,
     parts: [{ type: 'text', text: '取り上げたいコメントをここに固定できます。 😀 ' }, { type: 'emote', id: '25', name: 'Kappa' }] }) });
 const SAMPLE_EVENTS = Object.freeze(Object.fromEntries([
   ['sub', 'サブスク', { kind: 'sub', plan: 'Prime', cumulativeMonths: 1 }],
@@ -36,7 +39,7 @@ const SAMPLE_EVENTS = Object.freeze(Object.fromEntries([
   ['bits', 'ビッツ', { kind: 'bits', bits: 100 }],
   ['anonymousGift', '匿名ギフト', { kind: 'gift', anonymous: true, plan: '1000', recipient: '匿名ギフトを受け取ったサンプルさん' }],
 ].map(([key, label, event]) => [key, { label, message: { id: `sample-event-${key}`, user: '表示の折り返しを確認する長い名前のサンプルさん', receivedAt: 11, event,
-  ...normalizeCommentContent({ text: ['resub', 'bits'].includes(key) ? 'いつも楽しい配信をありがとう！ 😀 Kappa' : '', color: '#9146ff', badges: ['subscriber'] }) } }])));
+  ...normalizeCommentContent({ text: ['resub', 'bits'].includes(key) ? 'いつも楽しい配信をありがとう！ 😀 Kappa' : '', color: '#9146ff', badges: SAMPLE_BADGES }) } }])));
 const size = value => value.split('x').map(Number);
 // Panels and additions share the same canvas controls.
 const PANEL_TARGETS = Object.freeze([['screen', '画面全体'], ['header', 'ヘッダー（タイトル）'], ['chat', 'コメント欄'], ['speech', '読み上げ'], ['actor', '立ち絵'], ['footer', 'フッター'], ['pinned', '固定コメント']]);
@@ -92,7 +95,7 @@ const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配�
 <label>投稿ごとの背景<select id="draft-commentItemBackground">${options([['theme', 'テーマのまま'], ['none', 'なし'], ['light', '白い丸い背景'], ['dark', '黒い丸い背景']])}</select></label><label>投稿背景の不透明度（%）<input id="draft-commentItemOpacity" type="number" min="0" max="100" step="1"></label><label>本文の最大行数<select id="draft-commentMaxLines">${options([['', 'テーマのまま'], ['0', '制限なし'], ...[1, 2, 3, 4, 5].map(lines => [String(lines), `${lines}行`])])}</select></label><p><small>本文だけを省略して表示します。保存した本文と読み上げには影響しません。「1行コンパクト」にも優先します。</small></p><label>コメント同士の間隔<select id="draft-commentGap">${options([['', 'テーマのまま'], ...[0, 4, 8, 12, 14, 16, 24].map(gap => [String(gap), `${gap}px`])])}</select></label>
 <label>パネルの背景<select id="draft-commentPanel">${options([['theme', 'テーマのまま'], ['none', 'なし（枠も消す）'], ['light', '白'], ['dark', '黒']])}</select></label><label>パネルの不透明度（%）<input id="draft-commentPanelOpacity" type="number" min="0" max="100" step="5"></label>
 ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本文の色' : '名前の色'; return `<label>${label}<select id="draft-${key}Mode">${options([['theme', 'テーマのまま'], ...(key === 'commentAuthorColor' ? [['service', 'サービスの色']] : []), ['custom', '色を指定']])}</select></label><label>${label}（指定色）<input id="draft-${key}" type="color"></label>`; }).join('')}
-<label class="check"><input id="draft-commentBadges" type="checkbox">Twitchの役割バッジを表示</label><p class="muted">配信者・モデレーター・VIP・サブスクの記号だけを表示します。チャンネル独自の画像や月数は表示しません。</p>
+<label class="check"><input id="draft-commentBadges" type="checkbox">Twitchのバッジを表示</label><p class="muted">ログイン中はバッジの一覧を api.twitch.tv から取得し、画像は static-cdn.jtvnw.net から読み込みます。未ログイン・取得中・取得失敗・画像読込失敗では、配信者・モデレーター・VIP・サブスクの4種だけ記号になり、ほかは表示しません。一覧と画像は保存しません。プレビューの見本も CDN から画像を読み込みます。</p>
 <label>Twitchエモート<select id="draft-commentEmotes">${options([['image', '画像で表示'], ['text', '文字のまま']])}</select></label><p class="muted">エモートは読み上げません。画像表示ではTwitchのCDNへ通信します。</p>
 <label>文字の縁取り<select id="draft-commentOutline">${options([['none', 'なし'], ['thin', '細い'], ['thick', '太い']])}</select></label><label>縁取りの色<input id="draft-commentOutlineColor" type="color"></label><label>行間<select id="draft-commentLineHeight">${options([['', 'テーマのまま'], ['1.2', '1.2（詰める）'], ['1.35', '1.35'], ['1.5', '1.5'], ['1.75', '1.75'], ['2', '2.0（広い）']])}</select></label>
 <label class="check"><input id="draft-commentDivider" type="checkbox">コメントの区切り線を表示</label><label class="check"><input id="draft-commentLabel" type="checkbox">見出し（「みんなのコメント」と件数）を表示</label><p><small>「テーマのまま」以外を選んだ項目は、テーマCSSより優先します。</small></p></div>
@@ -287,15 +290,14 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
       renderedStudio = studio; renderedActorImage = actorImage; renderedRatio = ratio;
     }
     renderOverlays(previewStage, resolveOverlayAssets(state, imageScope()));
+    const themeStyle = frameDoc.getElementById('preview-theme');
+    if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
+    applyTalkLayout(previewStage, layout);
     const sample = SAMPLE_EVENTS[$('preview-comment-sample').value]?.message;
     const messages = sample ? [...SAMPLE_COMMENTS, sample] : SAMPLE_COMMENTS;
     renderStageComments(previewStage.querySelector('#stage-chat-list'), selectOutputComments(messages, studio, 0, false), studio);
     renderPinnedComment(previewStage, sample || SAMPLE_PINNED, studio);
     previewStage.querySelector('#stage-count').textContent = `${messages.length} COMMENTS`;
-    const themeStyle = frameDoc.getElementById('preview-theme');
-    if (themeStyle.textContent !== compiledCSS) themeStyle.textContent = compiledCSS;
-    // The draft CSS can change the speech minimum, which moves the panels below it.
-    applyTalkLayout(previewStage, layout);
     positionHits(); drawGuides();
     // Match the live workspace's responsive speech minimum without changing its
     // saved desktop coordinates when previewing another resolution.

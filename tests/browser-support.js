@@ -15,10 +15,50 @@ for (const candidate of [process.env.PLAYWRIGHT_MODULE, 'playwright',
   '/opt/codex/runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright'].filter(Boolean)) {
   try { playwright = require(candidate); break; } catch { /* Try another available runtime. */ }
 }
-export const chromium = playwright?.chromium;
+// Real speech from headless tests would play through the PC's speakers.
+function silenceSpeech() {
+  if (!globalThis.SpeechSynthesis) return;
+  const timers = new Set();
+  const later = (task, delay) => { const timer = setTimeout(() => { timers.delete(timer); task(); }, delay); timers.add(timer); };
+  SpeechSynthesis.prototype.speak = function (utterance) {
+    later(() => { utterance.dispatchEvent(new Event('start')); later(() => utterance.dispatchEvent(new Event('end')), 50); }, 0);
+  };
+  SpeechSynthesis.prototype.cancel = function () { for (const timer of timers) clearTimeout(timer); timers.clear(); };
+}
+const playwrightChromium = playwright?.chromium;
+export const chromium = playwrightChromium && {
+  executablePath: () => playwrightChromium.executablePath(),
+  async launch(options = {}) {
+    // Headless Edge registers popups with Windows' tab manager and can leave
+    // Alt+Tab entries after it exits; other Chromium builds ignore the feature.
+    const browser = await playwrightChromium.launch({ ...options, args: [...(options.args || []), '--mute-audio', '--disable-features=msWindowTabManagerPublic'] });
+    // browser.newPage() also creates its context through newContext().
+    const newContext = browser.newContext.bind(browser);
+    browser.newContext = async (...args) => {
+      const context = await newContext(...args);
+      await context.addInitScript(silenceSpeech);
+      return context;
+    };
+    return browser;
+  },
+};
 export const executablePath = [process.env.BROWSER_EXECUTABLE, chromium?.executablePath(),
   'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', '/usr/bin/chromium', '/usr/bin/google-chrome'].filter(Boolean).find(existsSync);
 export const browserAvailable = process.env.SKIP_BROWSER_TESTS !== '1' && !!chromium && !!executablePath;
+
+export async function closeBrowser(browser) {
+  if (!browser) return;
+  // Close each target before disposing its process.
+  const contexts = await Promise.allSettled(browser.contexts().map(async context => {
+    const pages = await Promise.allSettled(context.pages().map(page => page.close()));
+    await context.close();
+    const failed = pages.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
+  }));
+  await browser.close();
+  const failed = contexts.find(result => result.status === 'rejected');
+  if (failed) throw failed.reason;
+}
 
 // Remove private fixtures after individual tests have closed their pages and
 // servers; deleting a watched file during a test could trigger another save.

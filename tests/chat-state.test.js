@@ -53,18 +53,18 @@ test('hiding one comment leaves other messages from the same user visible', () =
 test('pinning copies normalized content independently of history, selection and filters', () => {
   const state = createChatState(); state.historyLimit = 1;
   const message = addMessage(state, 'viewer', 'Kappa original', 1, 1000, 'viewer', {
-    color: '#AABBCC', badges: ['moderator'], parts: [{ type: 'emote', id: '25', name: 'Kappa' }, { type: 'text', text: ' original' }],
+    color: '#AABBCC', badges: [{ set: 'moderator', version: '1', url: '', title: '' }], parts: [{ type: 'emote', id: '25', name: 'Kappa' }, { type: 'text', text: ' original' }],
   });
   assert.equal(state.pinned, null);
   state.selected = message;
   assert.equal(state.pinned, null);
   setPinned(state, message);
-  message.parts[0].name = 'changed'; message.badges.push('vip'); message.text = 'changed';
+  message.parts[0].name = 'changed'; message.badges.push({ set: 'vip', version: '1' }); message.text = 'changed';
   addMessage(state, 'other', 'newest', 2);
   state.search = 'missing'; state.filter = 'first'; state.selected = state.messages[0];
   assert.equal(reconcilePinned(state), false);
   assert.equal(state.pinned.text, 'Kappa original');
-  assert.deepEqual(state.pinned.badges, ['moderator']);
+  assert.deepEqual(state.pinned.badges, [{ set: 'moderator', version: '1', url: '', title: '' }]);
   assert.equal(state.pinned.parts[0].name, 'Kappa');
   assert.equal(state.pinned.color, '#aabbcc');
   assert.equal(state.received, 2);

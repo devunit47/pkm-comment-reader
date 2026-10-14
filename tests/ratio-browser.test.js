@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { defaultTalkLayout, defaultActorImage, normalizeActorImage, withTalk } from '../src/shared/design-model.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, talkStage } from './browser-support.js';
+import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 // P1-B2: layouts and additions are kept per ratio, and no screen borrows another ratio's.
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
@@ -18,7 +18,7 @@ async function fixture(t, viewport = { width: 1440, height: 1000 }) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-ratio-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   });

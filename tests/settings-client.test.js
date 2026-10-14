@@ -131,11 +131,12 @@ test('a protected save response refreshes the warning and refuses later writes',
 test('authentication notifications share the settings stream, catch up on reconnect and unsubscribe on close', async () => {
   const server = fakeServer();
   const store = await createSettingsStore({ fetchImpl: server.fetchImpl, EventSourceClass: Events });
-  let changes = 0;
-  const unsubscribe = store.subscribeAuth(() => { changes++; });
+  let changes = 0, state;
+  const unsubscribe = store.subscribeAuth(value => { changes++; state = value; });
   const before = server.requests.length;
-  Events.last.emit('auth', { revision: 0 });
+  Events.last.emit('auth', { revision: 0, status: 'signing-out', accessToken: 'must-not-forward' });
   assert.equal(changes, 1);
+  assert.deepEqual(state, { status: 'signing-out' });
   assert.equal(server.requests.length, before, 'auth notifications do not reload operating settings');
   Events.last.emit('open'); await tick();
   assert.equal(changes, 2, 'reconnection catches up auth changes missed while disconnected');

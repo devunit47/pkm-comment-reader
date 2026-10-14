@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
+import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -13,7 +13,7 @@ async function fixture(t, { viewport = { width: 1440, height: 1000 }, args = [],
   const directory = await mkdtemp(join(tmpdir(), 'pokome-output-browser-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   });
@@ -342,9 +342,9 @@ browserTest('output caches design reads and normalization across appends but fol
   const producer = await context.newPage();
   await producer.goto(producerPage(url));
   await producer.evaluate(() => {
-    window.testChannel = new BroadcastChannel('pokome-output-v2');
+    window.testChannel = new BroadcastChannel('pokome-output-v3');
     window.testChannel.onmessage = event => {
-      if (event.data.type === 'hello') window.testChannel.postMessage({ v: 2, type: 'snapshot', controllerId: 'cache-controller', seq: 0, received: 0, messages: [] });
+      if (event.data.type === 'hello') window.testChannel.postMessage({ v: 3, type: 'snapshot', controllerId: 'cache-controller', seq: 0, received: 0, messages: [] });
     };
   });
   const output = await context.newPage();
@@ -364,7 +364,7 @@ browserTest('output caches design reads and normalization across appends but fol
   const metrics = async () => ({ reads, normalizations: await output.evaluate(() => window.studioNormalizations) });
   const baseline = await metrics();
   await producer.evaluate(() => {
-    for (let i = 1; i <= 40; i++) window.testChannel.postMessage({ v: 2, type: 'append', controllerId: 'cache-controller', seq: i, received: i,
+    for (let i = 1; i <= 40; i++) window.testChannel.postMessage({ v: 3, type: 'append', controllerId: 'cache-controller', seq: i, received: i,
       message: { id: String(i), user: `user${i}`, text: `body${i}`, receivedAt: Date.now() } });
   });
   await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '40 COMMENTS');
@@ -377,7 +377,7 @@ browserTest('output caches design reads and normalization across appends but fol
   const updated = await metrics();
   assert.ok(updated.reads > baseline.reads);
   assert.ok(updated.normalizations > baseline.normalizations);
-  await producer.evaluate(() => window.testChannel.postMessage({ v: 2, type: 'append', controllerId: 'cache-controller', seq: 41, received: 41,
+  await producer.evaluate(() => window.testChannel.postMessage({ v: 3, type: 'append', controllerId: 'cache-controller', seq: 41, received: 41,
     message: { id: '41', user: 'user41', text: 'body41', receivedAt: Date.now() } }));
   await output.waitForFunction(() => document.querySelector('.stage-comment strong').textContent === 'user41');
   assert.equal((await comments(output)).length, 41);
@@ -386,7 +386,7 @@ browserTest('output caches design reads and normalization across appends but fol
   await saveStudio(url, { maxVisible: 3, holdSeconds: 5, newestPosition: 'bottom' });
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 3);
   assert.equal(await output.locator('.stage-comment strong').last().textContent(), 'user41');
-  await producer.evaluate(() => window.testChannel.postMessage({ v: 2, type: 'append', controllerId: 'cache-controller', seq: 42, received: 42,
+  await producer.evaluate(() => window.testChannel.postMessage({ v: 3, type: 'append', controllerId: 'cache-controller', seq: 42, received: 42,
     message: { id: '42', user: 'expired', text: 'expired body', receivedAt: Date.now() - 6000 } }));
   await output.waitForFunction(() => document.querySelector('#stage-count').textContent === '42 COMMENTS');
   assert.equal(await output.locator('.stage-comment strong').last().textContent(), 'user41');
@@ -438,8 +438,8 @@ browserTest('output expires without messages, preserves speech and restores reta
   await saveStudio(url, { maxVisible: 8, holdSeconds: 5 });
   await producer.goto(producerPage(url));
   await producer.evaluate(() => {
-    window.testChannel = new BroadcastChannel('pokome-output-v2');
-    window.testSnapshot = { v: 2, type: 'snapshot', controllerId: 'test-controller', seq: 0, received: 100,
+    window.testChannel = new BroadcastChannel('pokome-output-v3');
+    window.testSnapshot = { v: 3, type: 'snapshot', controllerId: 'test-controller', seq: 0, received: 100,
       messages: [], speech: { user: 'speaker', text: 'keep speaking', speaking: true }, credit: 'test credit' };
     window.testChannel.onmessage = event => { if (event.data.type === 'hello') window.testChannel.postMessage(window.testSnapshot); };
   });
@@ -463,13 +463,13 @@ browserTest('output expires without messages, preserves speech and restores reta
   await saveStudio(url, { maxVisible: 30, holdSeconds: 0, newestPosition: 'top' });
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length === 30);
   assert.equal(await output.locator('.stage-comment strong').first().textContent(), 'user99');
-  await producer.evaluate(() => window.testChannel.postMessage({ v: 2, type: 'remove', controllerId: 'test-controller', seq: 1, received: 100, ids: ['99', '98'] }));
+  await producer.evaluate(() => window.testChannel.postMessage({ v: 3, type: 'remove', controllerId: 'test-controller', seq: 1, received: 100, ids: ['99', '98'] }));
   await output.waitForFunction(() => document.querySelector('.stage-comment strong').textContent === 'user97');
   // A replacement controller keeps original receive times rather than reviving expired cards.
   await saveStudio(url, { maxVisible: 8, holdSeconds: 5 });
   await output.waitForFunction(() => document.querySelectorAll('.stage-comment').length <= 8);
   await producer.evaluate(() => {
-    window.testChannel.postMessage({ v: 2, type: 'bye', role: 'controller', id: 'test-controller' });
+    window.testChannel.postMessage({ v: 3, type: 'bye', role: 'controller', id: 'test-controller' });
     window.testSnapshot.controllerId = 'replacement-controller';
     window.testChannel.postMessage(window.testSnapshot);
   });
@@ -515,8 +515,8 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
   const producer = await context.newPage();
   await producer.goto(producerPage(url));
   await producer.evaluate(() => {
-    const channel = new BroadcastChannel('pokome-output-v2');
-    channel.onmessage = event => { if (event.data.type === 'hello') channel.postMessage({ v: 2, type: 'snapshot', controllerId: 'long-card', seq: 0, received: 1,
+    const channel = new BroadcastChannel('pokome-output-v3');
+    channel.onmessage = event => { if (event.data.type === 'hello') channel.postMessage({ v: 3, type: 'snapshot', controllerId: 'long-card', seq: 0, received: 1,
       messages: [{ id: 'long', user: 'long user', text: 'long line\n'.repeat(200), receivedAt: Date.now() }] }); };
     window.testChannel = channel;
   });
@@ -835,7 +835,7 @@ browserTest('reading a five-panel saved design supplements only pinned and never
   await writeFile(path, raw);
   const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory() });
   const browser = await chromium.launch({ headless: true, executablePath });
-  t.after(async () => { await browser.close(); if (server.listening) await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await closeBrowser(browser); if (server.listening) await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`, page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await blockExternalFonts(page); await page.goto(url); await appReady(page);

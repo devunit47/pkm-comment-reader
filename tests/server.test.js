@@ -13,9 +13,11 @@ import { request as httpRequest } from 'node:http';
 test('Twitch auth API guards requests, shares state, and never returns private credentials in JSON or SSE', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-auth-api-')), clock = fakeClock();
   let calls = 0;
+  const revokeStarted = Promise.withResolvers(), revoke = Promise.withResolvers();
   const options = { dataDirectory: join(directory, 'data'), customizationDirectory: join(directory, 'customization'), twitchClientId: 'test-client', authPlatform: 'linux', authClock: clock,
     fetchImpl: async url => {
       calls++;
+      if (url.endsWith('/revoke')) { revokeStarted.resolve(); return revoke.promise; }
       const data = url.endsWith('/device') ? { device_code: 'private-device-code', user_code: 'USER-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 }
         : url.endsWith('/token') ? { access_token: 'private-access-token', refresh_token: 'private-refresh-token', expires_in: 3600, token_type: 'bearer', scope: [] }
         : url.endsWith('/validate') ? { client_id: 'test-client', user_id: '1', login: 'reader', expires_in: 3600, scopes: [] }
@@ -38,6 +40,16 @@ test('Twitch auth API guards requests, shares state, and never returns private c
   }
   assert.equal((await request({ action: 'unknown' })).status, 400);
   assert.equal((await request({ action: 'start', device_code: 'injected' })).status, 400);
+  assert.equal(calls, 0);
+  for (const headers of [{ Host: 'evil.example' }, { Origin: 'https://evil.example' }, { 'Sec-Fetch-Site': 'cross-site' }, { 'Sec-Fetch-Site': 'same-site' }]) {
+    const code = await new Promise((resolve, reject) => {
+      const req = httpRequest(`${base}/api/twitch/badges?broadcasterId=1`, { headers }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)); });
+      req.on('error', reject); req.end();
+    });
+    assert.equal(code, 403);
+  }
+  assert.equal((await fetch(`${base}/api/twitch/badges?broadcasterId=0`)).status, 400);
+  assert.deepEqual((await (await fetch(`${base}/api/twitch/badges?broadcasterId=1`)).json()).badges, []);
   assert.equal(calls, 0);
   for (const subpath of ['events', 'unknown']) {
     const controller = new AbortController();
@@ -63,20 +75,29 @@ test('Twitch auth API guards requests, shares state, and never returns private c
   const settings = await (await fetch(`${bases[1]}/api/settings`)).text();
   assert.doesNotMatch(wire + settings + JSON.stringify(signedIn), /private-|access[_T]oken|refresh[_T]oken|device_code|USER-CODE/);
   assert.equal(JSON.parse(settings).auth, undefined);
-  await request({ action: 'logout' });
+  const loggingOut = request({ action: 'logout' });
+  try {
+    await revokeStarted.promise;
+    wire += new TextDecoder().decode((await reader.read()).value);
+    assert.match(wire, /event: auth\ndata: \{"revision":0,"status":"signing-out"\}/);
+    for (const address of bases) {
+      assert.deepEqual(await (await fetch(`${address}/api/auth/twitch`)).json(), { status: 'signing-out' });
+    }
+    assert.doesNotMatch(wire, /private-|access[_T]oken|refresh[_T]oken|device_code|Reader|reader/);
+  } finally { revoke.resolve({ ok: false, status: 503 }); await loggingOut; }
   assert.deepEqual(await (await fetch(`${bases[1]}/api/auth/twitch`)).json(), { status: 'signed-out' });
   abort.abort(); await reader.cancel().catch(() => {});
 });
 
 test('empty Twitch client ID cannot initiate an upstream request', async t => {
-  const base = await serve(t, () => { throw new Error('Must not contact Twitch'); });
+  const base = await serve(t, () => { throw new Error('Must not contact Twitch'); }, { twitchClientId: '' });
   assert.deepEqual(await (await fetch(`${base}/api/auth/twitch`)).json(), { status: 'disabled' });
   const response = await fetch(`${base}/api/auth/twitch`, { method: 'POST', body: '{"action":"start"}', headers: { 'Content-Type': 'application/json', Origin: base, 'Sec-Fetch-Site': 'same-origin' } });
   assert.equal(response.status, 503); assert.match((await response.json()).error, /使えません/);
 });
 
-async function serve(t, fetchImpl) {
-  const server = createServer({ fetchImpl, dataDirectory: await temporaryDataDirectory(t) });
+async function serve(t, fetchImpl, options = {}) {
+  const server = createServer({ fetchImpl, dataDirectory: await temporaryDataDirectory(t), ...options });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(() => new Promise(resolve => server.close(resolve)));

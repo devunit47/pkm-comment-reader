@@ -19,12 +19,13 @@ export function createServer({ fetchImpl = globalThis.fetch, customizationDirect
   const design = createDesignStorage(resolve(customizationDirectory instanceof URL ? fileURLToPath(customizationDirectory) : customizationDirectory));
   const settings = createSettingsStorage(dataDirectory);
   const auth = createTwitchAuthHandler(dataDirectory, { clientId: twitchClientId, fetchImpl, clock: authClock, platform: authPlatform, protect: authProtect, unprotect: authUnprotect });
-  const unsubscribeAuth = auth.subscribe(() => settings.authChanged());
+  const unsubscribeAuth = auth.subscribe(state => settings.authChanged(state));
   const server = http.createServer(async (req, res) => {
     res.setHeader('Permissions-Policy', 'camera=(), microphone=()');
     let url;
     try { url = new URL(req.url, 'http://localhost'); } catch { res.writeHead(400); res.end('Bad request'); return; }
     if (url.pathname === '/api/auth/twitch' || url.pathname.startsWith('/api/auth/twitch/')) { await auth.handle(req, res, url); return; }
+    if (url.pathname === '/api/twitch/badges') { await auth.handleBadges(req, res, url); return; }
     if (url.pathname === '/api/customizations' || url.pathname.startsWith('/api/customizations/')) { await handleLocalCustomization(req, res, url); return; }
     if (url.pathname.startsWith('/api/design/')) { await design.handle(req, res, url); return; }
     if (url.pathname === '/api/settings' || url.pathname.startsWith('/api/settings/')) { await settings.handle(req, res, url); return; }

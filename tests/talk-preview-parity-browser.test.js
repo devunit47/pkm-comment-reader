@@ -4,14 +4,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, blockExternalFonts, appReady, saveDesign, readDesign, temporaryDataDirectory, matrixCases } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, blockExternalFonts, appReady, saveDesign, readDesign, temporaryDataDirectory, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, { frameStyle } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-talk-parity-'));
   const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(t) });
   const browser = await chromium.launch({ headless: true, executablePath });
-  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}`;
   const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });

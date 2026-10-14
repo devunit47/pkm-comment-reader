@@ -130,8 +130,8 @@ export function createEventStream() {
     clients.set(res, close);
     req.on('close', close); res.on('close', close);
   }
-  const broadcast = (revision, event = 'change') => {
-    for (const client of clients.keys()) client.write(`event: ${event}\ndata: ${JSON.stringify({ revision })}\n\n`);
+  const broadcast = (revision, event = 'change', detail = {}) => {
+    for (const client of clients.keys()) client.write(`event: ${event}\ndata: ${JSON.stringify({ revision, ...detail })}\n\n`);
   };
   function closeEvents() {
     stopping = true;

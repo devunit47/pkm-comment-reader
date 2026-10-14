@@ -4,19 +4,24 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
+import { fakeClock } from './auth-support.js';
+import { defaultTalkLayout, withTalk } from '../src/shared/design-model.js';
+import { saveDesign, waitForDesign } from './browser-support.js';
+import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
-async function fixture(t, studio = {}) {
+async function fixture(t, studio = {}, options = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-identity-'));
-  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory() });
-  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  const server = createServer({ customizationDirectory: directory, dataDirectory: await temporaryDataDirectory(), ...options });
+  t.after(async () => { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   await saveStudio(base, studio);
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   await blockExternalFonts(context);
+  if (options.browserClock) await context.clock.install();
+  await options.prepare?.(context);
   const requests = [], errors = [];
   const png = await readFile(new URL('fixtures/presets/actor.png', import.meta.url));
   await context.route('https://static-cdn.jtvnw.net/**', route => {
@@ -47,6 +52,289 @@ async function fixture(t, studio = {}) {
 async function receive(page, text, tags = 'color=#ffffff;badges=vip/1;emotes=25:2-6') {
   await page.evaluate(({ text, tags }) => window.testSockets[0].onmessage({ data: `@${tags} :viewer!viewer@host PRIVMSG #qa_channel :${text}\r\n` }), { text, tags });
 }
+
+browserTest('badge images follow hidden panels across talk, preview and output ratio changes without another comment', async t => {
+  const badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/3';
+  const { context, page, base, requests, errors } = await fixture(t, { commentBadges: true, commentEmotes: 'text' }, { async prepare(context) {
+    await context.route('**/api/auth/twitch', route => route.fulfill({ json: { status: 'signed-in', login: 'viewer' } }));
+    await context.route('**/api/twitch/badges?*', route => route.fulfill({ json: {
+      broadcasterId: '123', badges: [{ set: 'vip', version: '1', url: badgeUrl, title: 'VIP' }], nextRefreshAt: Date.now() + 3600000,
+    } }));
+  } });
+  const hidden = defaultTalkLayout('9:16'); hidden.panels.chat.hidden = true; hidden.panels.pinned.hidden = true;
+  await saveDesign(base, design => withTalk(withTalk(design, '16:9', { layout: hidden }), '9:16', { layout: defaultTalkLayout('9:16') }));
+  const live = talkStage(page);
+  await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('.stage-chat').style.display === 'none');
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  const catalog = page.waitForResponse(response => response.url().includes('/api/twitch/badges?'));
+  await receive(page, '比率の切り替え', 'room-id=123;badges=vip/1'); await catalog;
+  await page.locator('#comment-list .message').last().click(); await page.locator('#pin-comment').click();
+  await page.locator('#enter-talk').click();
+  assert.equal(await live.locator('.pokome-comment__badge-image').count(), 0);
+  const output = await context.newPage(); await output.setViewportSize({ width: 1280, height: 720 }); await output.goto(base + '/output.html');
+  await output.locator('#stage-pinned-list').filter({ hasText: '比率の切り替え' }).waitFor({ state: 'attached' });
+  await output.waitForFunction(() => document.querySelector('.stage-chat').style.display === 'none');
+  assert.equal(await output.locator('.pokome-comment__badge-image').count(), 0);
+  const before = requests.length;
+  await page.setViewportSize({ width: 600, height: 1000 });
+  assert.equal(await live.locator('body').getAttribute('data-ratio'), '16:9', 'talk ratio follows output size, not window size');
+  await saveDesign(base, design => ({ ...design, outputSize: '1080x1920' }));
+  for (const list of ['#stage-chat-list', '#stage-pinned-list']) await live.locator(`${list} .pokome-comment__badge-image`).waitFor();
+  await output.setViewportSize({ width: 600, height: 1000 });
+  for (const list of ['#stage-chat-list', '#stage-pinned-list']) await output.locator(`${list} .pokome-comment__badge-image`).waitFor();
+  assert.ok(requests.length > before);
+  await saveDesign(base, design => ({ ...design, outputSize: '1280x720' }));
+  await live.locator('.stage-chat').waitFor({ state: 'hidden' });
+  await output.setViewportSize({ width: 1280, height: 720 });
+  await output.locator('.stage-chat').waitFor({ state: 'hidden' });
+  assert.equal(await live.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(await output.locator('.pokome-comment__badge-image').count(), 0);
+  const hiddenRequests = requests.length;
+  await page.locator('#stage-design-edit').click();
+  const editor = page.locator('#design-preview-editor');
+  await editor.locator('#apply-design:not(:disabled)').waitFor();
+  const preview = page.frameLocator('#design-preview-editor #design-preview-frame');
+  await preview.locator('#stage-chat-list .stage-comment').first().waitFor({ state: 'attached' });
+  assert.equal(await preview.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(requests.length, hiddenRequests, 'hidden panels do not request badge images');
+  await editor.locator('#preview-ratio').selectOption('9:16');
+  await preview.locator('#stage-chat-list .pokome-comment__badge-image').last().waitFor();
+  await editorTarget(editor, 'chat'); await editor.locator('#panel-hidden').check();
+  assert.equal(await preview.locator('#stage-chat-list .pokome-comment__badge-image').count(), 0);
+  await editor.locator('#panel-hidden').uncheck();
+  await preview.locator('#stage-chat-list .pokome-comment__badge-image').last().waitFor();
+  await editor.locator('#preview-ratio').selectOption('16:9');
+  await preview.locator('.stage-chat').waitFor({ state: 'hidden' });
+  assert.equal(await preview.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(await page.locator('#count').textContent(), '1 件', 'no additional reception is needed');
+  assert.deepEqual(errors, []);
+});
+
+browserTest('badge arrival preserves the playing speech preview while a different comment stays selected', async t => {
+  let badgeRequest;
+  const { page, errors } = await fixture(t, { commentBadges: true, commentEmotes: 'text' }, { async prepare(context) {
+    await context.route('**/api/auth/twitch', route => route.fulfill({ json: { status: 'signed-in', login: 'viewer', displayName: 'Viewer' } }));
+    await context.route('**/api/twitch/badges?*', route => { badgeRequest = route; });
+  } });
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  await page.evaluate(() => { window.speechSynthesis.speak = utterance => { window.spoken.push(utterance.text); utterance.onstart?.(); }; });
+  await receive(page, '選択中のコメント', 'room-id=123;badges=vip/1');
+  await page.locator('#comment-list .message').last().click();
+  await receive(page, '読み上げ中のコメント', 'room-id=123;badges=vip/1');
+  await page.locator('#preview-text').filter({ hasText: '読み上げ中のコメント' }).waitFor();
+  assert.ok(badgeRequest);
+  await badgeRequest.fulfill({ json: { broadcasterId: '123', badges: [{ set: 'vip', version: '1', title: 'VIP', url: 'https://static-cdn.jtvnw.net/badges/v1/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/3' }], nextRefreshAt: Date.now() + 3600000 } });
+  await page.locator('#enter-talk').click();
+  await talkStage(page).locator('.pokome-comment__badge-image').first().waitFor({ state: 'attached' });
+  assert.match(await page.locator('#preview-text').textContent(), /読み上げ中のコメント/);
+  assert.deepEqual(await page.evaluate(() => window.spoken), ['viewerさん。選択中のコメント', 'viewerさん。読み上げ中のコメント']);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('logout removes badges from the initiating tab, another tab and output before revoke finishes', async t => {
+  const clock = fakeClock(), revokeStarted = Promise.withResolvers(), revoke = Promise.withResolvers();
+  const postStarted = Promise.withResolvers(), sendPost = Promise.withResolvers();
+  const badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/eb4a8a4c-eacd-4f5e-b9f2-394348310442/3';
+  const catalog = { data: ['broadcaster', 'moderator', 'vip', 'subscriber', 'bits'].map(set => ({
+    set_id: set, versions: [{ id: set === 'subscriber' ? '0' : set === 'bits' ? '100' : '1', image_url_4x: badgeUrl, title: set }],
+  })) };
+  const { context, page, base, errors } = await fixture(t, { commentBadges: true, commentEmotes: 'text' }, {
+    twitchClientId: 'test-client', authPlatform: 'linux', authClock: clock,
+    fetchImpl: async url => {
+      if (url.endsWith('/revoke')) { revokeStarted.resolve(); return revoke.promise; }
+      const data = url.endsWith('/device') ? { device_code: 'private-device', user_code: 'TEST-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 }
+        : url.endsWith('/token') ? { access_token: 'private-access', refresh_token: 'private-refresh', token_type: 'bearer', expires_in: 14400 }
+        : url.endsWith('/validate') ? { client_id: 'test-client', user_id: '1', login: 'viewer', scopes: null, expires_in: 14400 }
+        : url.endsWith('/badges/global') ? catalog : url.includes('/chat/badges?') ? { data: [] }
+        : { data: [{ id: '1', login: 'viewer', display_name: '確認アカウント' }] };
+      return new Response(JSON.stringify(data));
+    },
+  });
+  const other = await context.newPage(); other.setDefaultTimeout(8000);
+  const output = await context.newPage(); output.setDefaultTimeout(8000);
+  try {
+    await page.locator('#twitch-login[data-status="signed-out"]').waitFor();
+    await page.locator('#twitch-login-start').click(); await page.locator('#twitch-login[data-status="pending"]').waitFor();
+    await clock.tick(5000); await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+    await other.goto(base); await appReady(other); await other.locator('#twitch-login[data-status="signed-in"]').waitFor();
+    await other.locator('#twitch-connection-toggle').click();
+    await other.waitForFunction(() => window.testSockets.length === 1);
+    await other.evaluate(() => { const socket = window.testSockets[0]; socket.onopen(); socket.onmessage({ data: ':server 366 anon #qa_channel :End\r\n' }); });
+    for (const owner of [page, other]) {
+      await receive(owner, 'ログアウト中も保持する本文', 'room-id=123;badges=broadcaster/1,moderator/1,vip/1,subscriber/0,bits/100');
+      await owner.locator('#comment-list .message').last().click(); await owner.locator('#pin-comment').click();
+      await owner.locator('#enter-talk').click();
+      for (const list of ['#stage-chat-list', '#stage-pinned-list']) {
+        await talkStage(owner).locator(`${list} .pokome-comment__badge-image`).nth(4).waitFor({ state: 'attached' });
+      }
+      await owner.locator('#leave-talk').click();
+    }
+    await output.goto(base + '/output.html');
+    for (const list of ['#stage-chat-list', '#stage-pinned-list']) await output.locator(`${list} .pokome-comment__badge-image`).nth(4).waitFor();
+    const fallback = async owner => {
+      await owner.waitForFunction(() => {
+        const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+        return ['#stage-chat-list', '#stage-pinned-list'].every(selector => {
+          const list = doc.querySelector(selector);
+          return list?.textContent.includes('ログアウト中も保持する本文') && list.querySelectorAll('.pokome-comment__badge').length === 4 && !list.querySelector('img');
+        });
+      });
+    };
+    await page.route('**/api/auth/twitch', async route => {
+      if (route.request().method() === 'POST' && route.request().postDataJSON().action === 'logout') {
+        postStarted.resolve(); await sendPost.promise;
+      }
+      await route.continue();
+    });
+    await page.locator('#twitch-login-logout').click();
+    await page.locator('#twitch-login[data-status="signing-out"]').waitFor();
+    await page.waitForFunction(() => !document.getElementById('talk-frame').contentDocument.querySelector('.pokome-comment__badge-image'));
+    await page.locator('#enter-talk').click(); await fallback(page);
+    await postStarted.promise; sendPost.resolve(); await revokeStarted.promise;
+    await other.locator('#twitch-login[data-status="signing-out"]').waitFor();
+    await other.locator('#enter-talk').click();
+    await fallback(other); await fallback(output);
+    for (const owner of [page, other]) {
+      assert.equal(await owner.locator('#twitch-login-status').textContent(), 'ログアウトしています…');
+      assert.equal(await owner.locator('#twitch-login-logout').isDisabled(), true);
+      assert.equal(await owner.locator('#count').textContent(), '1 件');
+      assert.equal(await owner.locator('#twitch-status').textContent(), '接続済み');
+    }
+    revoke.resolve(new Response('{}'));
+    for (const owner of [page, other]) await owner.locator('#twitch-login[data-status="signed-out"]').waitFor({ state: 'attached' });
+    await fallback(output); assert.deepEqual(errors, []);
+  } finally { sendPost.resolve(); revoke.resolve(new Response('{}')); await output.close(); await other.close(); }
+});
+
+browserTest('L2 delayed Helix lists update live and output pins without replay and badge images match preview across representative scenes', async t => {
+  const clock = fakeClock(), pending = [], calls = [];
+  let nextLookup;
+  let badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/eb4a8a4c-eacd-4f5e-b9f2-394348310442/3';
+  const { context, page, base, requests, errors } = await fixture(t, { commentBadges: true, commentEmotes: 'text' }, {
+    twitchClientId: 'test-client', authPlatform: 'linux', authClock: clock, browserClock: true,
+    fetchImpl: async url => {
+      calls.push(url);
+      if (url.includes('/chat/badges')) return new Promise(resolve => { pending.push(resolve); if (pending.length === 4) nextLookup?.(); });
+      const data = url.endsWith('/device') ? { device_code: 'private-device', user_code: 'TEST-CODE', verification_uri: 'https://www.twitch.tv/activate', expires_in: 600, interval: 5 }
+        : url.endsWith('/token') ? { access_token: 'private-access', refresh_token: 'private-refresh', token_type: 'bearer', expires_in: 14400 }
+        : url.endsWith('/validate') ? { client_id: 'test-client', user_id: '1', login: 'viewer', scopes: null, expires_in: 14400 }
+        : url.endsWith('/revoke') ? {} : { data: [{ id: '1', login: 'viewer', display_name: '確認アカウント' }] };
+      return new Response(JSON.stringify(data), { status: 200 });
+    },
+  });
+  assert.equal(calls.length, 0, 'startup and anonymous connection do not call Helix');
+  await page.locator('#twitch-login-start:not(:disabled)').waitFor(); await page.locator('#twitch-login-start').click();
+  await page.locator('#twitch-login[data-status="pending"]').waitFor(); await clock.tick(5000);
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  await page.evaluate(() => window.testSockets[0].onmessage({ data: '@room-id=123 :server ROOMSTATE #qa_channel\r\n' }));
+  await receive(page, '長い本文を折り返して確認します。'.repeat(8), 'room-id=123;display-name=表示の折り返しを確認する長い名前の投稿者;badges=subscriber/0,vip/1,bits/100;badge-info=subscriber/30');
+  await page.locator('#comment-list .message').last().click(); await page.locator('#pin-comment').click();
+  const output = await context.newPage(); await output.goto(base + '/output.html');
+  await output.locator('#stage-pinned-list .stage-comment').waitFor({ state: 'attached' });
+  await page.locator('#enter-talk').click();
+  assert.equal(await output.locator('.pokome-comment__badge-image').count(), 0);
+  assert.equal(await output.locator('#stage-pinned-list .pokome-comment__badge').count(), 2);
+  assert.equal(await page.locator('#count').textContent(), '1 件');
+  const before = await page.evaluate(() => ({ speech: window.spoken, count: document.querySelector('#count').textContent }));
+  const catalog = set => ({ data: [{ set_id: set, versions: [{ id: set === 'subscriber' ? '0' : '1', image_url_1x: badgeUrl.slice(0, -1) + '1', image_url_2x: badgeUrl.slice(0, -1) + '2', image_url_4x: badgeUrl, title: set }] }] });
+  await page.waitForFunction(() => document.querySelector('#twitch-status').textContent.includes('接続済み'));
+  assert.equal(pending.length, 2);
+  pending[0](new Response(JSON.stringify(catalog('vip')))); pending[1](new Response(JSON.stringify(catalog('subscriber'))));
+  for (const owner of [page, output]) await owner.waitForFunction(() => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    return doc.querySelectorAll('#stage-pinned-list .pokome-comment__badge-image').length === 2;
+  });
+  assert.deepEqual(await page.evaluate(() => ({ speech: window.spoken, count: document.querySelector('#count').textContent })), before);
+  await page.evaluate(() => window.testSockets[0].onmessage({ data: '@room-id=123;msg-id=resub;login=viewer;display-name=長い名前の投稿者;badges=subscriber/0,vip/1;msg-param-cumulative-months=30 :server USERNOTICE #qa_channel :特別なカードの本文\r\n' }));
+  await output.locator('[data-event="resub"] .pokome-comment__badge-image').first().waitFor({ state: 'attached' });
+  const cases = matrixCases({ theme: ['mint', 'rose', 'violet', 'paper'], scheme: ['light', 'dark'], font: [16, 64],
+    ratio: [['16:9', '1280x720', 1280, 720], ['9:16', '1080x1920', 1080, 1920], ['4:3', '1440x1080', 1440, 1080]] });
+  const results = [];
+  for (const { theme, scheme, font, ratio: [ratio, size, width, height] } of cases) {
+    await page.emulateMedia({ colorScheme: scheme }); await output.emulateMedia({ colorScheme: scheme });
+    await output.setViewportSize({ width, height });
+    await saveDesign(base, design => ({ ...design, outputSize: size, studio: { ...design.studio, theme, fontSize: font } }));
+    await waitForDesign(base, design => design.studio.theme === theme && design.studio.fontSize === font);
+    for (const owner of [page, output]) await owner.waitForFunction(({ theme, font }) => {
+      const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+      return doc.querySelector('#talk-stage').dataset.theme === theme && parseFloat(getComputedStyle(doc.querySelector('.pokome-comment__body')).fontSize) === font;
+    }, { theme, font });
+    await page.locator('#stage-design-edit').click(); await editorTarget(page, 'chat'); await page.locator('#preview-ratio').selectOption(ratio);
+    await page.locator('#preview-comment-sample').selectOption('resub');
+    const preview = page.frameLocator('#design-preview-frame');
+    await preview.locator('.pokome-comment__badge-image').first().waitFor({ state: 'attached' });
+    const dims = [];
+    for (const scene of [talkStage(page), preview, output]) {
+      for (const selector of ['#stage-chat-list', '#stage-pinned-list']) {
+        const list = scene.locator(selector);
+        await list.locator('.pokome-comment__badge-image').first().waitFor({ state: 'attached' });
+        const boxes = await list.evaluate(async list => {
+          await Promise.all([...list.querySelectorAll('.pokome-comment__badge-image')].map(image => image.decode()));
+          // Redraws during decoding can replace the nodes whose styles we measure.
+          return [...list.querySelectorAll('.pokome-comment__badge-image')].map(image => {
+            const r = image.getBoundingClientRect(), css = getComputedStyle(image);
+            return { width: r.width, height: r.height, font: parseFloat(css.fontSize), authorFont: parseFloat(getComputedStyle(image.closest('strong')).fontSize), square: Math.abs(r.width - r.height) < .1 };
+          });
+        });
+        assert.ok(boxes.length > 0, `${theme}/${scheme}/${ratio}/${font}: current images exist`);
+        assert.ok(boxes.every(box => box.square && box.font === box.authorFont), `${theme}/${scheme}/${ratio}/${font}: ${JSON.stringify(boxes)}`);
+        dims.push(boxes.length);
+      }
+    }
+    results.push({ theme, scheme, ratio, font, images: dims });
+    if (process.env.BADGE_QA_DIRECTORY) {
+      const { mkdir } = await import('node:fs/promises'); await mkdir(process.env.BADGE_QA_DIRECTORY, { recursive: true });
+      await page.locator('#design-preview-frame').screenshot({ path: join(process.env.BADGE_QA_DIRECTORY, `${theme}-${scheme}-${ratio.replace(':', '-')}-${font}.png`) });
+    }
+    await closeEditor(page);
+  }
+  let failures = 0;
+  await context.route('https://static-cdn.jtvnw.net/badges/**', route => { failures++; return route.abort(); });
+  badgeUrl = 'https://static-cdn.jtvnw.net/badges/v1/743a0f3b-84b3-450b-96a0-503d7f4a9764/3';
+  await clock.tick(3600000); await context.clock.fastForward(3600000);
+  const nextStarted = new Promise(resolve => { nextLookup = resolve; });
+  await receive(page, '一覧の更新', 'room-id=123;badges=subscriber/0,vip/1'); await nextStarted;
+  pending[2](new Response(JSON.stringify(catalog('vip')))); pending[3](new Response(JSON.stringify(catalog('subscriber'))));
+  for (const owner of [page, output]) await owner.waitForFunction(() => {
+    const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
+    const pin = doc.querySelector('#stage-pinned-list');
+    return pin?.querySelectorAll('.pokome-comment__badge').length === 2 && !pin.querySelector('img');
+  });
+  const failedRequests = failures;
+  await receive(page, '画像の読込失敗後', 'room-id=123;badges=subscriber/0,vip/1');
+  await output.locator('.pokome-comment__body').filter({ hasText: '画像の読込失敗後' }).waitFor();
+  assert.equal(failures, failedRequests, 'failed URLs are not requested again on redraw');
+  const failedContext = await context.browser().newContext(); await blockExternalFonts(failedContext);
+  await failedContext.route('https://static-cdn.jtvnw.net/badges/**', route => route.abort());
+  const failedPage = await failedContext.newPage(); await failedPage.goto(base); await appReady(failedPage);
+  await failedPage.locator('.nav[data-page="studio"]').click(); await failedPage.locator('#open-design-preview').click(); await editorTarget(failedPage, 'chat');
+  const failedPreview = failedPage.frameLocator('#design-preview-frame');
+  await failedPage.waitForFunction(() => {
+    const doc = document.getElementById('design-preview-editor')?.shadowRoot.getElementById('design-preview-frame')?.contentDocument;
+    return doc?.querySelectorAll('#stage-chat-list .pokome-comment__badge').length >= 4 && !doc.querySelector('.pokome-comment__badge-image');
+  });
+  assert.equal(await failedPreview.locator('.pokome-comment__badge-image').count(), 0); await failedContext.close();
+  await saveStudio(base, { commentStyle: 'anonymous' });
+  await output.waitForFunction(() => !document.querySelector('.pokome-comment__badge-image'));
+  const badgeRequests = () => requests.filter(url => url.includes('/badges/')).length;
+  const requestsBefore = badgeRequests(); await receive(page, '名前なし', 'room-id=123;badges=subscriber/0');
+  assert.equal(badgeRequests(), requestsBefore);
+  await saveStudio(base, { commentBadges: false });
+  await page.locator('#leave-talk').click(); await page.locator('.nav[data-page="studio"]').click();
+  await page.locator('#open-design-preview').click(); await editorTarget(page, 'chat'); await page.setViewportSize({ width: 150, height: 900 });
+  await editorTarget(page, 'chat');
+  const overflow = await page.locator('#design-dialog').evaluate(element => element.scrollWidth > element.clientWidth + 1);
+  assert.equal(overflow, false); assert.equal(await page.frameLocator('#design-preview-frame').locator('.pokome-comment__badge-image').count(), 0);
+  await closeEditor(page); await page.setViewportSize({ width: 1440, height: 1000 }); await page.locator('.nav[data-page="home"]').click();
+  await page.locator('#twitch-login-logout').click(); await page.locator('#twitch-login[data-status="signed-out"]').waitFor();
+  assert.equal(calls.filter(url => url.includes('/chat/badges')).length, 4);
+  assert.deepEqual(errors, []);
+  if (process.env.BADGE_QA_DIRECTORY) {
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(join(process.env.BADGE_QA_DIRECTORY, 'results.json'), JSON.stringify({ cases: results, errors, helixRequests: 4 }, null, 2));
+  }
+  t.diagnostic(`Edge: ${cases.length} badge theme/scheme/ratio/font combinations, normal/resub/pinned in three scenes, delayed lookup and 150px editor`);
+});
 
 browserTest('pinned raw comments share identity, anonymous styles, emote fallback and line limits across all three scenes', async t => {
   const { page, context, base, errors } = await fixture(t, { commentBadges: true, commentAuthorColor: 'service', commentPanel: 'light', commentMaxLines: 2 });
@@ -222,7 +510,7 @@ browserTest('identity rendering preserves line limits and clipping across six pr
       assert.ok(result.viewportHeight > 0, `${label}: visible viewport`);
       assert.deepEqual(result.overflow, [], `${label}: overflow/line clamp`);
       assert.deepEqual(result.clipping, [], `${label}: clipping`);
-      assert.equal(result.badges, 4, `${label}: role symbols`);
+      assert.equal(result.badges, studio.commentStyle === 'anonymous' ? 0 : 4, `${label}: badges only with names`);
       assert.deepEqual(result.partialImages, [], `${label}: whole emotes inside line clamp`);
       assert.deepEqual(result.imageBounds, [], `${label}: images inside chips and panel width`);
       assert.equal(parseFloat(result.fontSize), fontSize, `${label}: requested font size`);
