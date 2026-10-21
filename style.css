@@ -125,7 +125,7 @@ main[data-view=updates]>.platform-tabs,main[data-view=updates]>header .eyebrow,m
 .comment .username,.comment .message{background:transparent;border:0;text-align:left;font:inherit;color:inherit;padding:0;min-width:0}.comment .username{color:var(--ui-accent-text);font-weight:600;padding:5px 0}.comment .username:hover{text-decoration:underline}.comment .message{padding-right:10px;line-height:1.8}#user-actions{position:fixed;margin:0;width:280px;max-width:calc(100vw - 16px);padding:18px;background:var(--ui-surface);color:var(--ui-text);border:1px solid var(--ui-line);border-radius:12px;box-shadow:none}#user-actions strong{display:block;overflow-wrap:anywhere;color:var(--ui-accent-text)}#user-actions .mod-buttons{margin:16px 0 12px}#user-actions small{color:var(--ui-muted);font-size:12px}
 
 
-#user-actions .mod-buttons{flex-direction:column}#user-actions .mod-buttons button{text-align:left;padding:10px 12px}#user-actions #hide-comment{border-color:var(--ui-danger);background:transparent;color:var(--ui-danger)}
+#user-actions .mod-buttons{flex-direction:column}#user-actions .mod-buttons button{text-align:left;padding:10px 12px}
 
 main[data-view=studio]>.platform-tabs,main[data-view=studio]>header .eyebrow,main[data-view=studio]>header p,main[data-view=studio]>header .header-right{display:none}
 

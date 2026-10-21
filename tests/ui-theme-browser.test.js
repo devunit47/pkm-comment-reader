@@ -104,6 +104,11 @@ browserTest('operating UI follows the system color scheme and keeps text contras
     assert.equal(result.colorScheme, colorScheme);
     assert.deepEqual(result.missing, []);
     assert.deepEqual(result.legacy, []);
+    await page.locator('#demo').click();
+    await page.locator('#comment-list .username').first().click();
+    await page.locator('#user-actions').waitFor({ state: 'visible' });
+    assert.deepEqual(await page.evaluate(contrastFailures), [], colorScheme + '/user-actions contrast');
+    await page.keyboard.press('Escape');
     await page.locator('#enter-talk').click();
     await page.setViewportSize({ width: 300, height: 1000 });
     await page.locator('#leave-talk').focus();
