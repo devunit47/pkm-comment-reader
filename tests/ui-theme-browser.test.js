@@ -9,30 +9,30 @@ import { appReady, blockExternalFonts, browserAvailable, chromium, executablePat
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
 function contrastFailures() {
-const rgb = value => {
-  const match = value.match(/[\d.]+/g)?.map(Number);
-  return match?.length >= 3 ? match.slice(0, 3).map(channel => value.startsWith('color(srgb ') ? channel * 255 : channel) : null;
-};
-const luminance = channels => channels.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
-const contrast = (a, b) => { const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (light + .05) / (dark + .05); };
-const failures = [];
-const roots = [document, ...[...document.querySelectorAll('*')].map(element => element.shadowRoot).filter(Boolean)];
-for (const element of roots.flatMap(root => [...root.querySelectorAll('h1,h2,h3,p,small,label,button,input,select,a,.connection-badge,.service-status')])) {
-  if (!element.checkVisibility() || !element.getClientRects().length || element.matches(':disabled')) continue;
-  const view = getComputedStyle(element), color = rgb(view.color);
-  if (!color) continue;
-  let parent = element, background;
-  while (parent && !background) {
-    const value = getComputedStyle(parent).backgroundColor;
-    const alpha = value.startsWith('rgba(') ? Number(value.match(/[\d.]+/g)?.[3] ?? 1) : 1;
-    if (value !== 'transparent' && alpha > 0) background = rgb(value);
-    parent = parent.parentElement || parent.getRootNode().host;
-  }
-  if (!background) background = rgb(getComputedStyle(document.body).backgroundColor);
-  if (!background) continue;
-  const size = parseFloat(view.fontSize), weight = Number(view.fontWeight) || (view.fontWeight === 'bold' ? 700 : 400);
-  const minimum = size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5;
-  if (contrast(color, background) < minimum) failures.push(`${element.tagName}#${element.id}.${element.className}: ${contrast(color, background).toFixed(2)}:1 < ${minimum}:1 (${view.color} on ${background}, ${element.textContent.trim().slice(0, 30)})`);
+  const rgb = value => {
+    const match = value.match(/[\d.]+/g)?.map(Number);
+    return match?.length >= 3 ? match.slice(0, 3).map(channel => value.startsWith('color(srgb ') ? channel * 255 : channel) : null;
+  };
+  const luminance = channels => channels.map(value => value / 255).map(value => value <= .04045 ? value / 12.92 : ((value + .055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [.2126, .7152, .0722][index], 0);
+  const contrast = (a, b) => { const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (light + .05) / (dark + .05); };
+  const failures = [];
+  const roots = [document, ...[...document.querySelectorAll('*')].map(element => element.shadowRoot).filter(Boolean)];
+  for (const element of roots.flatMap(root => [...root.querySelectorAll('h1,h2,h3,p,small,label,button,input,select,a,.connection-badge,.service-status')])) {
+    if (!element.checkVisibility() || !element.getClientRects().length || element.matches(':disabled')) continue;
+    const view = getComputedStyle(element), color = rgb(view.color);
+    if (!color) continue;
+    let parent = element, background;
+    while (parent && !background) {
+      const value = getComputedStyle(parent).backgroundColor;
+      const alpha = value.startsWith('rgba(') ? Number(value.match(/[\d.]+/g)?.[3] ?? 1) : 1;
+      if (value !== 'transparent' && alpha > 0) background = rgb(value);
+      parent = parent.parentElement || parent.getRootNode().host;
+    }
+    if (!background) background = rgb(getComputedStyle(document.body).backgroundColor);
+    if (!background) continue;
+    const size = parseFloat(view.fontSize), weight = Number(view.fontWeight) || (view.fontWeight === 'bold' ? 700 : 400);
+    const minimum = size >= 24 || (size >= 18.66 && weight >= 700) ? 3 : 4.5;
+    if (contrast(color, background) < minimum) failures.push(`${element.tagName}#${element.id}.${element.className}: ${contrast(color, background).toFixed(2)}:1 < ${minimum}:1 (${view.color} on ${background}, ${element.textContent.trim().slice(0, 30)})`);
 }
 return failures;
 }
@@ -55,6 +55,7 @@ browserTest('operating UI follows the system color scheme and keeps text contras
     await blockExternalFonts(page);
     await page.goto(base);
     await appReady(page);
+    assert.ok(await page.locator('body').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 14, 'operating body text is at least 14px');
     const pages = ['home', 'users', 'settings', 'studio', 'updates'];
     for (const name of pages) {
       await page.locator(`[data-page="${name}"]`).click();
@@ -103,6 +104,10 @@ browserTest('operating UI follows the system color scheme and keeps text contras
     assert.equal(result.colorScheme, colorScheme);
     assert.deepEqual(result.missing, []);
     assert.deepEqual(result.legacy, []);
+    await page.locator('#enter-talk').click();
+    await page.setViewportSize({ width: 300, height: 1000 });
+    await page.locator('#leave-talk').focus();
+    assert.ok(await page.locator('#talk-controls .stage-exit-hint').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 12, 'talk operating hints remain at least 12px');
     for (const page of context.pages()) await page.close();
     await context.close();
   }

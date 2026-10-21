@@ -160,7 +160,7 @@ footer{color:var(--ui-muted);font-size:12px}
   #talk-stage .stage-speech-content{min-height:180px}
   #talk-stage .stage-panel-label h2{font-size:14px}
   #talk-stage .stage-actor{min-height:240px}
-  #talk-stage .stage-footer{margin-top:20px;font-size:12px}
+  #talk-stage .stage-footer{margin-top:20px;font-size:9px}
 }
 
 /* Voice attribution stays outside the scrolling speech text, including image mode. */
@@ -175,7 +175,7 @@ footer{color:var(--ui-muted);font-size:12px}
   #talk-stage{padding:12px;gap:12px;overflow-y:auto}
   #talk-stage .stage-header{gap:12px}
   #talk-stage .stage-header h1{font-size:22px}
-  #talk-stage .stage-header p{font-size:12px;margin:6px 0 0}
+  #talk-stage .stage-header p{font-size:10px;margin:6px 0 0}
   #talk-stage .stage-grid{min-height:320px}
   #talk-stage .stage-speech{max-height:none}
   #talk-stage .stage-actor{min-height:80px}
@@ -324,3 +324,7 @@ body:not(.pokome-output,.pokome-preview,.pokome-talk) :is(.connection-badge,.ser
 
 .nav.active{background:linear-gradient(90deg,var(--ui-accent) 3px,transparent 3px),var(--ui-raised)}
 #user-actions .mod-buttons .warning{border-color:var(--ui-warn);background:transparent;color:var(--ui-text)}
+
+body:not(.pokome-output,.pokome-preview,.pokome-talk){font-size:14px}
+
+#talk-controls .stage-exit-hint{font-size:12px}
