@@ -1,4 +1,5 @@
 import test from 'node:test';
+import baselineSceneColors from './fixtures/ui-stage-colors.json' with { type: 'json' };
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -144,6 +145,34 @@ browserTest('workspace-scoped viewport CSS and explicit settings apply equally t
   const actual = await page.frameLocator('#talk-frame').locator('#talk-stage').evaluate(look);
   assert.deepEqual(actual, expected);
   assert.deepEqual(actual, ['43.2px','rgb(255, 0, 0)','43.2px','288px','6px']);
+  assert.deepEqual(errors, []);
+});
+
+browserTest('scene colors match master across themes and operating color schemes in talk, preview and output', async t => {
+  const { page, context, url, errors } = await fixture(t);
+  const editor = page.locator('#design-preview-editor');
+  const output = await context.newPage();
+  await output.goto(url + '/output.html');
+  await output.locator('#talk-stage').waitFor();
+  const selectors = ['#talk-stage', '.stage-chat', '.stage-pinned', '.stage-speech', '.stage-actor', '#stage-title', '.pokome-comment__author'];
+  const frames = { talk: page.frameLocator('#talk-frame'), preview: page.frameLocator('#design-preview-editor #design-preview-frame'), output };
+  for (const { theme, colorScheme } of matrixCases({ theme: ['mint', 'rose', 'violet', 'paper'], colorScheme: ['dark', 'light'] })) {
+    await page.emulateMedia({ colorScheme }); await output.emulateMedia({ colorScheme });
+    await saveDesign(url, design => ({ ...design, outputSize: '1280x720', studio: { ...design.studio, theme, maxVisible: 30 } }));
+    await page.frameLocator('#talk-frame').locator('#talk-stage[data-theme=' + theme + ']').waitFor({ state: 'attached' });
+    await output.locator('#talk-stage[data-theme=' + theme + ']').waitFor();
+    await page.locator('#stage-design-edit').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+    for (const [scene, frame] of Object.entries(frames)) {
+      const actual = await frame.locator('#talk-stage').evaluate((stage, selectors) => Object.fromEntries(selectors.map(selector => {
+        const element = stage.matches(selector) ? stage : stage.querySelector(selector);
+        if (!element) return [selector, null];
+        const style = getComputedStyle(element);
+        return [selector, { color: style.color, background: style.backgroundColor, border: style.borderTopColor }];
+      })), selectors);
+      assert.deepEqual(actual, baselineSceneColors[theme + '/' + colorScheme][scene], scene + '/' + theme + '/' + colorScheme);
+    }
+    await editor.locator('#cancel-design').click();
+  }
   assert.deepEqual(errors, []);
 });
 

@@ -1,0 +1,906 @@
+{
+  "mint/dark": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(18, 35, 33)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".stage-chat": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(18, 35, 33)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".stage-chat": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(18, 35, 33)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".stage-chat": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "mint/light": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(18, 35, 33)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".stage-chat": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(18, 35, 33)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".stage-chat": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(18, 35, 33)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".stage-chat": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgb(28, 48, 44)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(178, 217, 193, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(237, 244, 233)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(237, 244, 233)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "rose/dark": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(43, 25, 36)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".stage-chat": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(43, 25, 36)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".stage-chat": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(43, 25, 36)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".stage-chat": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "rose/light": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(43, 25, 36)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".stage-chat": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(43, 25, 36)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".stage-chat": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(43, 25, 36)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".stage-chat": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgb(60, 37, 49)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(236, 196, 210, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(255, 240, 242)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(255, 240, 242)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "violet/dark": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(32, 29, 50)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".stage-chat": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(32, 29, 50)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".stage-chat": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(32, 29, 50)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".stage-chat": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "violet/light": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(32, 29, 50)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".stage-chat": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(32, 29, 50)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".stage-chat": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(32, 29, 50)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".stage-chat": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgb(48, 43, 69)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(216, 205, 240, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(245, 240, 255)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(245, 240, 255)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "paper/dark": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(244, 240, 229)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".stage-chat": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(244, 240, 229)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".stage-chat": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(244, 240, 229)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".stage-chat": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  },
+  "paper/light": {
+    "talk": {
+      "#talk-stage": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(244, 240, 229)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".stage-chat": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "preview": {
+      "#talk-stage": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(244, 240, 229)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".stage-chat": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    },
+    "output": {
+      "#talk-stage": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(244, 240, 229)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".stage-chat": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-pinned": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgb(255, 252, 244)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      ".stage-speech": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(0, 0, 0, 0)"
+      },
+      ".stage-actor": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgba(82, 94, 52, 0.17)"
+      },
+      "#stage-title": {
+        "color": "rgb(56, 62, 53)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(56, 62, 53)"
+      },
+      ".pokome-comment__author": {
+        "color": "rgb(172, 229, 205)",
+        "background": "rgba(0, 0, 0, 0)",
+        "border": "rgb(172, 229, 205)"
+      }
+    }
+  }
+}
