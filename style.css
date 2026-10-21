@@ -328,3 +328,4 @@ body:not(.pokome-output,.pokome-preview,.pokome-talk) :is(.connection-badge,.ser
 body:not(.pokome-output,.pokome-preview,.pokome-talk){font-size:14px}
 
 #talk-controls .stage-exit-hint{font-size:12px}
+#talk-controls #stage-connection{background:var(--ui-surface);border-width:2px;border-radius:6px}

@@ -112,6 +112,8 @@ browserTest('operating UI follows the system color scheme and keeps text contras
     await page.locator('#enter-talk').click();
     await page.setViewportSize({ width: 300, height: 1000 });
     await page.locator('#leave-talk').focus();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#talk-controls')).opacity === '1');
+    assert.deepEqual(await page.evaluate(contrastFailures), [], colorScheme + '/talk-controls contrast');
     assert.ok(await page.locator('#talk-controls .stage-exit-hint').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 12, 'talk operating hints remain at least 12px');
     for (const page of context.pages()) await page.close();
     await context.close();
