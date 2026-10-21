@@ -13,6 +13,21 @@ const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 const EDITOR = '#design-preview-editor';
 const PREVIEW = '#design-preview-editor';
 
+browserTest('compact output retains the original scene footer and subtitle font sizes', async t => {
+  const { context, url } = await fixture(t);
+  const output = await context.newPage();
+  await output.goto(url + '/output.html');
+  await output.locator('#talk-stage').waitFor();
+  // Recorded from master's responsive scene rules; UI minimums must not reach them.
+  for (const { width, height, selector, expected } of [
+    { width: 500, height: 800, selector: '.stage-footer', expected: '12px' },
+    { width: 800, height: 500, selector: '.stage-header p', expected: '12px' },
+  ]) {
+    await output.setViewportSize({ width, height });
+    assert.equal(await output.locator(selector).evaluate(element => getComputedStyle(element).fontSize), expected);
+  }
+});
+
 async function fixture(t, viewport = { width: 1440, height: 1000 }) {
   const browser = await chromium.launch({ headless: true, executablePath });
   const directory = await mkdtemp(join(tmpdir(), 'pokome-ratio-'));

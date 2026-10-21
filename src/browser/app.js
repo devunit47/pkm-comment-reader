@@ -105,6 +105,7 @@ function renderConnection() {
   $('chat-connection-status').textContent = presentation.label;
   $('chat-connection-status').dataset.state = presentation.kind;
   $('stage-platform').textContent = names[active];
+  $('stage-platform').dataset.service = active;
   $('stage-channel').textContent = state.channel ? `#${state.channel}` : '';
   $('stage-connection').textContent = presentation.label;
   $('stage-connection').dataset.state = presentation.kind;
@@ -809,7 +810,7 @@ talkView.ready.then(ready => {
   renderStudio(); designPreview.showLive(); renderStageChat(); renderStageSpeech();
 });
 // The design store's change event refreshes the page after a reset.
-initializeCustomization({ platforms: enabledPlatforms, designStore, notify, resetAppearance: () => designStore.reset() });
+initializeCustomization({ platforms: enabledPlatforms, designStore });
 $('stage-design-edit').onclick = () => designPreview.openEditor();
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ settingsStore, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });

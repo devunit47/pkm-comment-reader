@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, saveSetting, saveDesign, matrixCases } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, saveSetting, saveDesign, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, options = {}, ports = 1) {
@@ -13,7 +13,7 @@ async function fixture(t, options = {}, ports = 1) {
     dataDirectory: join(folder, 'data'), customizationDirectory: join(folder, 'customization') }));
   let browser;
   t.after(async () => {
-    await browser?.close();
+    await closeBrowser(browser);
     await Promise.all(servers.filter(server => server.listening).map(server => new Promise(resolve => server.close(resolve))));
     await rm(folder, { recursive: true, force: true });
   });
@@ -90,13 +90,25 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
     await page.evaluate(() => window.loginEvents.dispatchEvent(new MessageEvent('auth', { data: '{"revision":0}' })));
     await stateIs(page, status);
     await page.emulateMedia({ colorScheme });
-    const palette = colorScheme === 'light'
-      ? { bg: '#f2f5f2', panel: '#ffffff', text: '#25382f', muted: '#54645a', line: '#b6c5bd', accent: '#285f47', computedPanel: 'rgb(255, 255, 255)', computedText: 'rgb(37, 56, 47)' }
-      : { bg: '#101718', panel: '#1a2325', text: '#e4eeea', muted: '#a9bbb1', line: '#2c3739', accent: '#ace5cd', computedPanel: 'rgb(26, 35, 37)', computedText: 'rgb(228, 238, 234)' };
-    await saveDesign(bases[0], design => ({ ...design, theme: `.pokome-workspace { --bg:${palette.bg}; --panel:${palette.panel}; --text:${palette.text}; --muted:${palette.muted}; --line:${palette.line}; --mint:${palette.accent}; background:var(--bg); color:var(--text); } .pokome-workspace .button { background:var(--panel); color:var(--text); border-color:var(--line); }` }));
-    await page.waitForFunction(expected => getComputedStyle(document.querySelector('#twitch-login-status')).color === expected, palette.computedText);
-    await page.waitForFunction(expected => getComputedStyle(document.querySelector('#twitch-login').parentElement).backgroundColor === expected, palette.computedPanel);
-    assert.equal(await page.locator('.platform-control:has(#twitch-login)').evaluate(element => getComputedStyle(element).backgroundColor), palette.computedPanel);
+    await page.emulateMedia({ colorScheme });
+    const appearance = () => page.locator(['main', '.sidebar', '.workspace', '#twitch-login', '#twitch-login-status'].join(',')).evaluateAll(elements => elements.map(element => {
+      const style = getComputedStyle(element);
+      return { id: element.id || element.className, color: style.color, background: style.backgroundColor, border: style.borderColor, visible: element.checkVisibility() };
+    }));
+    await saveDesign(bases[0], design => ({ ...design, theme: '' }));
+    await page.waitForFunction(() => !document.getElementById('pokome-user-theme').textContent);
+    const before = await appearance();
+    for (const css of [
+      '.pokome-workspace { --ui-text: red; --ui-bg: blue; --ui-surface: lime; color: red !important; background: blue !important; } .pokome-workspace button, .pokome-workspace input { color: red !important; background: lime !important; }',
+      '.pokome-workspace { display: none !important; } .pokome-workspace .pokome-panel { visibility: hidden !important; }',
+    ]) {
+      await saveDesign(bases[0], design => ({ ...design, theme: css }));
+      await page.waitForFunction(css => {
+        const sheet = new CSSStyleSheet(); sheet.replaceSync(css);
+        return document.getElementById('pokome-user-theme').textContent === [...sheet.cssRules].map(rule => rule.cssText).join('\n');
+      }, css);
+      assert.deepEqual(await appearance(), before, colorScheme + ' theme CSS leaves operating colors and visibility unchanged');
+    }
     await page.setViewportSize({ width, height: 1000 });
     assert.equal(await page.locator('#twitch-login').isVisible(), true, 'login is directly visible on home');
     assert.match(await page.locator('#twitch-login').textContent(), /バッジ画像を使うため。コメントの受信には不要/);

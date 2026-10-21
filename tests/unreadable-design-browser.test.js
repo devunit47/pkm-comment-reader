@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path';
 import { createServer } from '../server.js';
 import { UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget, temporaryDataDirectory } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget, temporaryDataDirectory, matrixCases } from './browser-support.js';
 
 async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-unreadable-browser-'));
@@ -26,7 +26,7 @@ async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace)
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   let browser;
   t.after(async () => {
-    await browser?.close();
+    await closeBrowser(browser);
     await new Promise(resolveClose => server.close(resolveClose));
     const target = resolve(folder);
     assert.ok(target.startsWith(resolve(tmpdir()) + sep) && basename(target).startsWith('pokome-unreadable-browser-'));
@@ -54,9 +54,22 @@ for (const [kind, raw] of Object.entries({ 'broken JSON': '{broken', 'unknown ve
   test(`${kind}: the page shows backup guidance and blocks reset, preset apply and edits`, { skip: !browserAvailable }, async t => {
     const app = await open(t, raw), { page } = app;
     const recovery = page.locator('#appearance-recovery');
-    assert.match(await recovery.locator('#result').textContent(), /退避/);
-    assert.equal(await recovery.locator('#result').isVisible(), true);
-    assert.equal(await recovery.locator('#open-reset').isDisabled(), true);
+    assert.equal(await recovery.locator('button,dialog').count(), 0, 'protection guidance contains no inactive controls');
+    assert.match(await recovery.textContent(), /退避/);
+    assert.equal(await recovery.isVisible(), true);
+    for (const { colorScheme, width } of matrixCases({ colorScheme: ['dark', 'light'], width: [1280, 300] })) {
+      await page.emulateMedia({ colorScheme }); await page.setViewportSize({ width, height: 1000 });
+      const appearance = await recovery.evaluate(element => {
+        const style = getComputedStyle(element), box = element.getBoundingClientRect();
+        const rgb = value => value.match(/[\d.]+/g).slice(0, 3).map(Number);
+        const luminance = channels => channels.map(c => c / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4).reduce((sum, c, i) => sum + c * [.2126, .7152, .0722][i], 0);
+        const [light, dark] = [luminance(rgb(style.color)), luminance(rgb(style.backgroundColor))].sort((a, b) => b - a);
+        return { contrast: (light + .05) / (dark + .05), left: box.left, right: box.right, overflow: element.scrollWidth > element.clientWidth };
+      });
+      assert.ok(appearance.contrast >= 4.5, colorScheme + ' protection guidance meets AA');
+      assert.ok(appearance.left >= 0 && appearance.right <= width, width + 'px protection guidance stays inside the viewport');
+      assert.equal(appearance.overflow, false, 'protection guidance wraps');
+    }
     await page.locator('[data-page="studio"]').click();
     const presets = page.locator('#design-presets');
     await presets.locator('#preset-select').selectOption('kept');
@@ -80,11 +93,13 @@ test('reset protects a newly broken original without clearing obsolete browser l
   const app = await open(t, JSON.stringify(fixtureDesign()), obsoleteWorkspace), { page } = app;
   const raw = '{broken after load';
   await writeFile(join(app.current, 'design.json'), raw);
-  await page.locator('#appearance-recovery #open-reset').click();
-  await page.locator('#appearance-recovery #confirm-reset').click();
-  await page.waitForFunction(() => document.querySelector('#appearance-recovery').shadowRoot.querySelector('#result').textContent.includes('標準に戻せませんでした'));
-  assert.match(await page.locator('#appearance-recovery #result').textContent(), /退避/);
-  assert.equal(await page.locator('#appearance-recovery #open-reset').isDisabled(), true);
+  await page.locator('[data-page=studio]').click();
+  await page.locator('#design-presets #preset-reset').click();
+  await page.locator('#design-presets #preset-confirm').click();
+  await page.locator('#design-presets #preset-status').filter({ hasText: '退避' }).waitFor();
+  await page.locator('#appearance-recovery').waitFor({ state: 'visible' });
+  assert.match(await page.locator('#appearance-recovery').textContent(), /退避/);
+  assert.equal(await page.locator('#appearance-recovery button,#appearance-recovery dialog').count(), 0);
   assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), obsoleteWorkspace);
   assert.equal(app.puts.length, 1);
   await app.assertOriginal(raw);

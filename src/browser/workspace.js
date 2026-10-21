@@ -6,10 +6,10 @@ import { OUTPUT_SIZES } from '../shared/output-protocol.js';
 // Home keeps its responsive stylesheet layout; only the saved talk design is rendered here.
 export function initializeWorkspace(designStore, { talk, talkView, onTalkRatioChange = () => {} } = {}) {
   const home = document.querySelector('.workspace');
-  home.classList.add('pokome-workspace'); talk.classList.add('pokome-workspace');
+  talk.classList.add('pokome-workspace');
   for (const [id, selector] of [['comments', '.comments'], ['now', '.now'], ['reading', '.reading']]) {
     const element = home.querySelector(selector);
-    element.classList.add('pokome-panel'); element.dataset.panelType = id;
+    element.dataset.panelType = id;
   }
   let shownRatio = '', layout = null;
   // Browser windows vary; the output size chooses the talk screen's ratio.
