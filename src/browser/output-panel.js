@@ -21,7 +21,7 @@ export function initializeOutputPanel({ settingsStore, designStore, publisher, g
     <label>抜く色<select id="output-key" aria-describedby="output-key-help"><option value="00ff00">緑</option><option value="ff00ff">マゼンタ</option><option value="0000ff">青</option></select></label>
     <p class="muted" id="output-key-help">OBSで取り込んだソースに「クロマキー」フィルターを追加し、同じ色を選びます。文字の縁取り・影・半透明の枠には背景色がにじむことがあります。きれいに重ねたい場合は②を使ってください。</p>
     <p>適用中の出力の大きさ：<span id="output-size-value"></span></p><div><button id="edit-output-size" class="button" type="button">エディタで変更</button></div>
-    <div><button id="open-output-window" class="button primary" type="button">配信出力ウィンドウを開く</button></div>
+    <div><button id="open-output-window" class="button" type="button">配信出力ウィンドウを開く</button></div>
     <ul class="muted output-notes"><li>OBSのキャプチャ方式は「Windows 10（1903以降）」を選んでください。</li><li>上端のアドレス表示は、OBSでソースをAltキーを押しながらドラッグして切り取ります。</li><li>出力ウィンドウを最小化したり、ほかのウィンドウで完全に隠したりすると、表示が止まることがあります。</li><li>画面より大きいサイズは、ブラウザが画面に収まる大きさに縮めます。実際の大きさは上の状態表示で確認できます。</li></ul>
     </fieldset>
     <fieldset class="studio-category"><legend>② OBSのブラウザソースで取り込む（背景を透明にする）</legend>

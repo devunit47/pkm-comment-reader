@@ -105,6 +105,7 @@ function renderConnection() {
   $('chat-connection-status').textContent = presentation.label;
   $('chat-connection-status').dataset.state = presentation.kind;
   $('stage-platform').textContent = names[active];
+  $('stage-platform').dataset.service = active;
   $('stage-channel').textContent = state.channel ? `#${state.channel}` : '';
   $('stage-connection').textContent = presentation.label;
   $('stage-connection').dataset.state = presentation.kind;
