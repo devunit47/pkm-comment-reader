@@ -810,7 +810,7 @@ talkView.ready.then(ready => {
   renderStudio(); designPreview.showLive(); renderStageChat(); renderStageSpeech();
 });
 // The design store's change event refreshes the page after a reset.
-initializeCustomization({ platforms: enabledPlatforms, designStore, notify, resetAppearance: () => designStore.reset() });
+initializeCustomization({ platforms: enabledPlatforms, designStore });
 $('stage-design-edit').onclick = () => designPreview.openEditor();
 showLiveOverlays = designPreview.showLive;
 outputPanel = initializeOutputPanel({ settingsStore, designStore, publisher: outputPublisher, getStudio: () => studio, openEditor: () => designPreview.openEditor() });

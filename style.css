@@ -329,3 +329,4 @@ body:not(.pokome-output,.pokome-preview,.pokome-talk){font-size:14px}
 
 #talk-controls .stage-exit-hint{font-size:12px}
 #talk-controls #stage-connection{background:var(--ui-surface);border-width:2px;border-radius:6px}
+#appearance-recovery{position:fixed;right:12px;bottom:12px;z-index:2147483647;max-width:min(320px,calc(100vw - 24px));margin:0;padding:12px;border:2px solid var(--ui-line);border-radius:8px;background:var(--ui-surface);color:var(--ui-text);font:13px/1.6 system-ui;overflow-wrap:anywhere}

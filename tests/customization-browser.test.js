@@ -111,7 +111,7 @@ test('theme CSS leaves operating controls visible and preset reset preserves set
   const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }));
   const { page, errors, requests } = await openBrowser(t, base, preserved);
   const savedSettings = await readSettings(base);
-  const recoveryShown = () => page.locator('#appearance-recovery #open-reset').isVisible();
+  const recoveryShown = () => page.locator('#appearance-recovery').isVisible();
   // Recovery is reserved for a protected unreadable original.
   assert.equal(await recoveryShown(), false, 'no theme CSS: no floating recovery');
   await studio(page); await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
