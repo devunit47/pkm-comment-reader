@@ -26,8 +26,7 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
   document.getElementById('edition-label').textContent = `ぽこめ Reader / ${edition.title}`;
   document.getElementById('platform-help').textContent = `${edition.title} · ${platforms.includes('kick') ? 'Twitch・Kick' : 'Twitch専用'}`;
 
-  // Outside the theme's permitted scope, with a Shadow DOM and modal top layer:
-  // even a theme hiding main/sidebar cannot hide the recovery controls.
+  // Keep the protected original's warning available outside page navigation.
   const recovery = document.createElement('div'); recovery.id = 'appearance-recovery';
   recovery.style.cssText = 'all:initial;position:fixed;right:12px;bottom:12px;z-index:2147483647;max-width:calc(100vw - 24px);';
   const shadow = recovery.attachShadow({ mode: 'open' });
@@ -47,10 +46,9 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
     } else if (protectedOriginal) shadow.getElementById('result').textContent = '';
     protectedOriginal = !!blocked;
   };
-  // Only theme CSS can hide the operating page, so the control is offered while
-  // CSS is applied, or while the protected original needs its warning.
+  // Themes only affect scenes; this control preserves unreadable-design guidance.
   const updateRecovery = () => {
-    const needed = !!designStore?.design.theme.trim() || (designStore?.available && designStore.writable === false);
+    const needed = designStore?.available && designStore.writable === false;
     recovery.style.display = needed && !document.body.classList.contains('talk-mode') ? 'block' : 'none';
   };
   designStore?.subscribe(() => { updateProtection(); updateRecovery(); });
@@ -63,7 +61,7 @@ export function initializeCustomization({ platforms, designStore, resetAppearanc
     shadow.getElementById('result').textContent = '';
     try {
       await resetAppearance();
-      // The reset clears the CSS and hides this control, so announce it on the page.
+      // Announce successful resets in the same place as other operating actions.
       notify('標準の見た目に戻しました。');
     } catch (error) {
       shadow.getElementById('result').textContent = `標準に戻せませんでした：${error.message}`;

@@ -7,7 +7,7 @@ import { basename, join, resolve, sep } from 'node:path';
 import { createServer } from '../server.js';
 import { UNREFERENCED_IMAGE_GRACE_MS } from '../src/server/design-storage.js';
 import { fixtureDesign, fixtureFiles } from './fixtures/preset-design.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget, temporaryDataDirectory } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, editorTarget, temporaryDataDirectory } from './browser-support.js';
 
 async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace) {
   const folder = await mkdtemp(join(tmpdir(), 'pokome-unreadable-browser-'));
@@ -26,7 +26,7 @@ async function open(t, raw = JSON.stringify(fixtureDesign()), obsoleteWorkspace)
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   let browser;
   t.after(async () => {
-    await browser?.close();
+    await closeBrowser(browser);
     await new Promise(resolveClose => server.close(resolveClose));
     const target = resolve(folder);
     assert.ok(target.startsWith(resolve(tmpdir()) + sep) && basename(target).startsWith('pokome-unreadable-browser-'));
@@ -80,9 +80,11 @@ test('reset protects a newly broken original without clearing obsolete browser l
   const app = await open(t, JSON.stringify(fixtureDesign()), obsoleteWorkspace), { page } = app;
   const raw = '{broken after load';
   await writeFile(join(app.current, 'design.json'), raw);
-  await page.locator('#appearance-recovery #open-reset').click();
-  await page.locator('#appearance-recovery #confirm-reset').click();
-  await page.waitForFunction(() => document.querySelector('#appearance-recovery').shadowRoot.querySelector('#result').textContent.includes('標準に戻せませんでした'));
+  await page.locator('[data-page=studio]').click();
+  await page.locator('#design-presets #preset-reset').click();
+  await page.locator('#design-presets #preset-confirm').click();
+  await page.locator('#design-presets #preset-status').filter({ hasText: '退避' }).waitFor();
+  await page.locator('#appearance-recovery #result').waitFor({ state: 'visible' });
   assert.match(await page.locator('#appearance-recovery #result').textContent(), /退避/);
   assert.equal(await page.locator('#appearance-recovery #open-reset').isDisabled(), true);
   assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), obsoleteWorkspace);

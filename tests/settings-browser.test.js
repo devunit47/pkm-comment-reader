@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readSettings, saveSetting, waitForSettings, saveDesign, waitForDesign } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readSettings, saveSetting, waitForSettings, saveDesign, waitForDesign } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, { raw, ports = 1 } = {}) {
@@ -17,7 +17,7 @@ async function fixture(t, { raw, ports = 1 } = {}) {
   const servers = Array.from({ length: ports }, () => createServer({ dataDirectory, customizationDirectory: join(folder, 'customization') }));
   let browser;
   t.after(async () => {
-    await browser?.close();
+    await closeBrowser(browser);
     await Promise.all(servers.filter(server => server.listening).map(server => new Promise(resolve => server.close(resolve))));
     await rm(folder, { recursive: true, force: true });
   });
@@ -304,17 +304,25 @@ browserTest('unreadable settings stay protected and persistent guidance and chan
   await page.locator('#restore-settings').setInputFiles({ name: 'old-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await page.locator('#backup-status').filter({ hasText: '見た目はcustomizationフォルダーのまま' }).waitFor();
   for (const colorScheme of ['light', 'dark']) {
-    const palette = colorScheme === 'light'
-      ? { background: '#f2f5f2', panel: '#ffffff', text: '#25382f', muted: '#54645a', line: '#b6c5bd', computedBackground: 'rgb(242, 245, 242)', computedMuted: 'rgb(84, 100, 90)', computedPanel: 'rgb(255, 255, 255)', computedText: 'rgb(37, 56, 47)' }
-      : { background: '#101718', panel: '#1a2325', text: '#e4eeea', muted: '#a9bbb1', line: '#2c3739', computedBackground: 'rgb(16, 23, 24)', computedMuted: 'rgb(169, 187, 177)', computedPanel: 'rgb(26, 35, 37)', computedText: 'rgb(228, 238, 234)' };
-    const css = `.pokome-workspace { --bg: ${palette.background}; --panel: ${palette.panel}; --text: ${palette.text}; --muted: ${palette.muted}; --line: ${palette.line}; background: var(--bg); color: var(--text); } .pokome-workspace button, .pokome-workspace input, .pokome-workspace select { background: var(--panel); color: var(--text); border-color: var(--line); }`;
-    await saveDesign(bases[0], design => ({ ...design, theme: css }));
-    await waitForDesign(bases[0], design => design.theme === css);
-    await page.waitForFunction(expected => getComputedStyle(document.querySelector('main')).backgroundColor === expected, palette.computedBackground);
-    assert.equal(await page.locator('#settings-warning').evaluate(element => getComputedStyle(element).color), palette.computedMuted);
-    assert.deepEqual(await page.locator('#twitch-channel').evaluate(element => ({ background: getComputedStyle(element).backgroundColor, color: getComputedStyle(element).color })),
-      { background: palette.computedPanel, color: palette.computedText });
     await page.emulateMedia({ colorScheme });
+    const appearance = () => page.locator(['main', '.sidebar', '.workspace', '#settings-warning', '#twitch-channel'].join(',')).evaluateAll(elements => elements.map(element => {
+      const style = getComputedStyle(element);
+      return { id: element.id || element.className, color: style.color, background: style.backgroundColor, border: style.borderColor, visible: element.checkVisibility() };
+    }));
+    await saveDesign(bases[0], design => ({ ...design, theme: '' }));
+    await page.waitForFunction(() => !document.getElementById('pokome-user-theme').textContent);
+    const before = await appearance();
+    for (const css of [
+      '.pokome-workspace { --ui-text: red; --ui-bg: blue; --ui-surface: lime; color: red !important; background: blue !important; } .pokome-workspace button, .pokome-workspace input { color: red !important; background: lime !important; }',
+      '.pokome-workspace { display: none !important; } .pokome-workspace .pokome-panel { visibility: hidden !important; }',
+    ]) {
+      await saveDesign(bases[0], design => ({ ...design, theme: css }));
+      await page.waitForFunction(css => {
+        const sheet = new CSSStyleSheet(); sheet.replaceSync(css);
+        return document.getElementById('pokome-user-theme').textContent === [...sheet.cssRules].map(rule => rule.cssText).join('\n');
+      }, css);
+      assert.deepEqual(await appearance(), before, colorScheme + ' theme CSS leaves operating colors and visibility unchanged');
+    }
     for (const width of [1440, 500, 300, 150]) {
       await page.setViewportSize({ width, height: 1000 });
       for (const view of ['home', 'users', 'settings', 'studio']) {

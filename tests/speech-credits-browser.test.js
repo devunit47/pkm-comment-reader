@@ -333,12 +333,14 @@ test('custom CSS minimum height updates saved speech bounds on apply, clear and 
   await check(220);
   await themeCSS(page, '.pokome-workspace .stage-speech { min-height: 300px; }');
   await check(300);
-  await page.locator('#appearance-recovery #open-reset').click();
-  await page.locator('#appearance-recovery #confirm-reset').click();
+  await page.locator('[data-page=studio]').click();
+  await page.locator('#design-presets #preset-reset').click();
+  await page.locator('#design-presets #preset-confirm').click();
   await waitForDesign(base, design => design.ratios['16:9'] === null);
-  await page.locator('#notice').filter({ hasText: '標準の見た目に戻しました。' }).waitFor();
+  await page.locator('#design-presets #preset-status').filter({ hasText: '今のデザイン全体を標準へ戻しました。' }).waitFor();
   assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), null);
   assert.equal(await page.locator('#pokome-user-theme').textContent(), '');
+  await page.locator('[data-page=home]').click();
   await page.locator('#enter-talk').click();
   await page.waitForFunction(() => {
     const doc = document.getElementById('talk-frame').contentDocument, panel = doc.querySelector('.stage-speech');

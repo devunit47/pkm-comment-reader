@@ -47,11 +47,9 @@ export function compileTheme(css, Sheet = globalThis.CSSStyleSheet) {
   return compiled;
 }
 
-// Shows the applied theme CSS on the operating page. It is edited in the
-// design editor and reflected here only after it is saved.
+// Only scene roots opt into the theme scope; operating controls stay readable.
+// The design editor reflects CSS here only after it is saved.
 export function initializeTheme(designStore, stage) {
-  document.querySelector('main').classList.add('pokome-workspace');
-  document.querySelector('.sidebar').classList.add('pokome-workspace');
   const style = document.createElement('style');
   style.id = 'pokome-user-theme';
   document.head.append(style);

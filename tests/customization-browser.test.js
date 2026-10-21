@@ -7,7 +7,7 @@ import { deflateSync } from 'node:zlib';
 import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { defaultDesign } from '../src/shared/design-model.js';
-import { chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS, temporaryDataDirectory, readSettings, saveSetting, talkStage, saveDesign } from './browser-support.js';
+import { closeBrowser, chromium, executablePath, browserAvailable, readDesign, appReady, blockExternalFonts, applyInEditor, closeEditor, editorThemeCSS, temporaryDataDirectory, readSettings, saveSetting, talkStage, saveDesign } from './browser-support.js';
 
 const cssOne = '.pokome-workspace .pokome-panel { border-radius: 7px; }';
 const hidingCSS = '.pokome-workspace { display: none !important; }';
@@ -51,7 +51,7 @@ async function serve(t, server) {
 async function openBrowser(t, url, initialSettings = {}) {
   for (const [field, value] of Object.entries(initialSettings)) await saveSetting(url, field, value);
   const browser = await chromium.launch({ headless: true, executablePath });
-  t.after(() => browser.close());
+  t.after(() => closeBrowser(browser));
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
   page.setDefaultTimeout(8000);
   const errors = [], requests = [];
@@ -83,20 +83,21 @@ async function applyImage(page) {
   });
 }
 async function resetAppearance(page, confirm = true) {
-  const recovery = page.locator('#appearance-recovery');
-  await recovery.locator('#open-reset').click();
-  assert.equal(await recovery.locator('dialog').evaluate(dialog => dialog.matches(':modal')), true);
-  await recovery.locator(confirm ? '#confirm-reset' : '#cancel-reset').click();
-  assert.equal(await recovery.locator('dialog').isVisible(), false);
+  await studio(page);
+  const recovery = page.locator('#design-presets');
+  await recovery.locator('#preset-reset').click();
+  assert.equal(await recovery.locator('#preset-confirm-dialog').evaluate(dialog => dialog.matches(':modal')), true);
+  await recovery.locator(confirm ? '#preset-confirm' : '#preset-confirm-cancel').click();
+  assert.equal(await recovery.locator('#preset-confirm-dialog').isVisible(), false);
   // The reset is saved asynchronously; success is announced like other operations.
-  if (confirm) await page.locator('#notice').filter({ hasText: '標準の見た目に戻しました' }).waitFor();
+  if (confirm) await page.locator('#design-presets #preset-status').filter({ hasText: '今のデザイン全体を標準へ戻しました。' }).waitFor();
 }
 async function screenshot(page, name) {
   if (!qaDirectory) return;
   await mkdir(qaDirectory, { recursive: true });
   await page.screenshot({ path: join(qaDirectory, name + '.png'), fullPage: true });
 }
-test('protected recovery appears only with theme CSS, resets all appearance, supports cancel, preserves settings and user folder', { skip: !browserAvailable }, async t => {
+test('theme CSS leaves operating controls visible and preset reset preserves settings and user folder', { skip: !browserAvailable }, async t => {
   const directory = await fixture(t, { 'styles/hide.css': hidingCSS, 'styles/first.css': cssOne, 'images/actor.png': redPNG });
   const originalFiles = {};
   for (const kind of ['styles', 'images']) for (const name of await readdir(join(directory, kind))) originalFiles[`${kind}/${name}`] = await readFile(join(directory, kind, name));
@@ -111,12 +112,12 @@ test('protected recovery appears only with theme CSS, resets all appearance, sup
   const { page, errors, requests } = await openBrowser(t, base, preserved);
   const savedSettings = await readSettings(base);
   const recoveryShown = () => page.locator('#appearance-recovery #open-reset').isVisible();
-  // Only theme CSS can hide the operating page, so the protected control appears only with it.
+  // Recovery is reserved for a protected unreadable original.
   assert.equal(await recoveryShown(), false, 'no theme CSS: no floating recovery');
   await studio(page); await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
   assert.equal(await recoveryShown(), false, 'design settings alone do not show recovery');
   await applyCSS(page, 'first.css'); await applyImage(page, 'actor.png');
-  assert.equal(await recoveryShown(), true, 'theme CSS shows recovery');
+  assert.equal(await recoveryShown(), false, 'theme CSS alone does not show recovery');
   const beforeCancel = await savedStudio(page), beforeCSS = await currentCSS(page);
   await resetAppearance(page, false);
   assert.deepEqual(await savedStudio(page), beforeCancel); assert.equal(await currentCSS(page), beforeCSS);
@@ -125,14 +126,9 @@ test('protected recovery appears only with theme CSS, resets all appearance, sup
   await studio(page);
   await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('violet'));
   await applyCSS(page, 'hide.css');
-  assert.equal(await page.locator('main').isVisible(), false);
-  assert.equal(await page.locator('.sidebar').isVisible(), false);
-  assert.equal(await page.locator('#appearance-recovery #open-reset').isVisible(), true);
-  await page.locator('#appearance-recovery #open-reset').click();
-  await screenshot(page, 'protected-recovery-dialog');
-  await page.keyboard.press('Escape');
-  assert.equal(await page.locator('#appearance-recovery dialog').isVisible(), false);
-  assert.equal(await page.locator('main').isVisible(), false);
+  assert.equal(await page.locator('main').isVisible(), true);
+  assert.equal(await page.locator('.sidebar').isVisible(), true);
+  assert.equal(await recoveryShown(), false, 'hiding CSS cannot expose recovery or hide operating controls');
   await resetAppearance(page);
   assert.equal(await page.locator('main').isVisible(), true);
   assert.equal(await page.locator('.sidebar').isVisible(), true);
@@ -160,20 +156,20 @@ test('protected recovery appears only with theme CSS, resets all appearance, sup
   assert.deepEqual(errors, []);
 });
 
-test('appearance recovery keeps an open draft stale until it is restarted', { skip: !browserAvailable }, async t => {
+test('preset reset keeps an open draft stale until it is restarted', { skip: !browserAvailable }, async t => {
   const directory = await fixture(t);
   const base = await serve(t, createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory }));
-  // Recovery is offered only while theme CSS is applied.
+  // A normal preset reset remains available when theme CSS is applied.
   await saveDesign(base, { theme: cssOne });
   const { page } = await openBrowser(t, base);
   await studio(page);
   const editor = page.locator('#design-preview-editor');
   await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
   await editor.locator('#draft-theme').selectOption('rose');
-  // Activate the protected recovery while the modal draft is open on this page.
-  await page.locator('#appearance-recovery #open-reset').evaluate(button => button.click());
-  await page.locator('#appearance-recovery #confirm-reset').click();
-  await page.locator('#notice').filter({ hasText: '標準の見た目に戻しました' }).waitFor();
+  // Reset from the same page while its editor draft is open.
+  await page.locator('#design-presets #preset-reset').evaluate(button => button.click());
+  await page.locator('#design-presets #preset-confirm').click();
+  await page.locator('#design-presets #preset-status').filter({ hasText: '今のデザイン全体を標準へ戻しました。' }).waitFor();
   assert.equal(await editor.locator('#design-dialog').isVisible(), true);
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   await editor.locator('#restart-design').click(); await editor.locator('#editor-confirm-accept').click();
