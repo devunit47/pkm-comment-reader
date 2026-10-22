@@ -9,7 +9,7 @@ import { createServer } from '../server.js';
 import { DEFAULT_STUDIO } from '../src/shared/studio.js';
 import { createOverlay } from '../src/shared/overlay-model.js';
 import { defaultActorImage, talkActorImage } from '../src/shared/design-model.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting, talkStage } from './browser-support.js';
+import { closeBrowser, openSettings, blockExternalFonts, chromium, executablePath, browserAvailable, readDesign, saveDesign, saveTalk, waitForDesign, appReady, applyInEditor, editorTarget, editorThemeCSS, closeEditor, temporaryDataDirectory, readSettings, saveSetting, talkStage } from './browser-support.js';
 
 // These exercise the actual modal and its epoch/DOM handlers, not a stand-in
 // draft controller. Browser launch failures must fail, never become a pass.
@@ -46,7 +46,7 @@ async function fixture(t, { design, settings = {} } = {}) {
   const browser = await chromium.launch({ headless: true, executablePath });
   let server, directory;
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server?.listening) await new Promise(resolve => server.close(resolve));
     if (directory) await rm(directory, { recursive: true, force: true });
   });
@@ -356,7 +356,7 @@ browserTest('overlay UI enforces the item limit and stores images as files that 
   assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay').count(), 20);
   await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('#talk-stage > .pokome-overlay img')?.complete);
   assert.equal(await talkStage(page).locator('#talk-stage > .pokome-overlay img').evaluate(image => image.naturalWidth), 1);
-  await page.locator('[data-page="settings"]').click();
+  await openSettings(page, 'backup');
   const backupEvent = page.waitForEvent('download');
   await page.locator('#backup-settings').click();
   const backup = await readFile(await (await backupEvent).path());
@@ -456,16 +456,22 @@ browserTest('invalid CSS and quota failure preserve the live design and leave an
 
 browserTest('preview preparation disables reset and cancellation does not poison a later session', async t => {
   const { page, editor, errors } = await fixture(t);
-  let release, started;
-  const gate = new Promise(resolve => { release = resolve; });
-  const requested = new Promise(resolve => { started = resolve; });
-  t.after(() => release());
-  await page.route('**/style.css', async route => { started(); await gate; await route.continue(); }, { times: 1 });
+  // The applied sample can preload CSS; hold the editor's own frame instead.
+  await page.evaluate(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+    const gate = window.__previewPreparation = { entered: false, released: false };
+    Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', { ...descriptor, set(value) {
+      if (this.id !== 'design-preview-frame' || gate.released) { descriptor.set.call(this, value); return; }
+      gate.entered = true;
+      gate.release = () => { gate.released = true; Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', descriptor); descriptor.set.call(this, value); };
+    } });
+  });
   await page.locator('[data-page="studio"]').click();
-  await editor.locator('#open-design-preview').click(); await requested;
+  await editor.locator('#open-design-preview').click();
+  await page.waitForFunction(() => window.__previewPreparation.entered);
   assert.equal(await editor.locator('#apply-design').isDisabled(), true);
   assert.equal(await editor.locator('#draft-reset').isDisabled(), true);
-  await closeEditor(editor); release();
+  await closeEditor(editor); await page.evaluate(() => window.__previewPreparation.release());
   await openPreview(page);
   assert.equal(await editor.locator('#draft-reset').isEnabled(), true);
   await editor.locator('#add-text').click(); await countItems(page, 1);

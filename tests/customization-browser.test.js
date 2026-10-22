@@ -127,11 +127,11 @@ test('theme CSS leaves operating controls visible and preset reset preserves set
   await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('violet'));
   await applyCSS(page, 'hide.css');
   assert.equal(await page.locator('main').isVisible(), true);
-  assert.equal(await page.locator('.sidebar').isVisible(), true);
+  assert.equal(await page.locator('#app-header').isVisible(), true);
   assert.equal(await recoveryShown(), false, 'hiding CSS cannot expose recovery or hide operating controls');
   await resetAppearance(page);
   assert.equal(await page.locator('main').isVisible(), true);
-  assert.equal(await page.locator('.sidebar').isVisible(), true);
+  assert.equal(await page.locator('#app-header').isVisible(), true);
   assert.equal(await currentCSS(page), '');
   assert.equal((await savedStudio(page)).theme, DEFAULT_STUDIO.theme);
   assert.equal(await talkStage(page).locator('#stage-title').textContent(), DEFAULT_STUDIO.title);

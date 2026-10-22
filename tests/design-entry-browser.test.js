@@ -4,13 +4,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget, closeEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
+import { closeBrowser, openOutputSettings, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readDesign, editorTarget, closeEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-entry-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   const browser = await chromium.launch({ headless: true, executablePath });
-  t.after(async () => { await browser.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
+  t.after(async () => { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   const page = await browser.newPage(); page.setDefaultTimeout(3000); await blockExternalFonts(page);
@@ -43,7 +43,7 @@ test('talk editing opens the unified draft and returns focus after Apply or disc
 
 test('output size is applied text and its editor changes the size only on Apply', { skip: !browserAvailable }, async t => {
   const { base, page, editor } = await fixture(t);
-  await page.locator('[data-page="studio"]').click();
+  await openOutputSettings(page);
   assert.equal(await page.locator('#output-size').count(), 0);
   assert.match(await page.locator('#output-size-value').textContent(), /1280.*720/);
   await page.locator('#edit-output-size').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
@@ -58,7 +58,8 @@ test('output size is applied text and its editor changes the size only on Apply'
 test('design page orders final entries, shows the applied design and keeps preset confirmation read-only', { skip: !browserAvailable }, async t => {
   const { page, editor } = await fixture(t);
   await page.locator('[data-page="studio"]').click();
-  assert.deepEqual(await page.locator('#studio-page').evaluate(section => [...section.children].map(child => child.id)), ['design-presets', 'design-preview-editor', 'stream-output-panel']);
+  assert.deepEqual(await page.locator('#studio-page').evaluate(section => [...section.children].map(child => child.id)), ['studio-top', 'design-presets']);
+  assert.deepEqual(await page.locator('#studio-top').evaluate(section => [...section.children].map(child => child.id)), ['design-preview-editor', 'stream-output-panel']);
   assert.match(await editor.locator('#applied-design-summary').textContent(), /ミント.*1280.*720/);
   assert.doesNotMatch(await editor.locator('.entry').textContent(), /ホームの配置|すぐに保存/);
   const presets = page.locator('#design-presets');
@@ -78,7 +79,7 @@ test('design page orders final entries, shows the applied design and keeps prese
 test('150px standard home keeps content within the effective dock width', { skip: !browserAvailable }, async t => {
   const { page } = await fixture(t); await page.setViewportSize({ width: 150, height: 700 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  for (const selector of ['.workspace','.comments','.stats','#filter','#enter-talk']) {
+  for (const selector of ['.workspace','.comments','#home-connections','#filter','#enter-talk']) {
     const box = await page.locator(selector).boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 150, selector);
   }
 });

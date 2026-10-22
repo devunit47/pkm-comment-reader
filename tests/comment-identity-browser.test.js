@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { createServer } from '../server.js';
 import { fakeClock } from './auth-support.js';
 import { defaultTalkLayout, withTalk } from '../src/shared/design-model.js';
-import { saveDesign, waitForDesign } from './browser-support.js';
+import { openSettings, saveDesign, waitForDesign } from './browser-support.js';
 import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, temporaryDataDirectory, appReady, saveStudio, editorTarget, closeEditor, applyInEditor, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
@@ -39,14 +39,14 @@ async function fixture(t, studio = {}, options = {}) {
   });
   const page = await context.newPage(); page.setDefaultTimeout(8000);
   await page.goto(base); await appReady(page);
-  await page.evaluate(() => {
-    document.querySelector('#read-name').checked = true; document.querySelector('#read-name').dispatchEvent(new Event('change'));
-    document.querySelector('#twitch-channel').value = 'qa_channel';
-    document.querySelector('#twitch-connect-form').requestSubmit();
-  });
+  await openSettings(page, 'speech');
+  await page.locator('#read-name').check();
+  await page.locator('[data-page="home"]').click();
+  await page.locator('#twitch-channel').fill('qa_channel');
+  await page.locator('#twitch-connection-toggle').click();
   await page.waitForFunction(() => window.testSockets.length === 1);
   await page.evaluate(() => { const socket = window.testSockets[0]; socket.onopen(); socket.onmessage({ data: ':server 366 anon #qa_channel :End\r\n' }); });
-  await page.locator('#twitch-status').filter({ hasText: '接続済み' }).waitFor({ state: 'attached' });
+  await page.locator('#twitch-tab-status').filter({ hasText: '接続済み' }).waitFor({ state: 'attached' });
   return { context, page, base, requests, errors };
 }
 async function receive(page, text, tags = 'color=#ffffff;badges=vip/1;emotes=25:2-6') {
@@ -65,7 +65,7 @@ browserTest('badge images follow hidden panels across talk, preview and output r
   await saveDesign(base, design => withTalk(withTalk(design, '16:9', { layout: hidden }), '9:16', { layout: defaultTalkLayout('9:16') }));
   const live = talkStage(page);
   await page.waitForFunction(() => document.getElementById('talk-frame').contentDocument.querySelector('.stage-chat').style.display === 'none');
-  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor({ state: 'attached' });
   const catalog = page.waitForResponse(response => response.url().includes('/api/twitch/badges?'));
   await receive(page, '比率の切り替え', 'room-id=123;badges=vip/1'); await catalog;
   await page.locator('#comment-list .message').last().click(); await page.locator('#pin-comment').click();
@@ -106,7 +106,7 @@ browserTest('badge images follow hidden panels across talk, preview and output r
   await editor.locator('#preview-ratio').selectOption('16:9');
   await preview.locator('.stage-chat').waitFor({ state: 'hidden' });
   assert.equal(await preview.locator('.pokome-comment__badge-image').count(), 0);
-  assert.equal(await page.locator('#count').textContent(), '1 件', 'no additional reception is needed');
+  assert.equal(await talkStage(page).locator('#stage-count').textContent(), '1 COMMENTS', 'no additional reception is needed');
   assert.deepEqual(errors, []);
 });
 
@@ -116,7 +116,7 @@ browserTest('badge arrival preserves the playing speech preview while a differen
     await context.route('**/api/auth/twitch', route => route.fulfill({ json: { status: 'signed-in', login: 'viewer', displayName: 'Viewer' } }));
     await context.route('**/api/twitch/badges?*', route => { badgeRequest = route; });
   } });
-  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor({ state: 'attached' });
   await page.evaluate(() => { window.speechSynthesis.speak = utterance => { window.spoken.push(utterance.text); utterance.onstart?.(); }; });
   await receive(page, '選択中のコメント', 'room-id=123;badges=vip/1');
   await page.locator('#comment-list .message').last().click();
@@ -153,10 +153,12 @@ browserTest('logout removes badges from the initiating tab, another tab and outp
   const other = await context.newPage(); other.setDefaultTimeout(8000);
   const output = await context.newPage(); output.setDefaultTimeout(8000);
   try {
-    await page.locator('#twitch-login[data-status="signed-out"]').waitFor();
-    await page.locator('#twitch-login-start').click(); await page.locator('#twitch-login[data-status="pending"]').waitFor();
-    await clock.tick(5000); await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
-    await other.goto(base); await appReady(other); await other.locator('#twitch-login[data-status="signed-in"]').waitFor();
+    await page.locator('#twitch-login[data-status="signed-out"]').waitFor({ state: 'attached' });
+    await openSettings(page);
+    await page.locator('#twitch-login-start').click(); await page.locator('#twitch-login[data-status="pending"]').waitFor({ state: 'attached' });
+    await clock.tick(5000); await page.locator('#twitch-login[data-status="signed-in"]').waitFor({ state: 'attached' });
+    await page.locator('[data-page="home"]').click();
+    await other.goto(base); await appReady(other); await other.locator('#twitch-login[data-status="signed-in"]').waitFor({ state: 'attached' });
     await other.locator('#twitch-connection-toggle').click();
     await other.waitForFunction(() => window.testSockets.length === 1);
     await other.evaluate(() => { const socket = window.testSockets[0]; socket.onopen(); socket.onmessage({ data: ':server 366 anon #qa_channel :End\r\n' }); });
@@ -186,19 +188,19 @@ browserTest('logout removes badges from the initiating tab, another tab and outp
       }
       await route.continue();
     });
-    await page.locator('#twitch-login-logout').click();
-    await page.locator('#twitch-login[data-status="signing-out"]').waitFor();
+    await openSettings(page); await page.locator('#twitch-login-logout').click();
+    await page.locator('#twitch-login[data-status="signing-out"]').waitFor({ state: 'attached' });
     await page.waitForFunction(() => !document.getElementById('talk-frame').contentDocument.querySelector('.pokome-comment__badge-image'));
     await page.locator('#enter-talk').click(); await fallback(page);
     await postStarted.promise; sendPost.resolve(); await revokeStarted.promise;
-    await other.locator('#twitch-login[data-status="signing-out"]').waitFor();
+    await other.locator('#twitch-login[data-status="signing-out"]').waitFor({ state: 'attached' });
     await other.locator('#enter-talk').click();
     await fallback(other); await fallback(output);
     for (const owner of [page, other]) {
       assert.equal(await owner.locator('#twitch-login-status').textContent(), 'ログアウトしています…');
       assert.equal(await owner.locator('#twitch-login-logout').isDisabled(), true);
-      assert.equal(await owner.locator('#count').textContent(), '1 件');
-      assert.equal(await owner.locator('#twitch-status').textContent(), '接続済み');
+      assert.equal(await talkStage(owner).locator('#stage-count').textContent(), '1 COMMENTS');
+      assert.equal(await owner.locator('#twitch-tab-status').textContent(), '接続済み');
     }
     revoke.resolve(new Response('{}'));
     for (const owner of [page, other]) await owner.locator('#twitch-login[data-status="signed-out"]').waitFor({ state: 'attached' });
@@ -223,9 +225,11 @@ browserTest('L2 delayed Helix lists update live and output pins without replay a
     },
   });
   assert.equal(calls.length, 0, 'startup and anonymous connection do not call Helix');
+  await openSettings(page);
   await page.locator('#twitch-login-start:not(:disabled)').waitFor(); await page.locator('#twitch-login-start').click();
-  await page.locator('#twitch-login[data-status="pending"]').waitFor(); await clock.tick(5000);
-  await page.locator('#twitch-login[data-status="signed-in"]').waitFor();
+  await page.locator('#twitch-login[data-status="pending"]').waitFor({ state: 'attached' }); await clock.tick(5000);
+  await page.locator('#twitch-login[data-status="signed-in"]').waitFor({ state: 'attached' });
+  await page.locator('[data-page="home"]').click();
   await page.evaluate(() => window.testSockets[0].onmessage({ data: '@room-id=123 :server ROOMSTATE #qa_channel\r\n' }));
   await receive(page, '長い本文を折り返して確認します。'.repeat(8), 'room-id=123;display-name=表示の折り返しを確認する長い名前の投稿者;badges=subscriber/0,vip/1,bits/100;badge-info=subscriber/30');
   await page.locator('#comment-list .message').last().click(); await page.locator('#pin-comment').click();
@@ -234,17 +238,17 @@ browserTest('L2 delayed Helix lists update live and output pins without replay a
   await page.locator('#enter-talk').click();
   assert.equal(await output.locator('.pokome-comment__badge-image').count(), 0);
   assert.equal(await output.locator('#stage-pinned-list .pokome-comment__badge').count(), 2);
-  assert.equal(await page.locator('#count').textContent(), '1 件');
-  const before = await page.evaluate(() => ({ speech: window.spoken, count: document.querySelector('#count').textContent }));
+  assert.equal(await talkStage(page).locator('#stage-count').textContent(), '1 COMMENTS');
+  const before = await page.evaluate(() => ({ speech: window.spoken, count: document.getElementById('talk-frame').contentDocument.querySelector('#stage-count').textContent }));
   const catalog = set => ({ data: [{ set_id: set, versions: [{ id: set === 'subscriber' ? '0' : '1', image_url_1x: badgeUrl.slice(0, -1) + '1', image_url_2x: badgeUrl.slice(0, -1) + '2', image_url_4x: badgeUrl, title: set }] }] });
-  await page.waitForFunction(() => document.querySelector('#twitch-status').textContent.includes('接続済み'));
+  await page.waitForFunction(() => document.querySelector('#twitch-tab-status').textContent.includes('接続済み'));
   assert.equal(pending.length, 2);
   pending[0](new Response(JSON.stringify(catalog('vip')))); pending[1](new Response(JSON.stringify(catalog('subscriber'))));
   for (const owner of [page, output]) await owner.waitForFunction(() => {
     const doc = document.getElementById('talk-frame')?.contentDocument ?? document;
     return doc.querySelectorAll('#stage-pinned-list .pokome-comment__badge-image').length === 2;
   });
-  assert.deepEqual(await page.evaluate(() => ({ speech: window.spoken, count: document.querySelector('#count').textContent })), before);
+  assert.deepEqual(await page.evaluate(() => ({ speech: window.spoken, count: document.getElementById('talk-frame').contentDocument.querySelector('#stage-count').textContent })), before);
   await page.evaluate(() => window.testSockets[0].onmessage({ data: '@room-id=123;msg-id=resub;login=viewer;display-name=長い名前の投稿者;badges=subscriber/0,vip/1;msg-param-cumulative-months=30 :server USERNOTICE #qa_channel :特別なカードの本文\r\n' }));
   await output.locator('[data-event="resub"] .pokome-comment__badge-image').first().waitFor({ state: 'attached' });
   const cases = matrixCases({ theme: ['mint', 'rose', 'violet', 'paper'], scheme: ['light', 'dark'], font: [16, 64],
@@ -326,7 +330,7 @@ browserTest('L2 delayed Helix lists update live and output pins without replay a
   const overflow = await page.locator('#design-dialog').evaluate(element => element.scrollWidth > element.clientWidth + 1);
   assert.equal(overflow, false); assert.equal(await page.frameLocator('#design-preview-frame').locator('.pokome-comment__badge-image').count(), 0);
   await closeEditor(page); await page.setViewportSize({ width: 1440, height: 1000 }); await page.locator('.nav[data-page="home"]').click();
-  await page.locator('#twitch-login-logout').click(); await page.locator('#twitch-login[data-status="signed-out"]').waitFor();
+  await openSettings(page); await page.locator('#twitch-login-logout').click(); await page.locator('#twitch-login[data-status="signed-out"]').waitFor({ state: 'attached' });
   assert.equal(calls.filter(url => url.includes('/chat/badges')).length, 4);
   assert.deepEqual(errors, []);
   if (process.env.BADGE_QA_DIRECTORY) {

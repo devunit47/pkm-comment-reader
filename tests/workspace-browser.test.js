@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
 
-import { chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, readSettings, saveSetting, waitForSettings, talkStage } from './browser-support.js';
+import { closeBrowser, openOutputSettings, openSettings, chromium, executablePath, browserAvailable, waitForDesign, appReady, blockExternalFonts, saveStudio, readDesign, applyInEditor, editorThemeCSS, editorTarget, temporaryDataDirectory, readSettings, saveSetting, waitForSettings, talkStage } from './browser-support.js';
 
 // Each server gets its own customization folder, never the repository's.
 const folders = [];
@@ -152,13 +152,13 @@ test('workspace edits, persistence, protected recovery and design roundtrip', { 
     assert.deepEqual((await waitForDesign(base, () => true)).ratios['16:9'].layout, saved.ratios['16:9'].layout);
     assert.deepEqual(errors, []);
   } finally {
-    await browser.close();
+    await closeBrowser(browser);
     await new Promise(resolve => server.close(resolve));
   }
 });
 
 
-test('platform buttons toggle saved connections independently and open settings when unsaved', { skip: !browserAvailable }, async t => {
+test('home connection cards use entered channels independently and validate missing channels', { skip: !browserAvailable }, async t => {
   const browser = await chromium.launch({ headless: true, executablePath });
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: await scratch() });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -178,16 +178,16 @@ test('platform buttons toggle saved connections independently and open settings 
     await saveSetting(base, 'connections', { twitch: 'saved_channel', kick: 'saved-kick' });
     await page.route('**/api/kick/channel/*', route => route.fulfill({ json: { chatroomId: 123 } }));
     await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
-    await page.locator('#twitch-channel').evaluate(input => { input.value = 'unsaved_edit'; });
+    await page.locator('#twitch-channel').fill('edited_channel');
     await page.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
-    assert.equal(await page.locator('#twitch-tab-channel').textContent(), '#saved_channel');
+    assert.equal(await page.locator('#twitch-tab-channel').textContent(), '#edited_channel');
     assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '切断');
-    assert.equal(await page.locator('#kick-connection-toggle').textContent(), '接続');
+    assert.equal(await page.locator('#kick-connection-toggle').textContent(), '接続する');
     await page.getByRole('button', { name: 'Twitchを切断', exact: true }).click();
-    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続');
+    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続する');
     assert.equal(await page.evaluate(() => window.testSockets[0].closed), true);
     await page.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
-    await page.evaluate(() => window.testSockets[1].onmessage({ data: ':server 366 user #saved_channel :End of names' }));
+    await page.evaluate(() => window.testSockets[1].onmessage({ data: ':server 366 user #edited_channel :End of names' }));
     assert.equal(await page.locator('#twitch-tab-status').textContent(), '接続済み');
     await page.getByRole('button', { name: 'Kickに接続', exact: true }).click();
     await page.waitForFunction(() => window.testSockets.length === 3);
@@ -195,18 +195,18 @@ test('platform buttons toggle saved connections independently and open settings 
     await page.getByRole('button', { name: 'Kickを切断', exact: true }).click();
     assert.equal(await page.locator('#twitch-tab-status').textContent(), '接続済み');
     await page.evaluate(() => window.testSockets[1].onerror());
-    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続');
-    await waitForSettings(base, settings => settings.connections.twitch === 'saved_channel');
+    assert.equal(await page.locator('#twitch-connection-toggle').textContent(), '接続する');
+    await waitForSettings(base, settings => settings.connections.twitch === 'edited_channel');
     await saveSetting(base, 'connections', { twitch: '', kick: '' });
-    // The cleared server setting sends a fresh page to the connection form.
+    // A missing channel remains on the home card and native validation focuses its input.
     const freshPage = await browser.newPage(); await blockExternalFonts(freshPage);
     await freshPage.goto('http://127.0.0.1:' + server.address().port); await appReady(freshPage);
     await freshPage.getByRole('button', { name: 'Twitchに接続', exact: true }).click();
-    assert.equal(await freshPage.locator('#settings-page').isVisible(), true);
+    assert.equal(await freshPage.locator('#home-page').isVisible(), true);
     assert.equal(await freshPage.locator('#twitch-channel').evaluate(element => element === document.activeElement), true);
     assert.deepEqual(errors, []);
   } finally {
-    await browser.close();
+    await closeBrowser(browser);
     await new Promise(resolve => server.close(resolve));
   }
 });
@@ -235,27 +235,30 @@ test('local engines select voices, play synchronized previews, stop and persist 
       };
     });
     await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
+    await openSettings(page, 'speech');
     await page.locator('#speech-engine').selectOption('voicevox');
     await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#voice').inputValue(), '3');
     await page.locator('#test-voice').click();
     await page.waitForFunction(() => document.querySelector('#speech-status').textContent === '読み上げ中');
     assert.equal(await talkStage(page).locator('#stage-speech-text').textContent(), 'こんにちは。読み上げ音声のテストです。');
+    await page.locator('[data-page="home"]').click();
     await page.locator('#stop-speech').click();
     assert.equal(await page.locator('#speech-status').textContent(), '待機中');
     assert.equal(await page.evaluate(() => window.testAudio[0].paused), true);
-    await page.locator('[data-platform="kick"]').click();
+    await openSettings(page, 'speech');
+    await page.locator('#settings-platform').selectOption('kick');
     assert.equal(await page.locator('#speech-engine').inputValue(), 'browser');
     await page.locator('#speech-engine').selectOption('coeiroink');
     await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#voice').inputValue(), uuid + ':0');
     await page.locator('#test-voice').click();
     await page.waitForFunction(() => document.querySelector('#speech-status').textContent === '読み上げ中');
-    await page.locator('[data-platform="twitch"]').click();
+    await page.locator('#settings-platform').selectOption('twitch');
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#speech-status').textContent(), '待機中');
     await waitForSettings(new URL(page.url()).origin, settings => settings.speechEngines.twitch.voicevox === '3' && settings.speechEngines.kick.coeiroink === uuid + ':0');
-    await page.reload(); await appReady(page); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
+    await page.reload(); await appReady(page); await openSettings(page, 'speech'); await page.waitForFunction(() => !document.querySelector('#voice').disabled);
     assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
     assert.equal(await page.locator('#voice').inputValue(), '3');
     await page.route('**/api/speech/voicevox/voices', route => route.fulfill({ status: 502, json: { error: '音声ソフトを起動してください。' } }));
@@ -265,7 +268,7 @@ test('local engines select voices, play synchronized previews, stop and persist 
     await page.locator('#speech-engine').selectOption('browser');
     assert.equal(await page.locator('#voice').isDisabled(), false);
     assert.deepEqual(errors, []);
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); }
 });
 
 
@@ -301,23 +304,23 @@ test('standard home keeps operating controls reachable despite obsolete saved la
     assert.equal(Object.values(rules.kick).some(rule => rule.muted), false);
     await author.click(); await page.locator('#hide-user').click();
     assert.equal(await page.locator('#comment-list .username').filter({ hasText: username.slice(1) }).count(), 0);
-    await page.locator('[data-page="users"]').click();
+    await openSettings(page, 'users');
     await page.locator('#user-list .user-row').filter({ hasText: username.slice(1) }).getByRole('button', { name: '非表示を解除', exact: true }).click();
     await page.locator('[data-page="home"]').click();
     const preview = await page.locator('.now').boundingBox();
-    const settings = await page.locator('.reading').boundingBox();
-    assert.ok(preview.y + preview.height <= settings.y);
+    const controls = await page.locator('#home-connections').boundingBox();
+    assert.ok(controls.x + controls.width <= preview.x);
     await page.locator('#stop-speech').scrollIntoViewIfNeeded();
-    const button = await page.locator('#stop-speech').boundingBox(); const panel = await page.locator('.reading').boundingBox();
+    const button = await page.locator('#stop-speech').boundingBox(); const panel = await page.locator('#home-connections').boundingBox();
     assert.ok(button.y >= panel.y && button.y + button.height <= panel.y + panel.height);
     await page.locator('#stop-speech').click();
     await page.locator('[data-page="updates"]').click();
-    assert.equal(await page.locator('.platform-tabs').isVisible(), false);
-    assert.equal(await page.locator('main>header #enter-talk').count(), 0);
+    assert.equal(await page.locator('#home-connections').isVisible(), false);
+    assert.equal(await page.locator('#app-header #enter-talk').isVisible(), true);
     assert.equal(await page.locator('#page-title').textContent(), '更新情報');
     await page.locator('[data-page="home"]').click();
-    assert.equal(await page.locator('.platform-tabs').isVisible(), true);
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+    assert.equal(await page.locator('#home-connections').isVisible(), true);
+  } finally { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); }
 });
 
 test('first setup guide and full settings backup restore work through the UI', { skip: !browserAvailable }, async t => {
@@ -327,19 +330,20 @@ test('first setup guide and full settings backup restore work through the UI', {
     const page = await browser.newPage(); await blockExternalFonts(page);
     const errors = []; page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://127.0.0.1:' + server.address().port); await appReady(page);
-    assert.equal(await page.locator('#setup-welcome').isVisible(), true);
+    assert.equal(await page.locator('#setup-reminder').isVisible(), true);
     await page.locator('#start-setup').click(); await page.locator('#setup-connect').click();
-    assert.equal(await page.locator('#settings-page').isVisible(), true);
-    await page.locator('#open-setup').click(); await page.locator('#setup-voice').click();
     assert.equal(await page.locator('#home-page').isVisible(), true);
+    await page.locator('#open-setup').click(); await page.locator('#setup-voice').click();
+    assert.equal(await page.locator('#settings-speech').isVisible(), true);
     await page.locator('#open-setup').click(); await page.locator('#complete-setup').click();
-    assert.equal(await page.locator('#setup-welcome').isVisible(), false);
+    assert.equal(await page.locator('#setup-reminder').isVisible(), false);
     const base = 'http://127.0.0.1:' + server.address().port;
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('42'); await page.locator('#studio-list-count').dispatchEvent('change');
     await page.locator('[data-page="studio"]').click();
+    await openOutputSettings(page);
     await page.locator('#output-background').selectOption('key'); await page.locator('#output-key').selectOption('ff00ff');
     await waitForSettings(base, settings => settings.historyLimit === 42 && settings.setupComplete && settings.output.background === 'key' && settings.output.key === 'ff00ff');
-    await page.locator('[data-page="settings"]').click();
+    await openSettings(page, 'backup');
     const downloadPromise = page.waitForEvent('download'); await page.locator('#backup-settings').click();
     const download = await downloadPromise;
     const { readFile } = await import('node:fs/promises'); const backup = await readFile(await download.path());
@@ -352,10 +356,10 @@ test('first setup guide and full settings backup restore work through the UI', {
     await page.locator('[data-page="settings"]').click(); await page.locator('#studio-list-count').fill('10'); await page.locator('#studio-list-count').dispatchEvent('change');
     await saveSetting(base, 'setupComplete', false);
     await saveSetting(base, 'output', { background: 'theme', key: '0000ff' });
-    await page.waitForFunction(() => !document.querySelector('#setup-welcome').hidden && document.querySelector('#output-background').value === 'theme' && document.querySelector('#output-key').value === '0000ff');
+    await page.waitForFunction(() => !document.querySelector('#setup-reminder').hidden && document.querySelector('#output-background').value === 'theme' && document.querySelector('#output-key').value === '0000ff');
     await applyInEditor(page, editor => editor.locator('#draft-theme').selectOption('rose'));
     await waitForDesign(base, design => design.studio.theme === 'rose');
-    await page.locator('[data-page="settings"]').click();
+    await openSettings(page, 'backup');
     await page.locator('#restore-settings').setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{}') });
     // The file is read asynchronously, so wait for the status before checking the button.
     await page.locator('#backup-status').filter({ hasText: '読み込めませんでした' }).waitFor();
@@ -366,7 +370,7 @@ test('first setup guide and full settings backup restore work through the UI', {
     await Promise.all([page.waitForEvent('load'), page.locator('#confirm-restore').click()]); await appReady(page);
     await page.locator('[data-page="settings"]').click();
     assert.equal(await page.locator('#studio-list-count').inputValue(), '42');
-    assert.equal(await page.locator('#setup-welcome').evaluate(element => element.hidden), true);
+    assert.equal(await page.locator('#setup-reminder').evaluate(element => element.hidden), true);
     assert.equal(await page.locator('#output-background').inputValue(), 'key');
     assert.equal(await page.locator('#output-key').inputValue(), 'ff00ff');
     assert.equal((await readDesign(base)).studio.theme, 'rose', 'restoring settings leaves the folder design alone');
@@ -387,7 +391,7 @@ test('first setup guide and full settings backup restore work through the UI', {
       'pokome-workspace-v1': 'malformed obsolete layout',
       'pokome-overlays-v1': JSON.stringify({ version: 1, items: [{ id: 'item-1', type: 'image', assetId: 'asset-1' }], assets: { 'asset-1': png } }),
     });
-    await page.locator('[data-page="settings"]').click();
+    await openSettings(page, 'backup');
     await page.locator('#restore-settings').setInputFiles({ name: 'old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
     await page.locator('#backup-status').filter({ hasText: '古い見た目・画像・配置は復元しません' }).waitFor();
     assert.equal(await page.locator('#confirm-restore').isDisabled(), false);
@@ -400,14 +404,14 @@ test('first setup guide and full settings backup restore work through the UI', {
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
     assert.equal(await page.locator('#twitch-channel').inputValue(), 'legacy_channel');
     assert.equal(await page.locator('#max-length').inputValue(), '160');
-    assert.equal(await page.locator('#setup-welcome').evaluate(element => element.hidden), false);
+    assert.equal(await page.locator('#setup-reminder').evaluate(element => element.hidden), false);
     assert.equal(await page.locator('#output-background').inputValue(), 'theme');
     assert.equal(await page.locator('#output-key').inputValue(), '00ff00');
     assert.deepEqual((await readSettings(base)).users.twitch['旧設定ユーザー'], { hidden: true, muted: true });
     assert.equal(await talkStage(page).locator('#actor-image').getAttribute('src'), null);
     assert.equal(await page.evaluate(() => ['pokome-studio', 'pokome-theme-v1', 'pokome-overlays-v1'].map(key => localStorage.getItem(key))).then(values => values.every(value => value === null)), true);
     assert.deepEqual(errors, []);
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); }
 });
 
 // Regression: after a reload in talk mode, leaving talk mode went back to the
@@ -428,7 +432,7 @@ test('leaving talk mode after a reload in talk mode returns to the operating scr
     await page.locator('[data-page="studio"]').click();
     assert.equal(await page.locator('#studio-page').isVisible(), true);
     assert.deepEqual(errors, []);
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); }
 });
 
 
@@ -448,5 +452,5 @@ test('home ignores obsolete layout without clearing the saved value', { skip: !b
     assert.equal(await page.locator('.comments').evaluate(element => element.style.left), '');
     assert.equal(await page.evaluate(() => localStorage.getItem('pokome-workspace-v1')), legacy);
 
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  } finally { await closeBrowser(browser); await new Promise(resolve => server.close(resolve)); }
 });
