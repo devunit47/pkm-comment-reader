@@ -66,7 +66,11 @@ let outputPanel;
 const outputPublisher = new OutputPublisher({ onStatus: status => outputPanel?.setStatus(status) });
 const twitchBadges = createTwitchBadgeClient({ state: states.twitch, onChange() { if (active === 'twitch') renderStageChat(); } });
 twitchBadges.setEnabled(studio.commentBadges);
-initializeTwitchLogin(document.getElementById('twitch-login'), { subscribe: settingsStore.subscribeAuth, onChange: state => twitchBadges.setAuth(state) });
+initializeTwitchLogin(document.getElementById('twitch-login'), { subscribe: settingsStore.subscribeAuth, onChange: state => {
+  twitchBadges.setAuth(state);
+  $('twitch-account').hidden = state.status !== 'signed-in';
+  $('twitch-account').textContent = state.status === 'signed-in' ? `ログイン中：${state.displayName || state.login || 'Twitch アカウント'}` : '';
+} });
 // null means the preview shows a selection; a string snapshots played audio.
 let previewSpeechCredit = null;
 let speechDisplayTimer;
@@ -101,7 +105,7 @@ function make(tag, className, text) {
 function renderConnection() {
   const state = states[active];
   const presentation = connectionPresentation(state.status);
-  $('chat-demo-note').hidden = state.status !== 'デモモード';
+  $('demo-area').hidden = state.status !== 'デモモード';
   $('chat-connection-status').textContent = presentation.label;
   $('chat-connection-status').dataset.state = presentation.kind;
   $('stage-platform').textContent = names[active];
@@ -114,15 +118,14 @@ function renderConnection() {
     const view = connectionPresentation(service.status);
     const disconnectable = ['connected', 'connecting'].includes(view.kind);
     const toggle = $(`${platform}-connection-toggle`);
-    toggle.textContent = disconnectable ? '切断' : '接続';
+    toggle.textContent = disconnectable ? '切断' : '接続する';
+    $(`${platform}-channel-input`).hidden = disconnectable;
     toggle.setAttribute('aria-label', `${names[platform]}${disconnectable ? 'を切断' : 'に接続'}`);
-    toggle.title = disconnectable ? '接続を切断します' : savedConnections[platform]
-      ? `保存済みの #${savedConnections[platform]} に接続します` : '接続設定でチャンネルを保存してください';
-    for (const id of [`${platform}-status`, `${platform}-tab-status`]) {
-      $(id).textContent = view.label;
-      $(id).dataset.state = view.kind;
-      $(id).title = view.detail;
-    }
+    toggle.title = disconnectable ? '接続を切断します' : 'チャンネル名を入力して接続します';
+    const badge = $(`${platform}-tab-status`);
+    badge.textContent = view.label;
+    badge.dataset.state = view.kind;
+    badge.title = view.detail;
     $(`${platform}-tab-channel`).textContent = service.channel ? `#${service.channel}` : 'チャンネル未接続';
     $(`${platform}-connection-detail`).textContent = view.detail + (view.kind === 'error' ? ' チャンネル名とネット接続を確認し、接続し直してください。' : '');
   }
@@ -152,6 +155,7 @@ function render() {
   const visible = visibleMessages(state);
   const list = $('comment-list');
   const bottom = list.scrollHeight - list.scrollTop - list.clientHeight < 50;
+  const demo = $('demo-area');
   list.replaceChildren();
   for (const message of visible) {
     const row = make('div', `comment pokome-comment${state.selected?.id === message.id ? ' selected' : ''}`, '');
@@ -188,9 +192,8 @@ function render() {
     list.append(row);
   }
   if (!visible.length) list.append(make('p', 'empty', `${names[active]}の表示するコメントがありません。`));
+  list.append(demo);
   if (bottom) list.scrollTop = list.scrollHeight;
-  $('count').replaceChildren(document.createTextNode(`${state.received} `), make('small', '', '件'));
-  $('user-count').replaceChildren(document.createTextNode(`${state.seen.size} `), make('small', '', '人'));
   $('visible-count').textContent = visible.length;
   $('chat-platform').textContent = names[active];
   $('users-platform').textContent = names[active];
@@ -360,14 +363,6 @@ function switchPlatform(platform) {
 }
 
 document.querySelectorAll('[data-platform]').forEach(button => { button.onclick = () => switchPlatform(button.dataset.platform); });
-document.querySelectorAll('[data-connection-settings]').forEach(button => {
-  button.onclick = () => {
-    const platform = button.dataset.connectionSettings;
-    switchPlatform(platform);
-    page('home');
-    $(`${platform}-channel`).focus();
-  };
-});
 document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => page(button.dataset.page); });
 $('search').oninput = () => { states[active].search = $('search').value; render(); };
 $('filter').onchange = () => { states[active].filter = $('filter').value; render(); };
@@ -443,7 +438,6 @@ $('refresh-voices').onclick = () => loadVoices(true);
 $('test-voice').onclick = () => speak({ user: '音声テスト', login: 'pokome_test', text: 'こんにちは。読み上げ音声のテストです。' });
 function renderSpeechSettings() {
   const state = states[active];
-  $('speech-stat').textContent = state.autoSpeech ? 'ON' : 'OFF';
   $('stage-auto-speech').textContent = `自動読み上げ ${state.autoSpeech ? 'ON' : 'OFF'}`;
   $('stage-auto-speech').setAttribute('aria-checked', String(state.autoSpeech));
   $('volume-value').textContent = `${Math.round(state.volume * 100)}%`;
@@ -779,19 +773,9 @@ for (const platform of enabledPlatforms) {
       renderConnection();
     },
   });
-  $(`${platform}-disconnect`).onclick = () => connections[platform].disconnect();
-  $(`${platform}-connection-toggle`).onclick = async () => {
-    if (['接続中', '接続準備中'].includes(states[platform].status)) {
-      connections[platform].disconnect();
-    } else if (savedConnections[platform]) {
-      await connectChannel(platform, savedConnections[platform]);
-    } else {
-      document.querySelector(`[data-connection-settings="${platform}"]`).click();
-      notify('チャンネルを入力して接続すると、次回からこのボタンで接続できます。');
-    }
-  };
   $(`${platform}-connect-form`).onsubmit = async event => {
     event.preventDefault();
+    if (['接続中', '接続準備中'].includes(states[platform].status)) { connections[platform].disconnect(); return; }
     const channel = $(`${platform}-channel`).value.trim().toLowerCase();
     await connectChannel(platform, channel);
   };

@@ -53,3 +53,13 @@ test('U2 settings groups existing controls and setup shortcuts open their new ho
   assert.equal(await page.locator('#home-page #twitch-channel').evaluate(el => el === document.activeElement), true);
 });
 
+test('U2 home keeps connection and quick speech beside comments and current selection', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t);
+  const columns = await page.locator('#home-page .workspace > *').evaluateAll(items => items.map(item => item.getBoundingClientRect().x));
+  assert.equal(columns.length, 3);
+  assert.ok(columns[0] < columns[1] && columns[1] < columns[2]);
+  assert.equal(await page.locator('#home-connections #twitch-channel').isVisible(), true);
+  assert.equal(await page.locator('#home-connections #home-speech #volume').isVisible(), true);
+  assert.equal(await page.locator('.stats,.reading,#count,#user-count,#speech-stat,[data-connection-settings],#twitch-disconnect').count(), 0);
+  assert.equal(await page.locator('#comment-list #demo').isVisible(), true);
+});
