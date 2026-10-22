@@ -123,3 +123,27 @@ test('home disconnect still works when another screen clears the saved channel',
   await page.locator('#twitch-connection-toggle').click();
   assert.equal(await page.evaluate(() => window.qaSocket.closed), true);
 });
+
+test('moved connection descriptions stay visible in narrow home cards and follow edition availability', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t);
+  const saved = '接続成功したチャンネルをサービスごとに記憶します。次回は入力欄に復元されます。自動接続は行いません。';
+  const twitch = '公開チャットを匿名で受信します。';
+  const kick = '公開チャットを読み取り専用で受信します。Kick側の接続仕様が変わると利用できなくなる場合があります。';
+  for (const width of [1440, 300, 150]) {
+    await page.setViewportSize({ width, height: 1000 });
+    for (const text of [saved, twitch, kick]) {
+      const description = page.locator('#home-connections').getByText(text, { exact: true });
+      assert.equal(await description.isVisible(), true, text);
+      const bounds = await description.boundingBox();
+      assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width, `${width}px: ${text}`);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `${width}px descriptions fit`);
+  }
+  // The Windows build supplies only Twitch through this same module.
+  await page.route('**/src/shared/app-config.js', route => route.fulfill({ contentType: 'text/javascript', body: "export const enabledPlatforms = Object.freeze(['twitch']); export const twitchClientId = '';" }));
+  await page.reload(); await appReady(page);
+  assert.equal(await page.locator('#home-connections').getByText(saved, { exact: true }).isVisible(), true);
+  assert.equal(await page.locator('#home-connections').getByText(twitch, { exact: true }).isVisible(), true);
+  assert.equal(await page.locator('#home-connections [data-service=kick]').isVisible(), false);
+  assert.equal(await page.locator('#home-connections').getByText(kick, { exact: true }).isVisible(), false);
+});
