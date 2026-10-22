@@ -4,9 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, applyInEditor } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, applyInEditor, saveSetting } from './browser-support.js';
 
-async function fixture(t) {
+async function fixture(t, { initScript } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-layout-'));
   const server = createServer({ customizationDirectory: join(directory, 'customization'), dataDirectory: join(directory, 'data') });
   let browser;
@@ -17,6 +17,7 @@ async function fixture(t) {
   page.on('pageerror', error => process.stderr.write(error.stack + '\n'));
   page.setDefaultTimeout(5000);
   await blockExternalFonts(page);
+  if (initScript) await page.addInitScript(initScript);
   await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
   return page;
 }
@@ -93,4 +94,18 @@ test('U2 setup keeps a compact reminder and edition guidance in the dialog', { s
   assert.equal(await page.locator('#setup-dialog #edition-capabilities').isVisible(), true);
   await page.locator('#complete-setup').click();
   assert.equal(await page.locator('#setup-reminder').isVisible(), false);
+});
+
+test('home disconnect still works when another screen clears the saved channel', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t, { initScript: () => {
+    window.WebSocket = class { constructor() { window.qaSocket = this; } send() {} close() { this.closed = true; } };
+  } });
+  await page.locator('#twitch-channel').fill('qa_channel');
+  await page.locator('#twitch-connection-toggle').click();
+  await page.evaluate(() => window.qaSocket.onmessage({ data: ':server 366 user #qa_channel :End of names' }));
+  await page.locator('#twitch-tab-status').filter({ hasText: '接続済み' }).waitFor();
+  await saveSetting(new URL(page.url()).origin, 'connections', { twitch: '', kick: '' });
+  await page.waitForFunction(() => document.getElementById('twitch-channel').value === '');
+  await page.locator('#twitch-connection-toggle').click();
+  assert.equal(await page.evaluate(() => window.qaSocket.closed), true);
 });

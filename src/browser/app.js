@@ -119,6 +119,7 @@ function renderConnection() {
     const disconnectable = ['connected', 'connecting'].includes(view.kind);
     const toggle = $(`${platform}-connection-toggle`);
     toggle.textContent = disconnectable ? '切断' : '接続する';
+    toggle.formNoValidate = disconnectable;
     $(`${platform}-channel-input`).hidden = disconnectable;
     toggle.setAttribute('aria-label', `${names[platform]}${disconnectable ? 'を切断' : 'に接続'}`);
     toggle.title = disconnectable ? '接続を切断します' : 'チャンネル名を入力して接続します';
