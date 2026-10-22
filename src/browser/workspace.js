@@ -7,7 +7,7 @@ import { OUTPUT_SIZES } from '../shared/output-protocol.js';
 export function initializeWorkspace(designStore, { talk, talkView, onTalkRatioChange = () => {} } = {}) {
   const home = document.querySelector('.workspace');
   talk.classList.add('pokome-workspace');
-  for (const [id, selector] of [['comments', '.comments'], ['now', '.now'], ['reading', '.reading']]) {
+  for (const [id, selector] of [['comments', '.comments'], ['now', '.now']]) {
     const element = home.querySelector(selector);
     element.dataset.panelType = id;
   }

@@ -22,7 +22,7 @@ export function initializeCustomization({ platforms, designStore }) {
     const item = document.createElement('li'); item.textContent = text; list.append(item);
   }
   fields.append(heading, list); capabilities.append(fields);
-  document.getElementById('settings-page').prepend(capabilities);
+  document.getElementById('settings-connection').prepend(capabilities);
   document.getElementById('edition-label').textContent = `ぽこめ Reader / ${edition.title}`;
   document.getElementById('platform-help').textContent = `${edition.title} · ${platforms.includes('kick') ? 'Twitch・Kick' : 'Twitch専用'}`;
 

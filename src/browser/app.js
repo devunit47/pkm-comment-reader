@@ -309,25 +309,36 @@ function renderUsers() {
   }
 }
 
+function settingsSection(name) {
+  for (const key of ['connection', 'speech', 'users', 'backup']) {
+    $(`settings-${key}`).hidden = key !== name;
+    const button = document.querySelector(`[data-settings-section="${key}"]`);
+    if (key === name) button.setAttribute('aria-current', 'true'); else button.removeAttribute('aria-current');
+  }
+  $('settings-platform-control').hidden = !['speech', 'users'].includes(name) || enabledPlatforms.length < 2;
+}
 function page(name) {
-  $('settings-backup-panel').hidden = name !== 'settings';
   $('user-actions').hidePopover();
   document.querySelector('main').dataset.view = name;
-  for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
+  for (const [key, id] of Object.entries({ home: 'home-page', settings: 'preferences-page', studio: 'studio-page', updates: 'updates-page' })) $(id).hidden = key !== name;
   document.querySelectorAll('#app-header [data-page]').forEach(button => {
-    const selected = button.dataset.page === name || name === 'users' && button.dataset.page === 'settings';
+    const selected = button.dataset.page === name;
     button.classList.toggle('active', selected);
     if (selected) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
   });
   document.querySelector('main>header').hidden = name === 'home';
-  $('page-title').textContent = { home: '', users: 'ユーザー管理', settings: '設定', studio: '配信デザイン', updates: '更新情報' }[name];
+  $('page-title').textContent = { home: '', settings: '設定', studio: '配信デザイン', updates: '更新情報' }[name];
+  if (name === 'settings') settingsSection('connection');
 }
+document.querySelectorAll('[data-settings-section]').forEach(button => { button.onclick = () => settingsSection(button.dataset.settingsSection); });
+$('settings-platform').onchange = () => switchPlatform($('settings-platform').value);
 
 function switchPlatform(platform) {
   if (!enabledPlatforms.includes(platform) || active === platform) return;
   $('user-actions').hidePopover();
   stop();
   active = platform;
+  $('settings-platform').value = active;
   const state = states[active];
   document.querySelectorAll('[data-platform]').forEach(button => {
     const selected = button.dataset.platform === active;
@@ -353,7 +364,7 @@ document.querySelectorAll('[data-connection-settings]').forEach(button => {
   button.onclick = () => {
     const platform = button.dataset.connectionSettings;
     switchPlatform(platform);
-    page('settings');
+    page('home');
     $(`${platform}-channel`).focus();
   };
 });
@@ -880,15 +891,15 @@ window.addEventListener('beforeunload', () => {
 
 $('open-setup').onclick = () => $('setup-dialog').showModal();
 $('close-setup').onclick = () => $('setup-dialog').close();
-$('setup-connect').onclick = () => { $('setup-dialog').close(); page('settings'); $(active + '-channel').focus(); };
+$('setup-connect').onclick = () => { $('setup-dialog').close(); page('home'); $(active + '-channel').focus(); };
 $('setup-test-voice').onclick = () => {
   $('setup-dialog').close();
-  page('home');
+  page('settings'); settingsSection('speech');
   $('test-voice').scrollIntoView({ block: 'center' });
   $('test-voice').focus();
   $('test-voice').click();
 };
-$('setup-voice').onclick = () => { $('setup-dialog').close(); page('home'); document.querySelector('.reading').scrollIntoView({ block: 'center' }); $('voice').focus(); };
+$('setup-voice').onclick = () => { $('setup-dialog').close(); page('settings'); settingsSection('speech'); $('voice').focus(); };
 $('complete-setup').onclick = () => { saveSetting('setupComplete', true); $('setup-welcome').hidden = true; $('setup-dialog').close(); };
 $('setup-welcome').hidden = settingsStore.settings.setupComplete;
 $('start-setup').onclick = () => $('setup-dialog').showModal();
