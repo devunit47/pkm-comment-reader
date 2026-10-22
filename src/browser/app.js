@@ -314,9 +314,13 @@ function page(name) {
   $('user-actions').hidePopover();
   document.querySelector('main').dataset.view = name;
   for (const item of ['home', 'users', 'settings', 'studio', 'updates']) $(`${item}-page`).hidden = item !== name;
-  document.querySelectorAll('.nav').forEach(button => button.classList.toggle('active', button.dataset.page === name));
+  document.querySelectorAll('#app-header [data-page]').forEach(button => {
+    const selected = button.dataset.page === name || name === 'users' && button.dataset.page === 'settings';
+    button.classList.toggle('active', selected);
+    if (selected) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current');
+  });
   document.querySelector('main>header').hidden = name === 'home';
-  $('page-title').textContent = { home: '', users: 'ユーザー管理', settings: '接続設定', studio: '配信デザイン', updates: '更新情報' }[name];
+  $('page-title').textContent = { home: '', users: 'ユーザー管理', settings: '設定', studio: '配信デザイン', updates: '更新情報' }[name];
 }
 
 function switchPlatform(platform) {
@@ -353,7 +357,7 @@ document.querySelectorAll('[data-connection-settings]').forEach(button => {
     $(`${platform}-channel`).focus();
   };
 });
-document.querySelectorAll('.nav[data-page]').forEach(button => { button.onclick = () => page(button.dataset.page); });
+document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => page(button.dataset.page); });
 $('search').oninput = () => { states[active].search = $('search').value; render(); };
 $('filter').onchange = () => { states[active].filter = $('filter').value; render(); };
 for (const [id, key] of [['hide-user', 'hidden'], ['mute-user', 'muted']]) {
