@@ -12,28 +12,46 @@ export function initializeOutputPanel({ settingsStore, designStore, publisher, g
   section.className = 'panel studio-form';
   section.id = 'stream-output-panel';
   section.setAttribute('aria-labelledby', 'stream-output-title');
-  section.innerHTML = `<div class="panel-heading"><h2 id="stream-output-title">✧ 配信出力（OBS用）</h2></div><div class="studio-fields">
+  section.innerHTML = `<div class="panel-heading"><h2 id="stream-output-title">配信出力（OBS）</h2><span id="output-connection-count" class="connection-badge">0個</span></div><div class="studio-fields">
     <p class="muted">配信に映す画面だけを、別に開きます。ボタンや案内は映りません。チャットの接続と読み上げはこの画面が行い、出力からは音が出ません。</p>
     <p id="output-status" role="status" aria-live="polite"></p>
-    <fieldset class="studio-category"><legend>① ウィンドウキャプチャで取り込む</legend>
-    <p class="muted">このブラウザで出力ウィンドウを開き、OBSの「ウィンドウキャプチャ」で取り込みます。</p>
-    <label>背景<select id="output-background"><option value="theme">テーマの背景をそのまま映す</option><option value="key">単色にする（OBSのクロマキーで抜く）</option></select></label>
-    <label>抜く色<select id="output-key" aria-describedby="output-key-help"><option value="00ff00">緑</option><option value="ff00ff">マゼンタ</option><option value="0000ff">青</option></select></label>
-    <p class="muted" id="output-key-help">OBSで取り込んだソースに「クロマキー」フィルターを追加し、同じ色を選びます。文字の縁取り・影・半透明の枠には背景色がにじむことがあります。きれいに重ねたい場合は②を使ってください。</p>
-    <p>適用中の出力の大きさ：<span id="output-size-value"></span></p><div><button id="edit-output-size" class="button" type="button">エディタで変更</button></div>
-    <div><button id="open-output-window" class="button" type="button">配信出力ウィンドウを開く</button></div>
-    <ul class="muted output-notes"><li>OBSのキャプチャ方式は「Windows 10（1903以降）」を選んでください。</li><li>上端のアドレス表示は、OBSでソースをAltキーを押しながらドラッグして切り取ります。</li><li>出力ウィンドウを最小化したり、ほかのウィンドウで完全に隠したりすると、表示が止まることがあります。</li><li>画面より大きいサイズは、ブラウザが画面に収まる大きさに縮めます。実際の大きさは上の状態表示で確認できます。</li></ul>
-    </fieldset>
-    <fieldset class="studio-category"><legend>② OBSのブラウザソースで取り込む（背景を透明にする）</legend>
+
+<div class="output-tabs" role="tablist" aria-label="OBSへの取り込み方法"><button id="output-source-tab" class="button" type="button" role="tab" aria-controls="output-source-panel" aria-selected="true">ブラウザソース（おすすめ）</button><button id="output-window-tab" class="button" type="button" role="tab" aria-controls="output-window-panel" aria-selected="false" tabindex="-1">ウィンドウキャプチャ</button></div>    <div id="output-source-panel" role="tabpanel" aria-labelledby="output-source-tab">
     <p class="muted">設定は普段のブラウザと共通です。コメントの接続と読み上げをOBSで行うため、この操作画面をOBSのドックで開きます。</p>
-    <ol class="muted output-notes"><li>OBSの「ドック」→「カスタムブラウザドック」に、操作画面のURLを追加します。チャンネルへの接続は、そのドックで行います。接続先・音声・ユーザー管理・見た目の設定は普段のブラウザと共有します。</li><li>シーンに「ブラウザ」ソースを追加し、出力のURLと大きさ（例：1920 × 1080）を入力します。</li><li>読み上げの音はドックから鳴ります。配信に音が入っているか、OBSの音声ミキサーで確認してください。</li></ol>
+    <details><summary>OBSの設定手順と音声</summary><ol class="muted output-notes"><li>OBSの「ドック」→「カスタムブラウザドック」に、操作画面のURLを追加します。チャンネルへの接続は、そのドックで行います。接続先・音声・ユーザー管理・見た目の設定は普段のブラウザと共有します。</li><li>シーンに「ブラウザ」ソースを追加し、出力のURLと大きさ（例：1920 × 1080）を入力します。</li><li>読み上げの音はドックから鳴ります。配信に音が入っているか、OBSの音声ミキサーで確認してください。</li></ol></details>
     <label>操作画面のURL（ドック用）<input id="output-control-url" readonly></label><div><button id="copy-control-url" class="button" type="button">操作画面のURLをコピー</button></div>
     <label>出力のURL（ブラウザソース用）<input id="output-source-url" readonly></label><div><button id="copy-source-url" class="button" type="button">出力のURLをコピー</button></div>
     <p class="muted">OBS以外のブラウザで出力のURLを開くと、透明の部分は白く見えます。</p>
-    </fieldset></div>`;
-  document.getElementById('studio-page').prepend(section);
+    </div>    <div id="output-window-panel" role="tabpanel" aria-labelledby="output-window-tab" hidden>
+    <p class="muted">このブラウザで出力ウィンドウを開き、OBSの「ウィンドウキャプチャ」で取り込みます。</p>
+    <label>背景<select id="output-background"><option value="theme">テーマの背景をそのまま映す</option><option value="key">単色にする（OBSのクロマキーで抜く）</option></select></label>
+    <label>抜く色<select id="output-key" aria-describedby="output-key-help"><option value="00ff00">緑</option><option value="ff00ff">マゼンタ</option><option value="0000ff">青</option></select></label>
+    <p class="muted" id="output-key-help">OBSで取り込んだソースに「クロマキー」フィルターを追加し、同じ色を選びます。文字の縁取り・影・半透明の枠には背景色がにじむことがあります。きれいに重ねたい場合はブラウザソースを使ってください。</p>
+    <p>適用中の出力の大きさ：<span id="output-size-value"></span></p><div><button id="edit-output-size" class="button" type="button">エディタで変更</button></div>
+    <div><button id="open-output-window" class="button" type="button">配信出力ウィンドウを開く</button></div>
+    <details><summary>ウィンドウキャプチャの詳しい説明</summary><ul class="muted output-notes"><li>OBSのキャプチャ方式は「Windows 10（1903以降）」を選んでください。</li><li>上端のアドレス表示は、OBSでソースをAltキーを押しながらドラッグして切り取ります。</li><li>出力ウィンドウを最小化したり、ほかのウィンドウで完全に隠したりすると、表示が止まることがあります。</li><li>画面より大きいサイズは、ブラウザが画面に収まる大きさに縮めます。実際の大きさは上の状態表示で確認できます。</li></ul></details>
+    </div></div>`;
+  document.getElementById('studio-top').append(section);
   const $ = id => section.querySelector(`#${id}`);
   const status = $('output-status');
+  const tabs = ['source', 'window'];
+  function selectTab(name) {
+    for (const key of tabs) {
+      const selected = key === name, tab = $(`output-${key}-tab`);
+      tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
+      $(`output-${key}-panel`).hidden = !selected;
+    }
+  }
+  for (const key of tabs) {
+    const tab = $(`output-${key}-tab`);
+    tab.onclick = () => selectTab(key);
+    tab.onkeydown = event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 'source' : event.key === 'End' ? 'window' : key === 'source' ? 'window' : 'source';
+      selectTab(next); $(`output-${next}-tab`).focus();
+    };
+  }
   let message = '';
   $('output-control-url').value = new URL('./', location.href).href;
   $('output-source-url').value = outputUrl(location.href, { background: 'transparent' });
@@ -80,6 +98,7 @@ export function initializeOutputPanel({ settingsStore, designStore, publisher, g
   }
 
   function setStatus(value) {
+    $('output-connection-count').textContent = `${value.outputs.length}個`;
     const parts = [];
     if (!value.supported) parts.push('このブラウザは配信出力に対応していません。');
     else if (!value.outputs.length) parts.push('配信出力：未接続');
@@ -90,7 +109,7 @@ export function initializeOutputPanel({ settingsStore, designStore, publisher, g
     // A chroma key leaves fringes around a half-transparent comment panel.
     const look = getStudio();
     if (preferences.background === 'key' && look && ['light', 'dark'].includes(look.commentPanel) && look.commentPanelOpacity < 100) {
-      parts.push('コメント欄のパネルが半透明のため、単色の背景を抜くと色がにじみます。不透明度を100%にするか、②のブラウザソースを使ってください。');
+      parts.push('コメント欄のパネルが半透明のため、単色の背景を抜くと色がにじみます。不透明度を100%にするか、ブラウザソースを使ってください。');
     }
     if (value.otherControllers) parts.push('別の操作画面も配信出力に接続しています。表示が切り替わらないよう、操作画面は1つだけ開いてください。');
     if (message) parts.push(message);

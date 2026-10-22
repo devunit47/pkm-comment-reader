@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, applyInEditor } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-layout-'));
@@ -62,4 +62,25 @@ test('U2 home keeps connection and quick speech beside comments and current sele
   assert.equal(await page.locator('#home-connections #home-speech #volume').isVisible(), true);
   assert.equal(await page.locator('.stats,.reading,#count,#user-count,#speech-stat,[data-connection-settings],#twitch-disconnect').count(), 0);
   assert.equal(await page.locator('#comment-list #demo').isVisible(), true);
+});
+
+test('U2 design puts the applied scene beside OBS and presets below without registering an output', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t);
+  await page.locator('[data-page=studio]').click();
+  assert.equal(await page.locator('#studio-top > #design-preview-editor').count(), 1);
+  assert.equal(await page.locator('#studio-top > #stream-output-panel').count(), 1);
+  const sample = page.frameLocator('#current-design-frame');
+  await sample.locator('#talk-stage').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#current-design-frame').getAttribute('tabindex'), '-1');
+  assert.equal(await page.locator('#output-connection-count').textContent(), '0個');
+  await page.getByRole('tab', { name: 'ウィンドウキャプチャ', exact: true }).click();
+  assert.equal(await page.locator('#output-background').isVisible(), true);
+  await page.getByRole('tab', { name: 'ブラウザソース（おすすめ）', exact: true }).click();
+  assert.equal(await page.locator('#output-source-url').isVisible(), true);
+  assert.equal(await page.locator('#output-background').isVisible(), false);
+  const top = await page.locator('#studio-top').boundingBox(), presets = await page.locator('#design-presets').boundingBox();
+  assert.ok(presets.y >= top.y + top.height);
+  await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
+  await sample.locator('#talk-stage').waitFor({ state: 'attached' });
+  assert.equal(await page.locator('#output-connection-count').textContent(), '0個');
 });
