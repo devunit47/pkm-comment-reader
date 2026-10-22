@@ -846,7 +846,7 @@ function reflectSettings(detail) {
   }
   if (voiceChanged || engineChanged || optionsChanged || usersChanged || speechDisabled) stop();
   if (fields.includes('historyLimit')) applyHistoryLimit(value.historyLimit, false);
-  if (fields.includes('setupComplete')) $('setup-welcome').hidden = value.setupComplete;
+  if (fields.includes('setupComplete')) $('setup-reminder').hidden = value.setupComplete;
   $('auto-speech').checked = states[active].autoSpeech;
   if (voiceChanged || engineChanged) loadVoices(false, !detail.failed);
   renderSpeechSettings(); renderSpeechOptions(); render();
@@ -884,8 +884,8 @@ $('setup-test-voice').onclick = () => {
   $('test-voice').click();
 };
 $('setup-voice').onclick = () => { $('setup-dialog').close(); page('settings'); settingsSection('speech'); $('voice').focus(); };
-$('complete-setup').onclick = () => { saveSetting('setupComplete', true); $('setup-welcome').hidden = true; $('setup-dialog').close(); };
-$('setup-welcome').hidden = settingsStore.settings.setupComplete;
+$('complete-setup').onclick = () => { saveSetting('setupComplete', true); $('setup-reminder').hidden = true; $('setup-dialog').close(); };
+$('setup-reminder').hidden = settingsStore.settings.setupComplete;
 $('start-setup').onclick = () => $('setup-dialog').showModal();
 $('backup-settings').onclick = () => {
   try {

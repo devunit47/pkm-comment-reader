@@ -84,3 +84,13 @@ test('U2 design puts the applied scene beside OBS and presets below without regi
   await sample.locator('#talk-stage').waitFor({ state: 'attached' });
   assert.equal(await page.locator('#output-connection-count').textContent(), '0個');
 });
+
+test('U2 setup keeps a compact reminder and edition guidance in the dialog', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t);
+  assert.equal(await page.locator('body > #setup-reminder').isVisible(), true);
+  assert.equal(await page.locator('#setup-welcome,#settings-connection #edition-capabilities').count(), 0);
+  await page.locator('#open-setup').click();
+  assert.equal(await page.locator('#setup-dialog #edition-capabilities').isVisible(), true);
+  await page.locator('#complete-setup').click();
+  assert.equal(await page.locator('#setup-reminder').isVisible(), false);
+});
