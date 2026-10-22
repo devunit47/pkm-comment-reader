@@ -72,6 +72,7 @@ test('U2 design puts the applied scene beside OBS and presets below without regi
   assert.equal(await page.locator('#studio-top > #stream-output-panel').count(), 1);
   const sample = page.frameLocator('#current-design-frame');
   await sample.locator('#talk-stage').waitFor({ state: 'attached' });
+  assert.equal((await page.locator('#current-design-name').textContent()).trim().length > 0, true);
   assert.equal(await page.locator('#current-design-frame').getAttribute('tabindex'), '-1');
   assert.equal(await page.locator('#output-connection-count').textContent(), '0個');
   await page.getByRole('tab', { name: 'ウィンドウキャプチャ', exact: true }).click();
