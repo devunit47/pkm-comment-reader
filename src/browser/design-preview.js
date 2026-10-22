@@ -125,7 +125,8 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
   const shadow = host.attachShadow({ mode: 'open' });
   shadow.innerHTML = `<style>${STYLE}${CANVAS_STYLE}${SNAP_STYLE}#current-design-preview{position:relative;width:100%;overflow:hidden;background:var(--ui-bg);margin:12px 0;pointer-events:none}#current-design-frame{position:absolute;inset:0;border:0;transform-origin:top left;pointer-events:none}.entry h2{font-size:20px}#current-design-name{font-weight:700;font-size:16px}</style>${MARKUP}`;
   shadow.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
-  const $ = id => shadow.getElementById(id), dialog = $('design-dialog'), frame = $('design-preview-frame');
+  const $ = id => shadow.getElementById(id), dialog = $('design-dialog');
+  let frame = $('design-preview-frame');
   const status = message => { $('design-status').textContent = message; };
   const design = () => session.design;
   const ratioOverlays = (r = ratio) => talkOverlays(design(), r);
@@ -486,7 +487,10 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
   function close() {
     commentResizeObserver?.disconnect(); commentResizeObserver = null;
     finishConfirmation(false);
-    invalidate(); session = null; saving = false; previewStage = null; renderedStudio = null; renderedActorImage = null; renderedRatio = null; frameDoc = null; frame.removeAttribute('srcdoc');
+    invalidate(); session = null; saving = false; previewStage = null; renderedStudio = null; renderedActorImage = null; renderedRatio = null; frameDoc = null;
+    // Drop the editor's frame history without destroying the applied sample.
+    const emptyFrame = frame.cloneNode(false); emptyFrame.removeAttribute('srcdoc');
+    frame.replaceWith(emptyFrame); frame = emptyFrame;
     presetDraft = null; presetApply = null; compiledSource = ''; cssError = '';
     if (dialog.open) dialog.close();
     document.getElementById('studio-page').classList.remove('editing-design');
