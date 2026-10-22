@@ -904,7 +904,14 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
     renderStageAppearance(currentStage, resolveStudioImages(studio), defaultImage, { actorImage: talkActorImage(applied, ratio) });
     renderOverlays(currentStage, resolveOverlayAssets(talkOverlays(applied, ratio)));
     applyTalkLayout(currentStage, talkLayout(applied, ratio));
-    currentTheme.textContent = compileTheme(applied.theme);
+    try {
+      currentTheme.textContent = compileTheme(applied.theme);
+      $('current-design-error').hidden = true;
+    } catch (error) {
+      currentTheme.textContent = '';
+      $('current-design-error').textContent = `テーマCSSを見本に適用できません：${error.message}`;
+      $('current-design-error').hidden = false;
+    }
     renderStageComments(currentStage.querySelector('#stage-chat-list'), selectOutputComments(SAMPLE_COMMENTS, studio, 0, false), studio);
     renderPinnedComment(currentStage, SAMPLE_PINNED, studio);
     currentStage.querySelector('#stage-count').textContent = `${SAMPLE_COMMENTS.length} COMMENTS`;

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, applyInEditor, saveSetting } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, applyInEditor, saveDesign, saveSetting } from './browser-support.js';
 
 async function fixture(t, { initScript } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-layout-'));
@@ -94,6 +94,19 @@ test('U2 setup keeps a compact reminder and edition guidance in the dialog', { s
   assert.equal(await page.locator('#setup-dialog #edition-capabilities').isVisible(), true);
   await page.locator('#complete-setup').click();
   assert.equal(await page.locator('#setup-reminder').isVisible(), false);
+});
+
+test('applied design sample rejects stored invalid CSS without breaking design updates', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t), errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.locator('[data-page=studio]').click();
+  await page.frameLocator('#current-design-frame').locator('#talk-stage').waitFor({ state: 'attached' });
+  await saveDesign(new URL(page.url()).origin, design => ({ ...design, theme: '@layer blocked {}' }));
+  await page.locator('#current-design-error').waitFor({ state: 'visible' });
+  await saveDesign(new URL(page.url()).origin, design => ({ ...design, theme: '', name: '更新したデザイン' }));
+  await page.locator('#current-design-name').filter({ hasText: '更新したデザイン' }).waitFor();
+  assert.equal(await page.locator('#current-design-error').isVisible(), false);
+  assert.deepEqual(errors, []);
 });
 
 test('home disconnect still works when another screen clears the saved channel', { skip: !browserAvailable }, async t => {
