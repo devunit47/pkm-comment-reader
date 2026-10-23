@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { openSettings, appReady, blockExternalFonts, browserAvailable, chromium, executablePath, closeBrowser } from './browser-support.js';
+import { saveSetting, openSettings, appReady, blockExternalFonts, browserAvailable, chromium, executablePath, closeBrowser } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -17,7 +17,7 @@ function contrastFailures() {
   const contrast = (a, b) => { const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (light + .05) / (dark + .05); };
   const failures = [];
   const roots = [document, ...[...document.querySelectorAll('*')].map(element => element.shadowRoot).filter(Boolean)];
-  for (const element of roots.flatMap(root => [...root.querySelectorAll('h1,h2,h3,p,small,label,button,input,select,a,.connection-badge')])) {
+  for (const element of roots.flatMap(root => [...root.querySelectorAll('h1,h2,h3,p,small,label,button,input,select,a,.connection-badge,.user-state')])) {
     if (!element.checkVisibility() || !element.getClientRects().length || element.matches(':disabled')) continue;
     const view = getComputedStyle(element), color = rgb(view.color);
     if (!color) continue;
@@ -49,6 +49,7 @@ browserTest('operating UI follows the system color scheme and keeps text contras
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  await saveSetting(base, 'users', { twitch: { QA: { hidden: true, muted: true } }, kick: {} });
   for (const colorScheme of ['dark', 'light']) {
     const context = await browser.newContext({ colorScheme, viewport: { width: 1440, height: 1000 } });
     const page = await context.newPage();
@@ -68,6 +69,21 @@ browserTest('operating UI follows the system color scheme and keeps text contras
       assert.ok(await page.locator('main > header h1').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 21, 'page heading retains its type hierarchy');
       const failures = await page.evaluate(contrastFailures);
       assert.deepEqual(failures, [], `${colorScheme}/${name} contrast`);
+      if (name === 'settings:users') {
+        assert.equal(await page.locator('.user-state').count(), 2);
+        for (const filter of ['hidden', 'muted', 'all']) {
+          await page.locator(`[data-user-filter=${filter}]`).click();
+          await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
+          assert.deepEqual(await page.evaluate(contrastFailures), [], `${colorScheme}/users/${filter} contrast`);
+        }
+      }
+      if (name === 'home') {
+        for (const filter of ['first', 'all']) {
+          await page.locator(`[data-comment-filter=${filter}]`).click();
+          await page.waitForFunction(() => document.getAnimations().every(animation => animation.playState !== 'running'));
+          assert.deepEqual(await page.evaluate(contrastFailures), [], `${colorScheme}/comments/${filter} contrast`);
+        }
+      }
       if (name === 'studio') {
         const primaryCount = await page.evaluate(() => {
           const roots = [document, ...[...document.querySelectorAll('*')].map(element => element.shadowRoot).filter(Boolean)];

@@ -298,15 +298,38 @@ function toggleRule(user, key) {
   notify(`${names[active]}: ${user} の設定を変更しました。`);
 }
 
+let usersFilter = 'all';
+$('users-search').oninput = renderUsers;
+document.querySelectorAll('[data-user-filter]').forEach(button => {
+  button.onclick = () => { usersFilter = button.dataset.userFilter; renderUsers(); };
+});
+
 function renderUsers() {
   const state = states[active];
   const container = $('user-list');
   container.replaceChildren();
   const all = new Set([...state.seen, ...Object.keys(state.rules)]);
-  if (!all.size) container.append(make('p', 'empty', 'コメントを受信するとユーザーが表示されます。'));
-  for (const user of all) {
+  const labels = { all: 'すべて', hidden: '非表示', muted: '読み上げ除外' };
+  document.querySelectorAll('[data-user-filter]').forEach(button => {
+    const key = button.dataset.userFilter;
+    const count = key === 'all' ? all.size : [...all].filter(user => userRule(state, user)[key]).length;
+    button.textContent = `${labels[key]}（${count}）`;
+    button.setAttribute('aria-pressed', String(key === usersFilter));
+  });
+  const query = $('users-search').value.toLowerCase();
+  const users = [...all].filter(user => user.toLowerCase().includes(query) && (usersFilter === 'all' || userRule(state, user)[usersFilter]));
+  if (!users.length) container.append(make('p', 'empty', all.size ? '条件に合うユーザーはいません。' : 'コメントを受信するとユーザーが表示されます。'));
+  for (const user of users) {
     const row = make('div', 'user-row', '');
-    row.append(make('strong', '', user));
+    const identity = make('div', 'user-identity', '');
+    identity.append(make('strong', '', user));
+    for (const [key, status] of [['hidden', 'error'], ['muted', 'connecting']]) {
+      if (!userRule(state, user)[key]) continue;
+      const badge = make('span', 'connection-badge user-state', labels[key]);
+      badge.dataset.state = status;
+      identity.append(badge);
+    }
+    row.append(identity);
     for (const [key, label] of [['hidden', '非表示'], ['muted', '読み上げ除外']]) {
       const button = make('button', 'button', userRule(state, user)[key] ? `${label}を解除` : label);
       button.onclick = () => toggleRule(user, key);

@@ -312,3 +312,6 @@ body.talk-mode>#app-header{display:none}
 
 /* Filters share the existing operation button palette and native keyboard behavior. */
 .filter-buttons{display:flex;flex-wrap:wrap;gap:8px;min-width:0}.filter-buttons .button{min-height:44px;max-width:100%;min-width:0;overflow-wrap:anywhere}.filter-buttons [aria-pressed=true]{border-color:var(--ui-accent);background:var(--ui-accent);color:var(--ui-on-accent);font-weight:700}.filter-buttons [aria-pressed=true]:hover{background:var(--ui-accent-hover)}
+
+.users-tools{display:grid;gap:12px;padding:16px 24px}.user-identity{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex:1;min-width:0}.user-identity strong{flex-basis:100%;overflow-wrap:anywhere}.user-state{max-width:100%;white-space:normal;overflow-wrap:anywhere}.user-row{flex-wrap:wrap}.user-row>.button{min-height:44px;max-width:100%;overflow-wrap:anywhere}
+@media(max-width:300px){.users-tools,.user-row{padding:12px 8px}.user-identity{flex-basis:100%}}

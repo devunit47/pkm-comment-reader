@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts } from './browser-support.js';
+import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, saveSetting, waitForSettings, openSettings } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-details-'));
@@ -16,6 +16,10 @@ async function fixture(t) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.setDefaultTimeout(5000);
   await blockExternalFonts(page);
+  await page.addInitScript(() => {
+    window.qaSockets = [];
+    window.WebSocket = class { constructor() { window.qaSockets.push(this); } send() {} close() {} };
+  });
   await page.goto(`http://127.0.0.1:${server.address().port}`); await appReady(page);
   return page;
 }
@@ -48,4 +52,42 @@ test('U3 comment filter buttons preserve search, service state and keyboard sele
   await page.reload(); await appReady(page);
   assert.equal(await page.locator('[data-comment-filter=all]').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('#search').inputValue(), '');
+});
+
+test('U3 user search and counted filters show both states, distinguish empty results and keep rule saving', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t), base = new URL(page.url()).origin;
+  await page.locator('#twitch-channel').fill('qa_users'); await page.locator('#twitch-connection-toggle').click();
+  await openSettings(page, 'users');
+  assert.equal(await page.locator('#users-search').count(), 1);
+  assert.match(await page.locator('#user-list').textContent(), /コメントを受信すると/);
+  await saveSetting(base, 'users', { twitch: { Alpha: { hidden: true }, beta: { muted: true }, Both: { hidden: true, muted: true }, '<img src=x>': {} }, kick: { KickOnly: { hidden: true } } });
+  await page.locator('#user-list .user-row').nth(3).waitFor();
+  assert.deepEqual(await page.locator('#user-filters button').allTextContents(), ['すべて（4）', '非表示（2）', '読み上げ除外（2）']);
+  const both = page.locator('.user-row').filter({ has: page.getByText('Both', { exact: true }) });
+  assert.deepEqual(await both.locator('.user-state').allTextContents(), ['非表示', '読み上げ除外']);
+  assert.equal(await page.locator('#user-list img').count(), 0);
+  const plain = page.locator('.user-row').filter({ has: page.getByText('<img src=x>', { exact: true }) });
+  assert.equal(await plain.locator('.user-state').count(), 0);
+  await page.locator('#users-search').fill('aLP');
+  assert.deepEqual(await page.locator('.user-row strong').allTextContents(), ['Alpha']);
+  await page.locator('[data-user-filter=hidden]').focus(); await page.keyboard.press('Enter');
+  assert.equal(await page.locator('[data-user-filter=hidden]').getAttribute('aria-pressed'), 'true');
+  assert.deepEqual(await page.locator('.user-row strong').allTextContents(), ['Alpha']);
+  await page.locator('[data-user-filter=muted]').click();
+  assert.equal(await page.locator('.user-row').count(), 0);
+  assert.equal(await page.locator('#user-list .empty').textContent(), '条件に合うユーザーはいません。');
+  assert.equal(await page.locator('[data-user-filter=all]').textContent(), 'すべて（4）');
+  await page.locator('#users-search').fill('');
+  await both.getByRole('button', { name: '読み上げ除外を解除', exact: true }).click();
+  await waitForSettings(base, value => value.users.twitch.Both.muted === false);
+  assert.deepEqual(await page.locator('.user-row strong').allTextContents(), ['beta']);
+  assert.equal(await page.locator('[data-user-filter=muted]').textContent(), '読み上げ除外（1）');
+  await page.locator('#settings-platform').selectOption('kick');
+  assert.deepEqual(await page.locator('#user-filters button').allTextContents(), ['すべて（4）', '非表示（1）', '読み上げ除外（0）']);
+  assert.equal(await page.locator('[data-user-filter=muted]').getAttribute('aria-pressed'), 'true');
+  await page.locator('[data-user-filter=all]').click();
+  assert.deepEqual(await page.locator('.user-row strong').allTextContents(), ['kick_viewer', 'green_leaf', 'minto_0123', 'KickOnly']);
+  await page.reload(); await appReady(page); await openSettings(page, 'users');
+  assert.equal(await page.locator('#users-search').inputValue(), '');
+  assert.equal(await page.locator('[data-user-filter=all]').getAttribute('aria-pressed'), 'true');
 });
