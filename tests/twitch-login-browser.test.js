@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, saveSetting, saveDesign, matrixCases } from './browser-support.js';
+import { openSettings, closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, saveSetting, saveDesign, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, options = {}, ports = 1) {
@@ -44,7 +44,7 @@ async function fixture(t, options = {}, ports = 1) {
     await blockExternalFonts(page);
     page.on('pageerror', error => errors.push(error.message));
     await prepare?.(page);
-    await page.goto(base); await appReady(page);
+    await page.goto(base); await appReady(page); await openSettings(page);
     return page;
   }
   async function restart() {
@@ -64,7 +64,7 @@ async function snapshot(page, name) {
   await page.locator('#twitch-login').screenshot({ path: join(process.env.LOGIN_QA_DIRECTORY, `${name}-login.png`) });
 }
 
-browserTest('Twitch login states stay on the home page and fit regular and 150px dock widths', async t => {
+browserTest('Twitch login states stay in settings and fit regular and 150px dock widths', async t => {
   const { bases, open, errors } = await fixture(t);
   const states = {
     disabled: { status: 'disabled' },
@@ -91,7 +91,7 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
     await stateIs(page, status);
     await page.emulateMedia({ colorScheme });
     await page.emulateMedia({ colorScheme });
-    const appearance = () => page.locator(['main', '.sidebar', '.workspace', '#twitch-login', '#twitch-login-status'].join(',')).evaluateAll(elements => elements.map(element => {
+    const appearance = () => page.locator(['main', '#app-header', '.workspace', '#twitch-login', '#twitch-login-status'].join(',')).evaluateAll(elements => elements.map(element => {
       const style = getComputedStyle(element);
       return { id: element.id || element.className, color: style.color, background: style.backgroundColor, border: style.borderColor, visible: element.checkVisibility() };
     }));
@@ -110,7 +110,7 @@ browserTest('Twitch login states stay on the home page and fit regular and 150px
       assert.deepEqual(await appearance(), before, colorScheme + ' theme CSS leaves operating colors and visibility unchanged');
     }
     await page.setViewportSize({ width, height: 1000 });
-    assert.equal(await page.locator('#twitch-login').isVisible(), true, 'login is directly visible on home');
+    assert.equal(await page.locator('#twitch-login').isVisible(), true, 'login is directly visible in settings connection');
     assert.match(await page.locator('#twitch-login').textContent(), /バッジ画像を使うため。コメントの受信には不要/);
     if (status === 'disabled') {
       assert.match(await page.locator('#twitch-login-status').textContent(), /このビルドでは Twitch のログインを使えません/);
@@ -183,7 +183,7 @@ browserTest('login commands handle busy, cancel, failed operations, countdown an
   assert.match(await page.locator('#twitch-login-remaining').textContent(), /残り 0分59秒/);
   await page.locator('#twitch-login-cancel').click(); await stateIs(page, 'signed-out');
   state = { status: 'pending', user_code: 'ABCD-EFGH', verification_uri: 'javascript:alert(1)', expiresAt: Date.now() + 60000 };
-  await page.reload(); await appReady(page);
+  await page.reload(); await appReady(page); await openSettings(page);
   await page.locator('#twitch-login-error').filter({ hasText: '状態を確認できません' }).waitFor();
   assert.equal(await page.locator('#twitch-login-link').getAttribute('href'), null);
   assert.deepEqual(actions, ['start', 'start', 'cancel']);
@@ -235,6 +235,7 @@ browserTest('stalled or failed login requests leave app startup and anonymous Tw
   const page = await open(undefined, page => page.route('**/api/auth/twitch', async route => {
     await release.promise; await route.fulfill({ status: 503, json: { error: 'private-upstream-secret' } });
   }));
+  await page.locator('[data-page="home"]').click();
   await page.locator('#twitch-connection-toggle').click();
   await page.evaluate(() => {
     const socket = window.testSockets[0]; socket.onopen();
@@ -244,7 +245,9 @@ browserTest('stalled or failed login requests leave app startup and anonymous Tw
   await page.locator('#comment-list .message').filter({ hasText: 'ログインの応答待ちでも受信' }).waitFor();
   assert.ok((await page.evaluate(() => window.testSockets[0].sent)).some(line => /^NICK justinfan/.test(line)));
   release.resolve();
+  await openSettings(page);
   await page.locator('#twitch-login-error').filter({ hasText: '状態を確認できません' }).waitFor();
+  await page.locator('[data-page="home"]').click();
   await page.evaluate(() => window.testSockets[0].onmessage({ data: '@display-name=視聴者 :viewer!viewer@host PRIVMSG #anonymous_channel :ログインが失敗しても受信' }));
   await page.locator('#comment-list .message').filter({ hasText: 'ログインが失敗しても受信' }).waitFor();
   assert.equal(await page.evaluate(() => !!window.testSockets[0].closed), false);
@@ -324,7 +327,7 @@ browserTest('temporary Twitch validation failures keep the account logged in and
     await fake.clock.tick(3600000);
     assert.equal(validations(), before + 1);
     assert.equal((await (await fetch(`${bases[0]}/api/auth/twitch`)).json()).status, 'signed-in', `${failure} retains the account`);
-    await page.reload(); await appReady(page); await stateIs(page, 'signed-in');
+    await page.reload(); await appReady(page); await openSettings(page); await stateIs(page, 'signed-in');
     assert.match(await page.locator('#twitch-login-status').textContent(), /ログイン中：確認アカウント/);
     await fake.clock.tick(299999); assert.equal(validations(), before + 1);
     fake.validation = 'ok'; await fake.clock.tick(1);
@@ -346,7 +349,7 @@ browserTest('restarting a server during device authorization clears the stale co
   assert.equal(await page.locator('#twitch-login-code').textContent(), 'CODE-0001');
   const base = await restart();
   assert.notEqual(base, bases[0], 'restart uses another port and the same private folders');
-  await page.goto(base); await appReady(page);
+  await page.goto(base); await appReady(page); await openSettings(page);
   assert.equal((await (await fetch(`${base}/api/auth/twitch`)).json()).status, 'signed-out');
   await stateIs(page, 'signed-out');
   assert.equal(await page.locator('#twitch-login-start').isVisible(), true);

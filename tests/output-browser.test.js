@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
+import { openOutputSettings, openSettings, closeBrowser, blockExternalFonts, chromium, executablePath, browserAvailable, saveStudio, readDesign, waitForDesign, appReady, editorTarget, editorThemeCSS, closeEditor, applyInEditor, temporaryDataDirectory, saveSetting, saveDesign, readSettings, talkStage, matrixCases } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -72,7 +72,7 @@ browserTest('Twitch event controls retain notice-only pins, speak only bodies an
   const send = async (tags, body = '') => page.evaluate(({ tags, body }) => window.testSockets[0].onmessage({ data: `@${tags} :tmi.twitch.tv USERNOTICE #qa_channel${body ? ` :${body}` : ''}` }), { tags, body });
   await send('id=sub;msg-id=sub;login=viewer;display-name=Viewer;msg-param-sub-plan=1000');
   await page.locator('#comment-list [data-event="sub"]').waitFor();
-  assert.match(await page.locator('#count').textContent(), /^0 /);
+  assert.match(await talkStage(page).locator('#stage-count').textContent(), /^0 /);
   assert.deepEqual(await page.evaluate(() => window.spoken), []);
   await page.locator('#comment-list .message').first().click();
   assert.equal(await page.locator('#read-selected').isDisabled(), true);
@@ -107,7 +107,7 @@ browserTest('Twitch event controls retain notice-only pins, speak only bodies an
   await page.keyboard.press('Escape');
   await page.evaluate(() => window.testSockets[0].onmessage({ data: '@bits=100 :viewer!viewer@host PRIVMSG #qa_channel :Cheer100' }));
   await page.locator('#filter').selectOption('first'); assert.equal(await page.locator('#comment-list .message').count(), 1);
-  assert.match(await page.locator('#count').textContent(), /^1 /);
+  assert.match(await talkStage(page).locator('#stage-count').textContent(), /^1 /);
   assert.equal(JSON.stringify(await readSettings(url)).includes('AnAnonymousGifter'), false);
   assert.equal(JSON.stringify(await readDesign(url)).includes('受取人'), false);
   assert.deepEqual(errors, []);
@@ -153,7 +153,7 @@ browserTest('pin controls replace and release independent service comments, surv
   await page.locator('#auto-speech').uncheck();
   const first = await page.locator('#comment-list .message').first().textContent();
   const second = await page.locator('#comment-list .message').nth(1).textContent();
-  const count = await page.locator('#count').textContent();
+  const count = await talkStage(page).locator('#stage-count').textContent();
   await page.locator('#comment-list .message').first().click();
   assert.equal(await page.locator('#pinned-empty').isVisible(), true, 'selection alone does not pin');
   await page.locator('#pin-comment').click();
@@ -168,7 +168,7 @@ browserTest('pin controls replace and release independent service comments, surv
   await page.locator('#comment-list .message').nth(1).click();
   assert.equal(await page.locator('#pin-comment').textContent(), 'このコメントの固定を解除');
   await page.locator('#pin-comment').click(); await waitUnpinned(output);
-  assert.equal(await page.locator('#count').textContent(), count);
+  assert.equal(await talkStage(page).locator('#stage-count').textContent(), count);
   assert.deepEqual(await page.evaluate(() => window.spoken), []);
   await pinComment(page); await waitPinned(output, first);
   await output.reload(); await waitPinned(output, first);
@@ -535,8 +535,11 @@ browserTest('top output keeps a long newest card scrollable and preview applies 
 browserTest('output window mirrors visible comments without controls and follows hiding and appearance changes', async t => {
   const { context, page, errors } = await fixture(t);
   await page.locator('.nav[data-page="studio"]').click();
+  await openOutputSettings(page);
   await page.locator('#output-background').selectOption('key');
+  await openOutputSettings(page);
   await page.locator('#output-key').selectOption('ff00ff');
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.waitForLoadState();
@@ -557,6 +560,7 @@ browserTest('output window mirrors visible comments without controls and follows
 
   // Opening again reuses the named window instead of adding another output.
   const pages = context.pages().length;
+  await openOutputSettings(page);
   await page.locator('#open-output-window').click();
   await page.waitForTimeout(300);
   assert.equal(context.pages().length, pages);
@@ -628,6 +632,7 @@ browserTest('transparent output stays empty and transparent without a control pa
 browserTest('output keeps the newest comment visible after shrinking', async t => {
   const { context, page, errors } = await fixture(t);
   await page.locator('.nav[data-page="studio"]').click();
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.setViewportSize({ width: 1280, height: 720 });
@@ -649,12 +654,14 @@ browserTest('reopening the output window applies a newly chosen size', async t =
   const { context, page, errors } = await fixture(t, { viewport: null, args: ['--screen-info={0,0 3000x2400}'] });
   await page.locator('.nav[data-page="studio"]').click();
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1280x720'));
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.waitForLoadState();
   const size = () => output.evaluate(() => [innerWidth, innerHeight]);
   assert.deepEqual(await size(), [1280, 720]);
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
+  await openOutputSettings(page);
   await page.locator('#open-output-window').click();
   await output.waitForFunction(() => innerWidth === 1080 && innerHeight === 1920);
   await page.locator('#output-status').filter({ hasText: '1080 × 1920' }).waitFor();
@@ -813,7 +820,7 @@ browserTest('presets preserve ratio layouts and a live pin without persisting it
     const design = await readDesign(url); assert.deepEqual(design.ratios[ratio].layout, layouts[ratio].layout);
     assert.ok(!JSON.stringify(design).includes(marker)); assert.ok(!JSON.stringify(design).includes('pin_fixture'));
   }
-  await page.locator('[data-page="settings"]').click();
+  await openSettings(page, 'backup');
   const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#backup-settings').click()]);
   const backup = await readFile(await download.path(), 'utf8');
   assert.ok(!backup.includes(marker)); assert.ok(!backup.includes('pin_fixture'));

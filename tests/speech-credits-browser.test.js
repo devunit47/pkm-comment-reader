@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings, saveSetting, talkStage } from './browser-support.js';
+import { closeBrowser, openSettings, chromium, executablePath, browserAvailable, readDesign, saveTalk, waitForDesign, appReady, blockExternalFonts, applyInEditor, editorTarget, editorThemeCSS, temporaryDataDirectory, waitForSettings, saveSetting, talkStage } from './browser-support.js';
 
 const speechStyle = (page, style) => applyInEditor(page, async editor => { await editorTarget(editor, 'speech'); await editor.locator('#draft-speechStyle').selectOption(style); });
 const themeCSS = (page, css) => applyInEditor(page, async editor => { await editorThemeCSS(editor); await editor.locator('#draft-css').fill(css); });
@@ -67,7 +67,7 @@ async function local(t) {
 }
 async function open(t, url) {
   const browser = await chromium.launch({ headless: true, executablePath });
-  t.after(() => browser.close());
+  t.after(() => closeBrowser(browser));
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } }); await blockExternalFonts(page);
   page.setDefaultTimeout(8000);
   const errors = [], requests = [];
@@ -96,6 +96,7 @@ async function credits(page, expected) {
   }), expected);
 }
 async function choose(page, engine) {
+  await openSettings(page, 'speech');
   await page.locator('#speech-engine').selectOption(engine);
   if (engine !== 'browser') await page.waitForFunction(() => !document.querySelector('#voice').disabled);
   const platform = await page.locator('.platform-tab.active').getAttribute('data-platform');
@@ -104,6 +105,7 @@ async function choose(page, engine) {
     (engine === 'browser' || settings.speechEngines[platform][engine] === voice));
 }
 async function refresh(page) {
+  await openSettings(page, 'speech');
   const response = page.waitForResponse('**/api/speech/voicevox/voices');
   await page.locator('#refresh-voices').click();
   await (await response).finished();
@@ -139,9 +141,9 @@ test('credits follow voice, style, engine and platform, survive reload and appea
   await page.locator('[data-page="home"]').click();
   assert.equal(await page.locator('#speech-engine').inputValue(), 'voicevox');
   await choose(page, 'coeiroink'); await credits(page, 'COEIROINK:つくよみちゃん');
-  await page.locator('[data-platform="kick"]').click(); await credits(page, '');
+  await page.locator('#settings-platform').selectOption('kick'); await credits(page, '');
   await choose(page, 'voicevox'); await credits(page, 'VOICEVOX:ずんだもん');
-  await page.locator('[data-platform="twitch"]').click(); await credits(page, 'COEIROINK:つくよみちゃん');
+  await page.locator('#settings-platform').selectOption('twitch'); await credits(page, 'COEIROINK:つくよみちゃん');
   await choose(page, 'browser'); await credits(page, '');
   assert.deepEqual(errors, []);
 });
@@ -354,6 +356,7 @@ test('compact chat stays bounded and follows new demo messages while credit rema
   const { base } = await local(t);
   const { page, errors } = await open(t, base);
   await choose(page, 'voicevox');
+  await page.locator('[data-page="home"]').click();
   for (let i = 0; i < 20; i++) await page.locator('#demo').click();
   await page.setViewportSize({ width: 960, height: 540 });
   await page.locator('#enter-talk').click();
@@ -442,6 +445,7 @@ test('a late voice-list response cannot overwrite another engine or platform cre
     started(); await gate;
     await route.fulfill({ status: 200, json: { voices: [{ id: '3', speakerName: '古い応答', styleName: '通常' }] } });
   }, { times: 1 });
+  await openSettings(page, 'speech');
   await page.locator('#speech-engine').selectOption('voicevox'); await received;
   await credits(page, 'VOICEVOX:音声名未取得');
   let releaseCoeiroink, startedCoeiroink;
@@ -463,7 +467,7 @@ test('a late voice-list response cannot overwrite another engine or platform cre
   const finished = page.waitForResponse('**/api/speech/voicevox/voices');
   release(); await (await finished).finished();
   await page.waitForTimeout(100); await credits(page, 'COEIROINK:つくよみちゃん');
-  await page.locator('[data-platform="kick"]').click(); await credits(page, '');
+  await page.locator('#settings-platform').selectOption('kick'); await credits(page, '');
   await choose(page, 'voicevox'); await credits(page, 'VOICEVOX:ずんだもん');
   assert.deepEqual(errors, []);
 });

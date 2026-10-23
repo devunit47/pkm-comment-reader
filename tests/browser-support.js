@@ -198,3 +198,14 @@ export async function applyInEditor(page, steps) {
   await editor.locator('#apply-design').click();
   await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
 }
+
+// Open the actual settings destination before interacting with moved controls.
+export async function openSettings(page, section = 'connection') {
+  await page.locator('[data-page="settings"]').click();
+  await page.locator(`[data-settings-section="${section}"]`).click();
+}
+
+export async function openOutputSettings(page) {
+  await page.locator('[data-page="studio"]').click();
+  await page.getByRole('tab', { name: 'ウィンドウキャプチャ', exact: true }).click();
+}

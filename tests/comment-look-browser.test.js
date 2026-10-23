@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { blockExternalFonts, chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady, applyInEditor, editorTarget, closeEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
+import { closeBrowser, openOutputSettings, blockExternalFonts, chromium, executablePath, browserAvailable, saveDesign, waitForDesign, appReady, applyInEditor, editorTarget, closeEditor, temporaryDataDirectory, talkStage } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -13,7 +13,7 @@ async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-comment-look-'));
   const server = createServer({ dataDirectory: await temporaryDataDirectory(t), customizationDirectory: directory });
   t.after(async () => {
-    await browser.close();
+    await closeBrowser(browser);
     if (server.listening) await new Promise(resolve => server.close(resolve));
     await rm(directory, { recursive: true, force: true });
   });
@@ -66,6 +66,7 @@ browserTest('comment presets restyle the live stage and output, then return exac
   assert.deepEqual([outline.heading, outline.label], ['hidden', 'none']);
 
   // The output removes the label row entirely.
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
@@ -155,6 +156,7 @@ browserTest('an explicit outline reaches the name and body over a theme text-sha
   for (const shadow of await shadows(talkStage(page).locator('html'))) assert.match(shadow, /^rgb\(0, 0, 0\) 2px 0px 0px/);
   // The output applies the same outline to both elements.
   await waitForDesign(url, design => design.studio.commentOutline === 'thick');
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
@@ -212,6 +214,7 @@ browserTest('explicit settings win over theme CSS marked !important, and the the
   assert.equal(await talkStage(page).locator('.stage-chat .stage-panel-label h2').evaluate(element => getComputedStyle(element).color), 'rgb(170, 0, 0)');
 
   await waitForDesign(url, design => design.studio.commentTextColor === '#aa0000');
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
@@ -232,6 +235,7 @@ browserTest('a hidden label collapses identically in the preview and the output 
     const chat = document.querySelector('.stage-chat'), list = document.querySelector('#stage-chat-list');
     return { label: getComputedStyle(chat.querySelector('.stage-panel-label')).display, paddingTop: getComputedStyle(list).paddingTop, listOffset: list.getBoundingClientRect().top - chat.getBoundingClientRect().top };
   });
+  await openOutputSettings(page);
   const [output] = await Promise.all([context.waitForEvent('page'), page.locator('#open-output-window').click()]);
   output.setDefaultTimeout(8000);
   await output.locator('.stage-comment').first().waitFor({ state: 'attached' });
@@ -250,6 +254,7 @@ browserTest('a hidden label collapses identically in the preview and the output 
 browserTest('a chroma key output warns about a half-transparent comment panel', async t => {
   const { page, errors, url } = await fixture(t);
   const status = page.locator('#output-status');
+  await openOutputSettings(page);
   await page.locator('#output-background').selectOption('key');
   const opacity = value => chat(page, async editor => { await editor.locator('#draft-commentPanelOpacity').fill(value); await editor.locator('#draft-commentPanelOpacity').dispatchEvent('change'); });
   await chat(page, editor => editor.locator('#draft-commentPreset').selectOption('dark'));
@@ -258,6 +263,7 @@ browserTest('a chroma key output warns about a half-transparent comment panel', 
   await status.filter({ hasNotText: 'にじみます' }).waitFor();
   await opacity('50');
   await status.filter({ hasText: 'にじみます' }).waitFor();
+  await openOutputSettings(page);
   await page.locator('#output-background').selectOption('theme');
   await status.filter({ hasNotText: 'にじみます' }).waitFor();
   assert.deepEqual(errors, []);

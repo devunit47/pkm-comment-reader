@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readSettings, saveSetting, waitForSettings, saveDesign, waitForDesign } from './browser-support.js';
+import { openOutputSettings, openSettings, closeBrowser, chromium, executablePath, browserAvailable, appReady, blockExternalFonts, readSettings, saveSetting, waitForSettings, saveDesign, waitForDesign } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 async function fixture(t, { raw, ports = 1 } = {}) {
@@ -82,7 +82,7 @@ browserTest('two server ports share every operating setting, apply user changes 
     assert.equal(await page.locator('#max-length').inputValue(), '140');
     assert.equal(await page.locator('#skip-commands').isChecked(), true);
     assert.equal(await page.locator('#studio-list-count').inputValue(), '40');
-    assert.equal(await page.locator('#setup-welcome').isVisible(), true);
+    assert.equal(await page.locator('#setup-reminder').isVisible(), true);
     assert.equal(await page.locator('#output-background').inputValue(), 'key');
     assert.equal(await page.locator('#output-key').inputValue(), '0000ff');
     await page.locator('[data-platform="kick"]').click();
@@ -97,8 +97,8 @@ browserTest('two server ports share every operating setting, apply user changes 
     await page.evaluate(() => window.testSockets[0].onmessage({ data: '@display-name=__proto__ :proto!proto@host PRIVMSG #saved_channel :特殊名の確認' }));
     await page.locator('#comment-list .username').filter({ hasText: '同期ユーザー' }).waitFor();
   }
-  await pages[0].locator('[data-page="users"]').click();
-  await pages[1].locator('[data-page="users"]').click();
+  await openSettings(pages[0], 'users');
+  await openSettings(pages[1], 'users');
   const row = pages[0].locator('#user-list .user-row').filter({ hasText: '同期ユーザー' });
   await row.getByRole('button', { name: '読み上げ除外', exact: true }).click();
   await pages[1].locator('#user-list .user-row').filter({ hasText: '同期ユーザー' }).getByRole('button', { name: '読み上げ除外を解除', exact: true }).waitFor();
@@ -125,7 +125,7 @@ browserTest('two server ports share every operating setting, apply user changes 
   }
   await pages[0].locator('[data-page="home"]').click();
   await pages[0].locator('#start-setup').click(); await pages[0].locator('#complete-setup').click();
-  await pages[1].waitForFunction(() => document.querySelector('#setup-welcome').hidden);
+  await pages[1].waitForFunction(() => document.querySelector('#setup-reminder').hidden);
   await pages[0].locator('[data-page="settings"]').click();
   await pages[0].locator('#studio-list-count').fill('7'); await pages[0].locator('#studio-list-count').dispatchEvent('change');
   await settingValue(pages[1], '#studio-list-count', '7');
@@ -144,12 +144,15 @@ browserTest('two server ports share every operating setting, apply user changes 
   await saveSetting(bases[0], 'speechEngines', { twitch: { engine: 'voicevox', voicevox: '4' }, kick: { engine: 'browser' } });
   for (const page of pages) { await settingValue(page, '#speech-engine', 'voicevox'); await settingValue(page, '#voice', '4'); }
   await pages[0].locator('[data-page="studio"]').click();
+  await openOutputSettings(pages[0]);
   await pages[0].locator('#output-key').selectOption('ff00ff');
   await settingValue(pages[1], '#output-key', 'ff00ff');
   await waitForSettings(bases[0], settings => settings.output.key === 'ff00ff');
+  await openOutputSettings(pages[0]);
   await pages[0].locator('#output-background').selectOption('theme');
   await settingValue(pages[1], '#output-background', 'theme');
   assert.equal(await pages[1].locator('#output-key').isDisabled(), true);
+  await openOutputSettings(pages[0]);
   await pages[0].locator('#output-background').selectOption('key');
   await settingValue(pages[1], '#output-background', 'key');
   await waitForSettings(bases[0], settings => settings.output.background === 'key');
@@ -157,7 +160,7 @@ browserTest('two server ports share every operating setting, apply user changes 
   for (const page of pages) {
     assert.equal(await page.locator('#twitch-channel').inputValue(), 'next_channel');
     assert.equal(await page.locator('#studio-list-count').inputValue(), '7');
-    assert.equal(await page.locator('#setup-welcome').isVisible(), false);
+    assert.equal(await page.locator('#setup-reminder').isVisible(), false);
     assert.equal(await page.locator('#output-key').inputValue(), 'ff00ff');
   }
   const document = JSON.parse(await readFile(join(dataDirectory, 'settings.json'), 'utf8'));
@@ -180,7 +183,7 @@ browserTest('startup ignores legacy localStorage settings and leaves their value
   assert.equal(await page.locator('#twitch-channel').inputValue(), '');
   assert.equal(await page.locator('#speech-engine').inputValue(), 'browser');
   assert.equal(await page.locator('#studio-list-count').inputValue(), String(defaults.historyLimit));
-  assert.equal(await page.locator('#setup-welcome').isVisible(), true);
+  assert.equal(await page.locator('#setup-reminder').isVisible(), true);
   assert.equal(await page.locator('#output-background').inputValue(), 'theme');
   assert.deepEqual(await readSettings(bases[0]), defaults);
   assert.deepEqual(await page.evaluate(() => window.settingsStorageReads), [], 'the app does not read the obsolete browser storage');
@@ -235,6 +238,7 @@ browserTest('a failed save of the first local voice restores the saved selection
     writes++;
     return writes === 1 ? route.continue() : route.fulfill({ status: 503, json: { error: '確認用の保存失敗' } });
   });
+  await openSettings(page, 'speech');
   await page.locator('#speech-engine').selectOption('voicevox');
   await page.locator('#notice').filter({ hasText: '保存' }).waitFor();
   await page.waitForFunction(() => document.querySelector('#voice').value === '');
@@ -251,7 +255,9 @@ browserTest('other service settings and enabling auto speech preserve the active
   const { bases, open, errors } = await fixture(t);
   await saveSetting(bases[0], 'autoSpeech', { twitch: false, kick: false });
   const page = await open(bases[0]);
+  await openSettings(page, 'speech');
   await page.locator('#test-voice').click();
+  await page.locator('[data-page="home"]').click();
   await page.locator('#speech-status').filter({ hasText: '読み上げ中' }).waitFor();
   const played = async () => page.evaluate(() => ({ cancels: window.settingsSpeechCancels || 0,
     text: document.querySelector('#preview-text').textContent, credit: document.querySelector('#preview-speech-credit').textContent,
@@ -270,6 +276,7 @@ browserTest('other service settings and enabling auto speech preserve the active
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.deepEqual(await played(), before, `${field} for Kick leaves the Twitch reading alone`);
   }
+  await page.locator('[data-page="home"]').click();
   await page.locator('#auto-speech').check();
   await waitForSettings(bases[0], settings => settings.autoSpeech.twitch);
   assert.deepEqual(await played(), before, 'enabling Twitch auto speech preserves its current manual reading');
@@ -300,12 +307,12 @@ browserTest('unreadable settings stay protected and persistent guidance and chan
     'pokome-speech-options': JSON.stringify({ twitch: { maxLength: 100 }, kick: {} }),
     'pokome-users-v2': JSON.stringify({ twitch: {}, kick: {} }), 'pokome-history-limit': '40',
   } };
-  await page.locator('[data-page="settings"]').click();
+  await openSettings(page, 'backup');
   await page.locator('#restore-settings').setInputFiles({ name: 'old-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup)) });
   await page.locator('#backup-status').filter({ hasText: '見た目はcustomizationフォルダーのまま' }).waitFor();
   for (const colorScheme of ['light', 'dark']) {
     await page.emulateMedia({ colorScheme });
-    const appearance = () => page.locator(['main', '.sidebar', '.workspace', '#settings-warning', '#twitch-channel'].join(',')).evaluateAll(elements => elements.map(element => {
+    const appearance = () => page.locator(['main', '#app-header', '.workspace', '#settings-warning', '#twitch-channel'].join(',')).evaluateAll(elements => elements.map(element => {
       const style = getComputedStyle(element);
       return { id: element.id || element.className, color: style.color, background: style.backgroundColor, border: style.borderColor, visible: element.checkVisibility() };
     }));
@@ -325,22 +332,34 @@ browserTest('unreadable settings stay protected and persistent guidance and chan
     }
     for (const width of [1440, 500, 300, 150]) {
       await page.setViewportSize({ width, height: 1000 });
-      for (const view of ['home', 'users', 'settings', 'studio']) {
-        await page.locator(`[data-page="${view}"]`).click();
+      for (const view of ['home', 'settings:connection', 'settings:speech', 'settings:users', 'settings:backup', 'studio', 'updates']) {
+        if (view.startsWith('settings:')) await openSettings(page, view.split(':')[1]);
+        else await page.locator(`[data-page="${view}"]`).click();
         assert.equal(await page.locator('#settings-warning').isVisible(), true);
         const issues = await page.evaluate(() => {
           const width = document.documentElement.clientWidth;
-          const roots = ['#settings-warning', '#notice', '#setup-welcome', '.reading', '#users-page', '#settings-page', '#settings-backup-panel', '#stream-output-panel'];
+          const roots = ['#settings-warning', '#notice', '#setup-reminder', '#home-page', '#updates-page', '#studio-page', '#home-connections', '#settings-speech', '#settings-users', '#preferences-page', '#app-header', '#settings-backup-panel', '#stream-output-panel'];
           return roots.flatMap(selector => [...document.querySelectorAll(selector)].flatMap(root => {
             if (!root.getClientRects().length) return [];
             const nodes = [root, ...root.querySelectorAll('p,label,h2,button,input,select')];
             const visible = nodes.filter(node => { const box = node.getBoundingClientRect(); return node.checkVisibility() && box.width && box.height; });
             const outside = visible.filter(node => { const box = node.getBoundingClientRect(); return box.left < -1 || box.right > width + 1; }).map(node => node.id || node.tagName);
-            const controls = visible.filter(node => node.matches('button,input,select'));
+            // Scrolled rows can have boxes behind filters without being painted there.
+            const paintedBox = node => {
+              const box = node.getBoundingClientRect();
+              const bounds = { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+              for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+                const style = getComputedStyle(parent), clip = parent.getBoundingClientRect();
+                if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowX)) { bounds.left = Math.max(bounds.left, clip.left); bounds.right = Math.min(bounds.right, clip.right); }
+                if (['auto', 'scroll', 'hidden', 'clip'].includes(style.overflowY)) { bounds.top = Math.max(bounds.top, clip.top); bounds.bottom = Math.min(bounds.bottom, clip.bottom); }
+              }
+              return bounds.right > bounds.left && bounds.bottom > bounds.top ? bounds : null;
+            };
+            const controls = visible.filter(node => node.matches('button,input,select')).map(node => ({ node, box: paintedBox(node) })).filter(item => item.box);
             const overlap = [];
             for (let i = 0; i < controls.length; i++) for (let j = i + 1; j < controls.length; j++) {
-              const a = controls[i].getBoundingClientRect(), b = controls[j].getBoundingClientRect();
-              if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) overlap.push([controls[i].id, controls[j].id]);
+              const a = controls[i].box, b = controls[j].box;
+              if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) overlap.push([controls[i].node.id, controls[j].node.id]);
             }
             const overflow = root.scrollWidth > root.clientWidth + 1;
             return outside.length || overlap.length || overflow ? [{ selector, outside, overlap, overflow }] : [];

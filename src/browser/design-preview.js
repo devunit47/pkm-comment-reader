@@ -77,7 +77,7 @@ dialog[data-mode=preset] .side,dialog[data-mode=preset] .edit-only{display:none}
 const SNAP_STYLE = `#canvas-order[hidden],#snap-lines[hidden]{display:none}#snap-lines{position:absolute;inset:0;pointer-events:none;z-index:100}#snap-lines i{position:absolute;border-color:var(--ui-warn);border-style:solid}#snap-lines i:first-child{top:0;bottom:0;border-width:0 0 0 1px}#snap-lines i:last-child{left:0;right:0;border-width:1px 0 0}.canvas-target[data-selected=true]>.canvas-handle{z-index:100}`;
 const CANVAS_STYLE = "\n#canvas-layer{position:absolute;inset:0;pointer-events:none;isolation:isolate}.canvas-target{position:absolute;pointer-events:auto;touch-action:none;outline:0;cursor:move}.canvas-target[data-selected=true]{outline:2px solid var(--ui-on-accent);box-shadow:0 0 0 3px var(--ui-accent)}.canvas-target:focus-visible{outline:2px solid var(--ui-accent)}.canvas-target[hidden],#panel-placement[hidden],#preview-guides-option[hidden]{display:none}.canvas-handle{display:none;position:absolute;width:16px;height:16px;background:var(--ui-on-accent);border:2px solid var(--ui-accent);touch-action:none;transform:translate(-50%,-50%)}.canvas-target[data-selected=true]>.canvas-handle{display:block}.canvas-handle[data-edge=n]{left:50%;top:0;cursor:ns-resize}.canvas-handle[data-edge=s]{left:50%;top:100%;cursor:ns-resize}.canvas-handle[data-edge=e]{left:100%;top:50%;cursor:ew-resize}.canvas-handle[data-edge=w]{left:0;top:50%;cursor:ew-resize}.canvas-handle[data-edge=ne]{left:100%;top:0;cursor:nesw-resize}.canvas-handle[data-edge=nw]{left:0;top:0;cursor:nwse-resize}.canvas-handle[data-edge=se]{left:100%;top:100%;cursor:nwse-resize}.canvas-handle[data-edge=sw]{left:0;top:100%;cursor:nesw-resize}.stage-box{padding:28px;align-items:center;min-width:0;background:var(--ui-bg)}.viewport{overflow:visible;border-radius:0;border:0;outline:1px solid var(--ui-muted)}iframe{pointer-events:none}.bar,.side,.center{overflow-wrap:anywhere}@media(max-width:300px){.numbers{grid-template-columns:minmax(0,1fr)}.bar{padding:8px}.side,.center{padding:8px}.stage-box{padding:12px}}\n";
 
-const MARKUP = `<section class="entry"><h2>デザインエディタ</h2><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><button id="open-design-preview" class="primary" type="button">デザインを編集</button><p id="preview-result" role="status"></p><p id="applied-design-summary"></p><p><small>雑談画面の配置と出力の大きさも、ここで下書きとして編集します。画面収録中はエディタも映るため、OBSの別シーンなどで編集してください。</small></p></section>
+const MARKUP = `<section class="entry"><h2>今のデザイン</h2><p id="current-design-name"></p><p id="applied-design-summary"></p><div id="current-design-preview"><iframe id="current-design-frame" title="適用中の配信デザインの見本" sandbox="allow-same-origin" tabindex="-1" inert></iframe></div><p id="current-design-error" role="status" hidden></p><button id="open-design-preview" type="button">デザインを編集</button><p id="preview-result" role="status"></p><details><summary>デザイン編集について</summary><p>配色・文章・コメント欄・読み上げ・立ち絵の見た目と、追加の文字・画像、テーマCSSを、配信画面を見ながら1つの下書きで編集します。「適用」を押すまで配信画面には反映されません。</p><p><small>雑談画面の配置と出力の大きさも、ここで下書きとして編集します。画面収録中はエディタも映るため、OBSの別シーンなどで編集してください。</small></p></details></section>
 <dialog id="design-dialog" aria-labelledby="design-title" data-tab="targets"><div class="bar"><div class="title"><h2 id="design-title">デザインエディタ</h2><span id="draft-state" role="status"></span><div class="actions edit-only"><button id="undo-design" type="button" aria-keyshortcuts="Control+Z">取り消し</button><button id="redo-design" type="button" aria-keyshortcuts="Control+Shift+Z Control+Y">やり直し</button></div></div><div class="actions"><button id="restart-design" type="button" hidden>最新のデザインからやり直す</button><button id="discard-design" class="edit-only danger" type="button">変更をすべて破棄</button><button id="apply-design" class="primary" type="button">適用</button><button id="cancel-design" type="button">閉じる</button></div></div>
 <p id="design-status" role="status" aria-live="polite"></p>
 <div class="editor"><div class="tabs edit-only" role="group" aria-label="表示する欄"><button id="show-targets" type="button" aria-pressed="true">対象</button><button id="show-settings" type="button" aria-pressed="false">設定</button></div>
@@ -112,7 +112,7 @@ ${COLOR_MODE_KEYS.map(key => { const label = key === 'commentTextColor' ? '本�
 // (every ratio) until Apply stores it with a single revision-checked write.
 // getLiveRatio tells which ratio the talk screen shows.
 export function initializeDesignPreview({ designStore, live, getLiveRatio = () => '16:9' }) {
-  let presetDraft = null, presetApply = null, returnFocus = null, hostOrigin = null;
+  let presetDraft = null, presetApply = null, returnFocus = null;
   const assetOptions = () => overlayOptions(presetDraft?.images || designStore.images), imageOptions = () => studioOptions(presetDraft?.images || designStore.images);
   const imageScope = () => presetDraft ? `presets/${presetDraft.id}` : 'current';
   const storedOverlays = () => talkOverlays(designStore.design, getLiveRatio());
@@ -121,11 +121,12 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
   let commentResizeObserver, previewStage, frameDoc, previewCSS, defaultImage, compiledCSS = '', compiledSource = '', cssError = '', renderedStudio = null, renderedActorImage = null, renderedRatio = null, dragCleanup, confirmation = null;
   const requests = new Map();
   const host = document.createElement('div'); host.id = 'design-preview-editor';
-  document.getElementById('studio-page').prepend(host);
+  document.getElementById('studio-top').append(host);
   const shadow = host.attachShadow({ mode: 'open' });
-  shadow.innerHTML = `<style>${STYLE}${CANVAS_STYLE}${SNAP_STYLE}</style>${MARKUP}`;
+  shadow.innerHTML = `<style>${STYLE}${CANVAS_STYLE}${SNAP_STYLE}#current-design-preview{position:relative;width:100%;overflow:hidden;background:var(--ui-bg);margin:12px 0;pointer-events:none}#current-design-frame{position:absolute;inset:0;border:0;transform-origin:top left;pointer-events:none}.entry h2{font-size:20px}#current-design-name{font-weight:700;font-size:16px}</style>${MARKUP}`;
   shadow.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); });
-  const $ = id => shadow.getElementById(id), dialog = $('design-dialog'), frame = $('design-preview-frame');
+  const $ = id => shadow.getElementById(id), dialog = $('design-dialog');
+  let frame = $('design-preview-frame');
   const status = message => { $('design-status').textContent = message; };
   const design = () => session.design;
   const ratioOverlays = (r = ratio) => talkOverlays(design(), r);
@@ -486,10 +487,14 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
   function close() {
     commentResizeObserver?.disconnect(); commentResizeObserver = null;
     finishConfirmation(false);
-    invalidate(); session = null; saving = false; previewStage = null; renderedStudio = null; renderedActorImage = null; renderedRatio = null; frameDoc = null; frame.removeAttribute('srcdoc');
+    invalidate(); session = null; saving = false; previewStage = null; renderedStudio = null; renderedActorImage = null; renderedRatio = null; frameDoc = null;
+    // Drop the editor's frame history without destroying the applied sample.
+    const emptyFrame = frame.cloneNode(false); emptyFrame.removeAttribute('srcdoc');
+    frame.replaceWith(emptyFrame); frame = emptyFrame;
     presetDraft = null; presetApply = null; compiledSource = ''; cssError = '';
     if (dialog.open) dialog.close();
-    if (hostOrigin) { hostOrigin.replaceWith(host); hostOrigin = null; shadow.querySelector('.entry').hidden = false; }
+    document.getElementById('studio-page').classList.remove('editing-design');
+    shadow.querySelector('.entry').hidden = false;
     (returnFocus || $('open-design-preview')).focus(); returnFocus = null;
   }
   // Leaving with changes asks first; the draft is never written back.
@@ -523,7 +528,9 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
     ratio = nearestRatio(...size(start.outputSize)); setPreviewSize(ratio, start.outputSize); selected = 'screen'; compiledCSS = ''; compiledSource = null; cssError = '';
     compileDraftCSS(); tab('targets');
     // A hidden operating page would hide even a top-layer dialog opened from talk mode.
-    hostOrigin = document.createComment('design editor'); host.before(hostOrigin); document.body.append(host); shadow.querySelector('.entry').hidden = true;
+    // Reparenting a host destroys its iframe contexts, including the applied sample.
+    document.getElementById('studio-page').classList.add('editing-design');
+    shadow.querySelector('.entry').hidden = true;
     dialog.showModal(); status('プレビューを準備しています…'); refresh(); scale();
     if (!preset) refreshLocal();
     try {
@@ -882,7 +889,63 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
       status(`適用できませんでした：${error.message}`); buttons();
     }
   };
+  // A script-free scene uses the same appearance renderer as the editor and output.
+  // It never joins the output protocol, and always reads the applied design.
+  const currentFrame = $('current-design-frame');
+  let currentStage, currentTheme;
+  function scaleCurrent() {
+    const [width, height] = OUTPUT_SIZES[designStore.design.outputSize];
+    const factor = Math.max(1, $('current-design-preview').clientWidth) / width;
+    currentFrame.style.width = `${width}px`; currentFrame.style.height = `${height}px`;
+    currentFrame.style.transform = `scale(${factor})`;
+    $('current-design-preview').style.height = `${height * factor}px`;
+  }
+  function drawCurrent() {
+    $('current-design-name').textContent = designStore.design.name || '名前なしのデザイン';
+    if (!currentStage) return;
+    const applied = designStore.design, studio = applied.studio;
+    const ratio = nearestRatio(...OUTPUT_SIZES[applied.outputSize]);
+    renderStageAppearance(currentStage, resolveStudioImages(studio), defaultImage, { actorImage: talkActorImage(applied, ratio) });
+    renderOverlays(currentStage, resolveOverlayAssets(talkOverlays(applied, ratio)));
+    applyTalkLayout(currentStage, talkLayout(applied, ratio));
+    try {
+      currentTheme.textContent = compileTheme(applied.theme);
+      $('current-design-error').hidden = true;
+    } catch (error) {
+      currentTheme.textContent = '';
+      $('current-design-error').textContent = `テーマCSSを見本に適用できません：${error.message}`;
+      $('current-design-error').hidden = false;
+    }
+    renderStageComments(currentStage.querySelector('#stage-chat-list'), selectOutputComments(SAMPLE_COMMENTS, studio, 0, false), studio);
+    renderPinnedComment(currentStage, SAMPLE_PINNED, studio);
+    currentStage.querySelector('#stage-count').textContent = `${SAMPLE_COMMENTS.length} COMMENTS`;
+    currentStage.querySelector('#stage-speech-user').textContent = 'サンプルさん';
+    currentStage.querySelector('#stage-speech-text').textContent = '表示の色と大きさを確認しています。';
+    currentStage.querySelector('#stage-speech-status').textContent = 'プレビュー';
+    currentStage.querySelector('.stage-speech').dataset.speaking = 'false';
+    scaleCurrent();
+  }
+  new ResizeObserver(scaleCurrent).observe($('current-design-preview'));
+  (async () => {
+    try {
+      const [cssResponse, imageResponse] = await Promise.all([fetch('./style.css'), fetch('./speech-background.svg')]);
+      if (!cssResponse.ok || !imageResponse.ok) throw new Error('見本用のデザインを読み込めません。');
+      previewCSS = (await cssResponse.text()).replace(/^@import[^\r\n]*(?:\r?\n|$)/gm, '');
+      defaultImage = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(await imageResponse.text())))}`;
+      await new Promise(resolve => {
+        currentFrame.onload = resolve;
+        currentFrame.srcdoc = '<!doctype html><html lang="ja"><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data: \'self\' https://static-cdn.jtvnw.net; font-src \'none\'; connect-src \'none\'; form-action \'none\'; base-uri \'none\'"></head><body class="talk-mode pokome-preview"><main class="pokome-workspace"></main></body></html>';
+      });
+      const doc = currentFrame.contentDocument, css = doc.createElement('style');
+      css.textContent = previewCSS; currentTheme = doc.createElement('style'); doc.head.append(css, currentTheme);
+      currentStage = doc.importNode(live, true); currentStage.hidden = false;
+      for (const element of currentStage.querySelectorAll('dialog,[popover],.pokome-overlay,script,iframe,object,embed,link')) element.remove();
+      for (const element of currentStage.querySelectorAll('button,input,select,textarea,a')) { element.tabIndex = -1; element.removeAttribute('href'); }
+      doc.querySelector('main').append(currentStage); drawCurrent();
+    } catch (error) { $('current-design-error').hidden = false; $('current-design-error').textContent = error.message; }
+  })();
   function showLive() {
+    drawCurrent();
     overlays = storedOverlays(); renderOverlays(live, resolveOverlayAssets(overlays));
     const applied = designStore.design;
     const theme = [...$('draft-theme').options].find(option => option.value === applied.studio.theme).textContent;

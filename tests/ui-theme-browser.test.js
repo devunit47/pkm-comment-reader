@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { appReady, blockExternalFonts, browserAvailable, chromium, executablePath, closeBrowser } from './browser-support.js';
+import { openSettings, appReady, blockExternalFonts, browserAvailable, chromium, executablePath, closeBrowser } from './browser-support.js';
 
 const browserTest = (name, run) => test(name, { skip: !browserAvailable }, run);
 
@@ -17,7 +17,7 @@ function contrastFailures() {
   const contrast = (a, b) => { const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x); return (light + .05) / (dark + .05); };
   const failures = [];
   const roots = [document, ...[...document.querySelectorAll('*')].map(element => element.shadowRoot).filter(Boolean)];
-  for (const element of roots.flatMap(root => [...root.querySelectorAll('h1,h2,h3,p,small,label,button,input,select,a,.connection-badge,.service-status')])) {
+  for (const element of roots.flatMap(root => [...root.querySelectorAll('h1,h2,h3,p,small,label,button,input,select,a,.connection-badge')])) {
     if (!element.checkVisibility() || !element.getClientRects().length || element.matches(':disabled')) continue;
     const view = getComputedStyle(element), color = rgb(view.color);
     if (!color) continue;
@@ -56,10 +56,15 @@ browserTest('operating UI follows the system color scheme and keeps text contras
     await page.goto(base);
     await appReady(page);
     assert.ok(await page.locator('body').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 14, 'operating body text is at least 14px');
-    const pages = ['home', 'users', 'settings', 'studio', 'updates'];
+    const pages = ['home', 'settings:connection', 'settings:speech', 'settings:users', 'settings:backup', 'studio', 'updates'];
     for (const name of pages) {
-      await page.locator(`[data-page="${name}"]`).click();
-      await page.locator(`#${name}-page`).waitFor({ state: 'visible' });
+      if (name.startsWith('settings:')) {
+        await openSettings(page, name.split(':')[1]);
+        await page.locator('#preferences-page').waitFor({ state: 'visible' });
+      } else {
+        await page.locator(`[data-page="${name}"]`).click();
+        await page.locator(`#${name}-page`).waitFor({ state: 'visible' });
+      }
       assert.ok(await page.locator('main > header h1').evaluate(element => parseFloat(getComputedStyle(element).fontSize)) >= 21, 'page heading retains its type hierarchy');
       const failures = await page.evaluate(contrastFailures);
       assert.deepEqual(failures, [], `${colorScheme}/${name} contrast`);
