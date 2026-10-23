@@ -79,7 +79,7 @@ test('design page orders final entries, shows the applied design and keeps prese
 test('150px standard home keeps content within the effective dock width', { skip: !browserAvailable }, async t => {
   const { page } = await fixture(t); await page.setViewportSize({ width: 150, height: 700 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  for (const selector of ['.workspace','.comments','#home-connections','#filter','#enter-talk']) {
+  for (const selector of ['.workspace','.comments','#home-connections','#comment-filters','#enter-talk']) {
     const box = await page.locator(selector).boundingBox(); assert.ok(box.x >= 0 && box.x + box.width <= 150, selector);
   }
 });

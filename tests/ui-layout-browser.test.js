@@ -104,7 +104,7 @@ test('applied design sample rejects stored invalid CSS without breaking design u
   await page.frameLocator('#current-design-frame').locator('#talk-stage').waitFor({ state: 'attached' });
   await saveDesign(new URL(page.url()).origin, design => ({ ...design, theme: '@layer blocked {}' }));
   await page.locator('#current-design-error').waitFor({ state: 'visible' });
-  await saveDesign(new URL(page.url()).origin, design => ({ ...design, theme: '', name: '更新したデザイン' }));
+  await saveDesign(new URL(page.url()).origin, design => ({ ...design, theme: '', name: '更新したデザイン', studio: { ...design.studio, title: '更新した見出し' } }));
   await page.locator('#current-design-name').filter({ hasText: '更新したデザイン' }).waitFor();
   assert.equal(await page.locator('#current-design-error').isVisible(), false);
   assert.deepEqual(errors, []);
