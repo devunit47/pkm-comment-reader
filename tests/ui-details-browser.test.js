@@ -173,7 +173,7 @@ test('U3 narrow setup and menu keep usable text widths and operation targets', {
 test('U3 release guidance stays in the unreleased update and preserves the setup instructions', { skip: !browserAvailable }, async t => {
   const page = await fixture(t);
   await page.locator('[data-page=updates]').click();
-  const update = page.locator('#updates-page .update-entry').filter({ has: page.getByRole('heading', { name: '未配布 — 操作画面の色を見直しました', exact: true }) });
+  const update = page.locator('#updates-page .update-entry').filter({ has: page.getByRole('heading', { name: '未配布 — 操作画面のデザインを見直しました', exact: true }) });
   assert.match(await update.textContent(), /ユーザー管理に検索/);
   assert.match(await update.textContent(), /コメントの絞り込みを切り替えボタン/);
   assert.match(await update.textContent(), /標準のデザイン/);
