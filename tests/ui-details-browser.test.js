@@ -29,7 +29,7 @@ test('U3 comment filter buttons preserve search, service state and keyboard sele
   const page = await fixture(t);
   const buttons = page.locator('#comment-filters button');
   assert.equal(await buttons.count(), 2);
-  assert.equal(await page.locator('select#filter').count(), 0);
+  assert.equal(await page.locator('#home-page .filters select').count(), 0);
   assert.deepEqual(await buttons.allTextContents(), ['すべてのコメント', '初コメント']);
   await page.locator('#demo').click();
   const allCount = await page.locator('#comment-list .comment').count();
@@ -50,6 +50,8 @@ test('U3 comment filter buttons preserve search, service state and keyboard sele
   assert.equal(await page.locator('#comment-list .comment').count(), firstCount);
   await page.locator('[data-comment-filter=all]').focus(); await page.keyboard.press('Enter');
   assert.equal(await page.locator('#comment-list .comment').count(), allCount);
+  await page.locator('[data-comment-filter=first]').click();
+  await page.locator('#search').fill('再読み込みで消す検索語');
   await page.reload(); await appReady(page);
   assert.equal(await page.locator('[data-comment-filter=all]').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('#search').inputValue(), '');
@@ -62,6 +64,8 @@ test('U3 applied name compares normalized standard content after editing, preset
   await name.waitFor();
   assert.equal(await name.textContent(), '標準のデザイン');
   await saveDesign(base, { ...defaultDesign(), name: '標準の別名', savedAt: 'ignored' });
+  // The visible standard label stays the same; reload to observe the new metadata.
+  await page.reload(); await appReady(page); await page.locator('[data-page=studio]').click();
   await name.filter({ hasText: /^標準のデザイン$/ }).waitFor();
   await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
   await editorTarget(editor, 'header');
@@ -123,6 +127,7 @@ test('U3 user search and counted filters show both states, distinguish empty res
   assert.equal(await page.locator('[data-user-filter=muted]').getAttribute('aria-pressed'), 'true');
   await page.locator('[data-user-filter=all]').click();
   assert.deepEqual(await page.locator('.user-row strong').allTextContents(), ['kick_viewer', 'green_leaf', 'minto_0123', 'KickOnly']);
+  await page.locator('[data-user-filter=hidden]').click(); await page.locator('#users-search').fill('KickOnly');
   await page.reload(); await appReady(page); await openSettings(page, 'users');
   assert.equal(await page.locator('#users-search').inputValue(), '');
   assert.equal(await page.locator('[data-user-filter=all]').getAttribute('aria-pressed'), 'true');
