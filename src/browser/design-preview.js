@@ -8,7 +8,7 @@ import { resolveStudioImages, resolveOverlayAssets, studioOptions, overlayOption
 import { checkImageFile, STALE_DRAFT } from './design-client.js';
 import { PANEL_IDS, normalizeLayout, talkSpeechStyles } from '../shared/workspace-model.js';
 import { canvasOrder, layoutFromRects, moveCanvasTarget, copyTalkRatio, resetTalkRatio } from '../shared/canvas-model.js';
-import { createDraftSession } from '../shared/design-draft.js';
+import { createDraftSession, sameDesign } from '../shared/design-draft.js';
 
 const clone = value => structuredClone(value);
 // The official Global Chat Badges example supplies this fixed VIP sample.
@@ -901,7 +901,9 @@ export function initializeDesignPreview({ designStore, live, getLiveRatio = () =
     $('current-design-preview').style.height = `${height * factor}px`;
   }
   function drawCurrent() {
-    $('current-design-name').textContent = designStore.design.name || '名前なしのデザイン';
+    // The store normalizes content; names do not change whether it is standard.
+    const standard = sameDesign({ ...designStore.design, name: '' }, defaultDesign());
+    $('current-design-name').textContent = standard ? '標準のデザイン' : designStore.design.name || '名前なしのデザイン';
     if (!currentStage) return;
     const applied = designStore.design, studio = applied.studio;
     const ratio = nearestRatio(...OUTPUT_SIZES[applied.outputSize]);

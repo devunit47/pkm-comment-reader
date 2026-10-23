@@ -4,7 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from '../server.js';
-import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, saveSetting, waitForSettings, openSettings } from './browser-support.js';
+import { defaultDesign } from '../src/shared/design-model.js';
+import { chromium, executablePath, browserAvailable, closeBrowser, appReady, blockExternalFonts, saveSetting, waitForSettings, openSettings, saveDesign, editorTarget } from './browser-support.js';
 
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'pokome-details-'));
@@ -52,6 +53,41 @@ test('U3 comment filter buttons preserve search, service state and keyboard sele
   await page.reload(); await appReady(page);
   assert.equal(await page.locator('[data-comment-filter=all]').getAttribute('aria-pressed'), 'true');
   assert.equal(await page.locator('#search').inputValue(), '');
+});
+
+test('U3 applied name compares normalized standard content after editing, presets, reset and external updates', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t), base = new URL(page.url()).origin;
+  await page.locator('[data-page=studio]').click();
+  const name = page.locator('#current-design-name'), editor = page.locator('#design-preview-editor'), presets = page.locator('#design-presets');
+  await name.waitFor();
+  assert.equal(await name.textContent(), '標準のデザイン');
+  await saveDesign(base, { ...defaultDesign(), name: '標準の別名', savedAt: 'ignored' });
+  await name.filter({ hasText: /^標準のデザイン$/ }).waitFor();
+  await editor.locator('#open-design-preview').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  await editorTarget(editor, 'header');
+  await editor.locator('#draft-title').fill('編集後の見出し');
+  assert.equal(await name.textContent(), '標準のデザイン', 'draft does not rename the applied design');
+  await editor.locator('#apply-design').click(); await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  assert.equal(await name.textContent(), '標準の別名');
+  await saveDesign(base, design => ({ ...design, name: '' }));
+  await name.filter({ hasText: /^名前なしのデザイン$/ }).waitFor();
+  await presets.locator('#preset-save').click(); await presets.locator('#preset-name').fill('保存した見た目');
+  await presets.locator('#preset-name-submit').click(); await presets.locator('#preset-status').filter({ hasText: 'プリセットに保存しました' }).waitFor();
+  await presets.locator('#preset-reset').click(); await presets.locator('#preset-confirm').click();
+  await name.filter({ hasText: /^標準のデザイン$/ }).waitFor();
+  await presets.locator('#preset-load').click(); await editor.locator('#apply-design:not(:disabled)').waitFor();
+  assert.equal(await name.textContent(), '標準のデザイン', 'preset preview is not applied');
+  await editor.locator('#apply-design').click(); await presets.locator('#preset-confirm').click();
+  await editor.locator('#design-dialog').waitFor({ state: 'hidden' });
+  await name.filter({ hasText: /^保存した見た目$/ }).waitFor();
+  for (const change of [
+    { outputSize: '1080x1920' }, { theme: '.pokome-workspace { --pk-accent-color: red; }' },
+    { ratios: { ...defaultDesign().ratios, '9:16': { overlays: { version: 1, items: [{ id: 'text1', type: 'text', text: '縦だけの文字' }], assets: {} } } } },
+  ]) {
+    await saveDesign(base, { ...defaultDesign(), ...change });
+    await name.filter({ hasText: /^名前なしのデザイン$/ }).waitFor();
+    await saveDesign(base, defaultDesign()); await name.filter({ hasText: /^標準のデザイン$/ }).waitFor();
+  }
 });
 
 test('U3 user search and counted filters show both states, distinguish empty results and keep rule saving', { skip: !browserAvailable }, async t => {
