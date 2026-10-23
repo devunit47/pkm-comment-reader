@@ -149,6 +149,7 @@ test('U3 narrow setup and menu keep usable text widths and operation targets', {
   const page = await fixture(t);
   for (const width of [150, 300]) {
     await page.setViewportSize({ width, height: 1000 });
+    await page.locator('[data-page=home]').click();
     await page.locator('#open-setup').click();
     const textWidth = await page.locator('#setup-dialog li').first().evaluate(node => node.getBoundingClientRect().width);
     assert.ok(textWidth >= 60, `${width}px setup text width ${textWidth}`);
@@ -164,6 +165,8 @@ test('U3 narrow setup and menu keep usable text widths and operation targets', {
     assert.ok(menuWidth >= 100, `${width}px menu text width ${menuWidth}`);
     await page.keyboard.press('Escape');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.locator('[data-page=studio]').click();
+    assert.ok((await page.locator('#open-design-preview').boundingBox()).height >= 44, `${width}px design entry target`);
   }
 });
 
