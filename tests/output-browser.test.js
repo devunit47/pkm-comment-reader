@@ -93,8 +93,8 @@ browserTest('Twitch event controls retain notice-only pins, speak only bodies an
   assert.match(await page.locator('#pinned-text').textContent(), /サブスク・Tier 1/);
   await page.locator('#search').fill('受取人'); assert.equal(await page.locator('#comment-list .message').count(), 1);
   await page.locator('#search').fill('');
-  await page.locator('#filter').selectOption('first'); assert.equal(await page.locator('#comment-list .message').count(), 0);
-  await page.locator('#filter').selectOption('all');
+  await page.locator('[data-comment-filter=first]').click(); assert.equal(await page.locator('#comment-list .message').count(), 0);
+  await page.locator('[data-comment-filter=all]').click();
   await send('id=anon;msg-id=subgift;login=ananonymousgifter;display-name=AnAnonymousGifter;user-id=274598607;msg-param-recipient-display-name=受取人');
   await page.locator('#comment-list [data-event="gift"] .message').last().click();
   assert.equal(await page.locator('#hide-user').isDisabled(), true);
@@ -106,7 +106,7 @@ browserTest('Twitch event controls retain notice-only pins, speak only bodies an
   assert.equal(await page.locator('#selected-user').textContent(), '投稿者不明'); assert.equal(await page.locator('#hide-user').isDisabled(), true);
   await page.keyboard.press('Escape');
   await page.evaluate(() => window.testSockets[0].onmessage({ data: '@bits=100 :viewer!viewer@host PRIVMSG #qa_channel :Cheer100' }));
-  await page.locator('#filter').selectOption('first'); assert.equal(await page.locator('#comment-list .message').count(), 1);
+  await page.locator('[data-comment-filter=first]').click(); assert.equal(await page.locator('#comment-list .message').count(), 1);
   assert.match(await talkStage(page).locator('#stage-count').textContent(), /^1 /);
   assert.equal(JSON.stringify(await readSettings(url)).includes('AnAnonymousGifter'), false);
   assert.equal(JSON.stringify(await readDesign(url)).includes('受取人'), false);

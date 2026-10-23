@@ -152,6 +152,9 @@ function renderSelection() {
 }
 
 function render() {
+  document.querySelectorAll('[data-comment-filter]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.commentFilter === states[active].filter));
+  });
   const state = states[active];
   const visible = visibleMessages(state);
   const list = $('comment-list');
@@ -350,7 +353,6 @@ function switchPlatform(platform) {
     button.setAttribute('aria-pressed', String(selected));
   });
   $('search').value = state.search;
-  $('filter').value = state.filter;
   $('auto-speech').checked = state.autoSpeech;
   $('read-name').checked = state.readName;
   loadVoices();
@@ -366,7 +368,9 @@ function switchPlatform(platform) {
 document.querySelectorAll('[data-platform]').forEach(button => { button.onclick = () => switchPlatform(button.dataset.platform); });
 document.querySelectorAll('[data-page]').forEach(button => { button.onclick = () => page(button.dataset.page); });
 $('search').oninput = () => { states[active].search = $('search').value; render(); };
-$('filter').onchange = () => { states[active].filter = $('filter').value; render(); };
+document.querySelectorAll('[data-comment-filter]').forEach(button => {
+  button.onclick = () => { states[active].filter = button.dataset.commentFilter; render(); };
+});
 for (const [id, key] of [['hide-user', 'hidden'], ['mute-user', 'muted']]) {
   $(id).onclick = () => {
     $('user-actions').hidePopover();
