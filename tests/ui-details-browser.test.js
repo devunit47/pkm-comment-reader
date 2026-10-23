@@ -127,3 +127,37 @@ test('U3 user search and counted filters show both states, distinguish empty res
   assert.equal(await page.locator('#users-search').inputValue(), '');
   assert.equal(await page.locator('[data-user-filter=all]').getAttribute('aria-pressed'), 'true');
 });
+
+test('U3 home volume label occupies one line at desktop and intermediate widths', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t);
+  for (const width of [800, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const lines = await page.locator('#home-speech .range-label').evaluate(label => {
+      const range = document.createRange(); range.selectNodeContents(label.firstChild);
+      return range.getClientRects().length;
+    });
+    assert.equal(lines, 1, `${width}px volume label`);
+  }
+});
+
+test('U3 narrow setup and menu keep usable text widths and operation targets', { skip: !browserAvailable }, async t => {
+  const page = await fixture(t);
+  for (const width of [150, 300]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.locator('#open-setup').click();
+    const textWidth = await page.locator('#setup-dialog li').first().evaluate(node => node.getBoundingClientRect().width);
+    assert.ok(textWidth >= 60, `${width}px setup text width ${textWidth}`);
+    for (const id of ['setup-connect', 'setup-voice', 'setup-test-voice', 'close-setup']) {
+      assert.ok((await page.locator('#' + id).boundingBox()).height >= 44, `${width}px #${id}`);
+    }
+    await page.locator('#close-setup').click();
+    for (const id of ['start-setup', 'stop-speech', 'clear', 'read-selected']) {
+      assert.ok((await page.locator('#' + id).boundingBox()).height >= 44, `${width}px #${id}`);
+    }
+    await page.locator('#comment-list .username').first().click();
+    const menuWidth = await page.locator('#user-actions').evaluate(node => node.clientWidth - parseFloat(getComputedStyle(node).paddingLeft) - parseFloat(getComputedStyle(node).paddingRight));
+    assert.ok(menuWidth >= 100, `${width}px menu text width ${menuWidth}`);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  }
+});

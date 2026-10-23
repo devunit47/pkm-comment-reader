@@ -315,3 +315,16 @@ body.talk-mode>#app-header{display:none}
 
 .users-tools{display:grid;gap:12px;padding:16px 24px}.user-identity{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex:1;min-width:0}.user-identity strong{flex-basis:100%;overflow-wrap:anywhere}.user-state{max-width:100%;white-space:normal;overflow-wrap:anywhere}.user-row{flex-wrap:wrap}.user-row>.button{min-height:44px;max-width:100%;overflow-wrap:anywhere}
 @media(max-width:300px){.users-tools,.user-row{padding:12px 8px}.user-identity{flex-basis:100%}}
+
+/* Keep short labels intact while the range input absorbs the remaining width. */
+#home-speech .range-label{white-space:nowrap}
+@media(max-width:300px){
+  #home-page :is(.button,.text-button,.username,.message),#preferences-page .button,#studio-page .button,#setup-dialog :is(.button,.text-button),#setup-reminder .button{min-height:44px;text-wrap:balance}
+  #app-header .nav,main h1,main h2,#talk-controls button{text-wrap:balance}
+  #setup-dialog{width:calc(100vw - 16px);padding:8px}
+  #setup-dialog .panel-heading{padding:8px}
+  #setup-dialog ol{padding-left:20px}
+  #setup-dialog .setup-actions{flex-wrap:wrap;gap:8px}
+  #user-actions{padding:8px}
+  #user-actions .mod-buttons button{padding:10px 8px;text-wrap:balance}
+}
