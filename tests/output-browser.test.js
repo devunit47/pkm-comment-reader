@@ -659,7 +659,10 @@ browserTest('reopening the output window applies a newly chosen size', async t =
   output.setDefaultTimeout(8000);
   await output.waitForLoadState();
   const size = () => output.evaluate(() => [innerWidth, innerHeight]);
-  assert.deepEqual(await size(), [1280, 720]);
+  // A new window keeps the requested size; some browsers round it by 1px.
+  // Resizing it from outer sizes of 0 used to shrink it to about 100x65.
+  const [width, height] = await size();
+  assert.ok(Math.abs(width - 1280) <= 1 && Math.abs(height - 720) <= 1, `new window size ${width}x${height}`);
   await applyInEditor(page, editor => editor.locator('#draft-outputSize').selectOption('1080x1920'));
   await openOutputSettings(page);
   await page.locator('#open-output-window').click();

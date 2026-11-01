@@ -83,7 +83,11 @@ export function initializeOutputPanel({ settingsStore, designStore, publisher, g
     message = '';
     // A reused named window ignores the size features, so resize it to the
     // chosen viewport size, accounting for its own frame and address bar.
-    if (output.innerWidth && output.innerHeight && (output.innerWidth !== width || output.innerHeight !== height)) {
+    // A just-opened window can report outer sizes of 0 before its frame
+    // exists; resizing from those would shrink it to the minimum, so keep the
+    // size the features requested.
+    if (output.innerWidth && output.innerHeight && output.outerWidth && output.outerHeight &&
+        (output.innerWidth !== width || output.innerHeight !== height)) {
       try { output.resizeTo(width + output.outerWidth - output.innerWidth, height + output.outerHeight - output.innerHeight); }
       catch { /* The status shows the actual size reported by the output. */ }
     }
